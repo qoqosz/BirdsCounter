@@ -10,9 +10,11 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "birdscounter",
+        "title": "Birds Counter",
         "width": 800,
-        "height": 600
+        "height": 900,
+        "minWidth": 400,
+        "minHeight": 600
       }
     ],
     "security": {
