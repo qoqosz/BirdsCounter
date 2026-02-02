@@ -1,67 +1,119 @@
-const { invoke } = window.__TAURI__.core;
+const { invoke, convertFileSrc } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
+const { readFile } = window.__TAURI__.fs;
 
 let dragDropArea;
 let cameraBtn;
 let galleryBtn;
 let imageInput;
+let cameraInput;
 let previewImg;
 let imagePreview;
 
 function setupDragAndDrop() {
-  dragDropArea.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDropArea.classList.add("drag-over");
+  // Prevent default drag behaviors
+  ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+    dragDropArea.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
   });
 
-  dragDropArea.addEventListener("dragleave", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDropArea.classList.remove("drag-over");
+  // Highlight drop area when item is dragged over it
+  ["dragenter", "dragover"].forEach((eventName) => {
+    dragDropArea.addEventListener(eventName, highlight, false);
   });
 
-  dragDropArea.addEventListener("drop", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDropArea.classList.remove("drag-over");
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      const file = files[0];
-      if (file.type.startsWith("image/")) {
-        handleImageFile(file);
-      } else {
-        alert("Please drop an image file");
-      }
-    }
+  ["dragleave", "drop"].forEach((eventName) => {
+    dragDropArea.addEventListener(eventName, unhighlight, false);
   });
 
+  // Handle dropped files
+  dragDropArea.addEventListener("drop", handleDrop, false);
+
+  // Click on drag area triggers the file selection (gallery compatible)
   dragDropArea.addEventListener("click", () => {
     imageInput.click();
   });
 
+  // Handle file selection from the standard input
   imageInput.addEventListener("change", (e) => {
     if (e.target.files.length > 0) {
       const file = e.target.files[0];
-      handleImageFile(file);
+      handleFileObject(file);
     }
+    // clear value to allow re-selection
+    imageInput.value = "";
+  });
+
+  // Handle file selection from the camera input (Android)
+  cameraInput.addEventListener("change", (e) => {
+    if (e.target.files.length > 0) {
+      const file = e.target.files[0];
+      handleFileObject(file);
+    }
+    // clear value
+    cameraInput.value = "";
   });
 }
 
-function handleImageFile(file) {
+function preventDefaults(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function highlight(e) {
+  dragDropArea.classList.add("drag-over");
+}
+
+function unhighlight(e) {
+  dragDropArea.classList.remove("drag-over");
+}
+
+function handleDrop(e) {
+  const dt = e.dataTransfer;
+  const files = dt.files;
+  if (files.length > 0) {
+    const file = files[0];
+    if (file.type.startsWith("image/")) {
+      handleFileObject(file);
+    } else {
+      alert("Please drop an image file");
+    }
+  }
+}
+
+// Handle standard HTML File object (from Drag&Drop or Input)
+function handleFileObject(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     previewImg.src = e.target.result;
-    imagePreview.style.display = "block";
-    dragDropArea.style.display = "none";
-    cameraBtn.style.display = "none";
-    galleryBtn.style.display = "none";
+    showPreview();
   };
   reader.readAsDataURL(file);
 }
 
+function showPreview() {
+  imagePreview.style.display = "block";
+  dragDropArea.style.display = "none";
+  cameraBtn.style.display = "none";
+  galleryBtn.style.display = "none";
+}
+
 async function openCamera() {
+  // Check if we are on Android with native camera interface
+  const isAndroid = /Android/i.test(navigator.userAgent);
+
+  if (isAndroid) {
+    // For Android, use the native JavaScript interface
+    if (typeof Android !== "undefined" && Android.openCamera) {
+      Android.openCamera();
+      return;
+    }
+    // Fallback to HTML capture input if interface not available
+    cameraInput.click();
+    return;
+  }
+
+  // For Mac (and others), use the Rust command to open Photo Booth
   try {
     await invoke("open_camera");
   } catch (error) {
@@ -71,6 +123,14 @@ async function openCamera() {
     );
   }
 }
+
+// Global callback function for Android camera result
+window.onCameraResult = function (dataUrl) {
+  if (dataUrl) {
+    previewImg.src = dataUrl;
+    showPreview();
+  }
+};
 
 async function openGallery() {
   try {
@@ -85,25 +145,19 @@ async function openGallery() {
     });
 
     if (filePath) {
-      const reader = new FileReader();
-      // For Tauri, we need to read the file differently
-      fetch(`tauri://localhost${filePath}`)
-        .then((response) => response.blob())
-        .then((blob) => {
-          const fileReader = new FileReader();
-          fileReader.onload = (e) => {
-            previewImg.src = e.target.result;
-            imagePreview.style.display = "block";
-            dragDropArea.style.display = "none";
-            cameraBtn.style.display = "none";
-            galleryBtn.style.display = "none";
-          };
-          fileReader.readAsDataURL(blob);
-        })
-        .catch((error) => {
-          console.error("Error reading file:", error);
-          alert("Could not load image from gallery");
-        });
+      // Use fs.readFile to read the file content directly
+      // This bypasses asset protocol issues by reading into memory
+      try {
+        const contents = await readFile(filePath);
+        const blob = new Blob([contents]);
+        previewImg.src = URL.createObjectURL(blob);
+        showPreview();
+      } catch (readError) {
+        console.error("Error reading file with fs:", readError);
+        // Fallback to convertFileSrc
+        previewImg.src = convertFileSrc(filePath);
+        showPreview();
+      }
     }
   } catch (error) {
     console.error("Error opening gallery:", error);
@@ -115,19 +169,29 @@ window.addEventListener("DOMContentLoaded", () => {
   cameraBtn = document.querySelector("#cameraBtn");
   galleryBtn = document.querySelector("#galleryBtn");
   imageInput = document.querySelector("#imageInput");
+  cameraInput = document.querySelector("#cameraInput");
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
 
-  setupDragAndDrop();
+  if (dragDropArea) {
+    setupDragAndDrop();
+  }
 
-  cameraBtn.addEventListener("click", openCamera);
-  galleryBtn.addEventListener("click", openGallery);
+  if (cameraBtn) {
+    cameraBtn.addEventListener("click", openCamera);
+  }
+
+  if (galleryBtn) {
+    galleryBtn.addEventListener("click", openGallery);
+  }
 
   // Close preview on image click
-  previewImg.addEventListener("click", () => {
-    imagePreview.style.display = "none";
-    dragDropArea.style.display = "flex";
-    cameraBtn.style.display = "flex";
-    galleryBtn.style.display = "flex";
-  });
+  if (previewImg) {
+    previewImg.addEventListener("click", () => {
+      imagePreview.style.display = "none";
+      dragDropArea.style.display = "flex";
+      cameraBtn.style.display = "flex";
+      galleryBtn.style.display = "flex";
+    });
+  }
 });
