@@ -1,4 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod threshold_filter;
+pub use threshold_filter::ThresholdFilter;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -72,32 +74,8 @@ async fn open_camera() -> Result<String, String> {
 
 #[tauri::command]
 fn process_image(payload: Vec<u8>) -> Result<Vec<u8>, String> {
-    use opencv::prelude::*;
-    use opencv::{core, core::AlgorithmHint, imgcodecs, imgproc};
-
-    // Decode the image from the byte vector
-    let vec: core::Vector<u8> = core::Vector::from_iter(payload);
-    let src = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_COLOR)
-        .map_err(|e| format!("OpenCV decode error: {}", e))?;
-
-    // Convert to grayscale
-    let mut gray = Mat::default();
-    imgproc::cvt_color(
-        &src,
-        &mut gray,
-        imgproc::COLOR_BGR2GRAY,
-        0,
-        AlgorithmHint::ALGO_HINT_DEFAULT,
-    )
-    .map_err(|e| format!("OpenCV color conversion error: {}", e))?;
-
-    // Encode the grayscale image back to a byte vector (using PNG format for example)
-    let mut buf = core::Vector::new();
-    let params = core::Vector::new(); // default params
-    imgcodecs::imencode(".png", &gray, &mut buf, &params)
-        .map_err(|e| format!("OpenCV encode error: {}", e))?;
-
-    Ok(buf.to_vec())
+    let filter = ThresholdFilter::new(117);
+    filter.apply(payload)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

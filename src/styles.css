@@ -1,19 +1,55 @@
+/* ===== CSS Custom Properties for Theming ===== */
 :root {
+    /* Typography */
     font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
     font-size: 16px;
     line-height: 24px;
     font-weight: 400;
-
-    color: #0f0f0f;
-    background-color: #f6f6f6;
-
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
+
+    /* Light theme colors */
+    --bg-primary: #f6f6f6;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #f9f9ff;
+    --text-primary: #0f0f0f;
+    --text-secondary: #666666;
+    --accent: #396cd8;
+    --accent-hover: #2d5ab8;
+    --accent-active: #1e3f7a;
+    --border-default: #d1d1d1;
+    --border-accent: #396cd8;
+    --shadow-sm: rgba(0, 0, 0, 0.1);
+    --shadow-md: rgba(0, 0, 0, 0.15);
+    --shadow-accent: rgba(57, 108, 216, 0.2);
+
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
 }
 
+/* ===== Dark Theme ===== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-primary: #1c1c1e;
+        --bg-surface: #2c2c2e;
+        --bg-surface-hover: #3a3a3c;
+        --text-primary: #f5f5f7;
+        --text-secondary: #a1a1a6;
+        --accent: #0a84ff;
+        --accent-hover: #409cff;
+        --accent-active: #0066cc;
+        --border-default: #48484a;
+        --border-accent: #0a84ff;
+        --shadow-sm: rgba(0, 0, 0, 0.3);
+        --shadow-md: rgba(0, 0, 0, 0.4);
+        --shadow-accent: rgba(10, 132, 255, 0.3);
+    }
+}
+
+/* ===== Reset ===== */
 * {
     margin: 0;
     padding: 0;
@@ -26,8 +62,12 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+/* ===== Layout ===== */
 .container {
     width: 100%;
     height: 100%;
@@ -36,21 +76,69 @@ body {
     justify-content: flex-start;
     align-items: center;
     padding: 2rem;
+    padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(2rem + env(safe-area-inset-left, 0px));
+    padding-right: calc(2rem + env(safe-area-inset-right, 0px));
     gap: 2rem;
+}
+
+/* ===== App Header ===== */
+.app-header {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 44px;
+}
+
+.back-button {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: background-color 0.2s ease;
+    color: var(--accent);
+}
+
+.back-button svg {
+    width: 24px;
+    height: 24px;
+    stroke: currentColor;
+}
+
+.back-button:hover {
+    background-color: var(--bg-surface-hover);
+}
+
+.back-button:active {
+    background-color: var(--bg-surface);
+    transform: translateY(-50%) scale(0.95);
 }
 
 h1 {
     text-align: center;
-    margin-top: 1rem;
     font-size: 2rem;
-    color: #0f0f0f;
+    color: var(--text-primary);
 }
 
+/* ===== Drag & Drop Area ===== */
 .drag-drop-area {
     width: 100%;
     max-width: 500px;
     height: 300px;
-    border: 3px dashed #396cd8;
+    border: 3px dashed var(--border-accent);
     border-radius: 12px;
     display: flex;
     flex-direction: column;
@@ -59,47 +147,44 @@ h1 {
     gap: 1rem;
     padding: 2rem;
     cursor: pointer;
-    transition: all 0.3s ease;
-    background-color: #ffffff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    background-color: var(--bg-surface);
+    box-shadow: 0 2px 8px var(--shadow-sm);
 }
 
 .drag-drop-area:hover {
-    border-color: #535bf2;
-    box-shadow: 0 4px 12px rgba(57, 108, 216, 0.2);
-    background-color: #f9f9ff;
+    border-color: var(--accent-hover);
+    box-shadow: 0 4px 12px var(--shadow-accent);
+    background-color: var(--bg-surface-hover);
 }
 
 .drag-drop-area.drag-over {
-    border-color: #24c8db;
-    background-color: #f0fffe;
-    box-shadow: 0 4px 16px rgba(36, 200, 219, 0.3);
+    border-color: var(--accent);
+    background-color: var(--bg-surface-hover);
+    box-shadow: 0 4px 16px var(--shadow-accent);
 }
 
 .upload-icon {
     width: 64px;
     height: 64px;
-    color: #396cd8;
+    color: var(--accent);
     stroke-width: 1.5;
-}
-
-.drag-drop-area.drag-over .upload-icon {
-    color: #24c8db;
 }
 
 .drag-text {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #0f0f0f;
+    color: var(--text-primary);
     text-align: center;
 }
 
 .drag-subtext {
     font-size: 0.9rem;
-    color: #666;
+    color: var(--text-secondary);
     text-align: center;
 }
 
+/* ===== Buttons ===== */
 .button-container {
     display: flex;
     gap: 1rem;
@@ -123,8 +208,8 @@ h1 {
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px var(--shadow-sm);
 }
 
 .action-button svg {
@@ -134,210 +219,281 @@ h1 {
 }
 
 .camera-button {
-    background-color: #396cd8;
+    background-color: var(--accent);
     color: #ffffff;
-    border-color: #396cd8;
+    border-color: var(--accent);
 }
 
 .camera-button:hover {
-    background-color: #2d5ab8;
-    border-color: #2d5ab8;
-    box-shadow: 0 4px 12px rgba(57, 108, 216, 0.3);
+    background-color: var(--accent-hover);
+    border-color: var(--accent-hover);
+    box-shadow: 0 4px 12px var(--shadow-accent);
 }
 
 .camera-button:active {
-    background-color: #1e3f7a;
+    background-color: var(--accent-active);
     transform: scale(0.98);
 }
 
 .gallery-button {
-    background-color: #ffffff;
-    color: #396cd8;
-    border-color: #396cd8;
+    background-color: var(--bg-surface);
+    color: var(--accent);
+    border-color: var(--border-accent);
 }
 
 .gallery-button:hover {
-    background-color: #f0f6ff;
-    border-color: #535bf2;
-    color: #535bf2;
-    box-shadow: 0 4px 12px rgba(83, 91, 242, 0.2);
+    background-color: var(--bg-surface-hover);
+    border-color: var(--accent-hover);
+    color: var(--accent-hover);
+    box-shadow: 0 4px 12px var(--shadow-accent);
 }
 
 .gallery-button:active {
-    background-color: #e8eeff;
+    background-color: var(--bg-surface);
     transform: scale(0.98);
 }
 
+/* ===== Image Preview ===== */
 .image-preview {
     width: 100%;
     max-width: 500px;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    background-color: #ffffff;
+    box-shadow: 0 4px 12px var(--shadow-md);
+    background-color: var(--bg-surface);
+    flex-shrink: 1;
+    min-height: 0;
 }
 
 .image-preview img {
     width: 100%;
     height: auto;
+    max-height: 100%;
     display: block;
+    object-fit: contain;
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-    :root {
-        color: #f6f6f6;
-        background-color: #2f2f2f;
-    }
-
-    h1 {
-        color: #f6f6f6;
-    }
-
-    .drag-drop-area {
-        background-color: #1a1a1a;
-        border-color: #24c8db;
-        color: #f6f6f6;
-    }
-
-    .drag-drop-area:hover {
-        background-color: #252525;
-        box-shadow: 0 4px 12px rgba(36, 200, 219, 0.2);
-    }
-
-    .drag-drop-area.drag-over {
-        background-color: #1f2a2a;
-        border-color: #24c8db;
-    }
-
-    .upload-icon {
-        color: #24c8db;
-    }
-
-    .drag-text {
-        color: #f6f6f6;
-    }
-
-    .drag-subtext {
-        color: #a0a0a0;
-    }
-
-    .camera-button {
-        background-color: #24c8db;
-        color: #0f0f0f;
-        border-color: #24c8db;
-    }
-
-    .camera-button:hover {
-        background-color: #1ba8bb;
-        border-color: #1ba8bb;
-        box-shadow: 0 4px 12px rgba(36, 200, 219, 0.3);
-    }
-
-    .camera-button:active {
-        background-color: #158890;
-    }
-
-    .gallery-button {
-        background-color: #0f0f0f98;
-        color: #24c8db;
-        border-color: #24c8db;
-    }
-
-    .gallery-button:hover {
-        background-color: #1a1a1a;
-        border-color: #36d8e8;
-        color: #36d8e8;
-    }
-
-    .gallery-button:active {
-        background-color: #252525;
-    }
-
-    .image-preview {
-        background-color: #1a1a1a;
-    }
+/* ===== Process Button ===== */
+.process-button {
+    width: 100%;
+    max-width: 500px;
+    height: 56px;
+    min-height: 56px;
+    max-height: 56px;
+    flex-shrink: 0;
+    flex-grow: 0;
+    padding: 1rem;
+    font-size: 1.1rem;
+    background-color: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
 }
 
-/* Platform-specific styles */
-/* macOS */
+.process-button:hover {
+    background-color: var(--accent-hover);
+    border-color: var(--accent-hover);
+    box-shadow: 0 4px 12px var(--shadow-accent);
+}
+
+.process-button:active {
+    background-color: var(--accent-active);
+    transform: scale(0.98);
+}
+
+/* ===== macOS Platform Styles ===== */
 body.is-mac {
-    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #ececec;
-    /* Mac window background */
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", sans-serif;
+    --bg-primary: #ececec;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #f5f5f7;
+    --accent: #007aff;
+    --accent-hover: #0062cc;
+    --accent-active: #004999;
+    --border-default: #d1d1d6;
+    --shadow-sm: rgba(0, 0, 0, 0.08);
+    --shadow-accent: rgba(0, 122, 255, 0.2);
 }
 
 body.is-mac .action-button {
     border-radius: 6px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-body.is-mac .camera-button,
-body.is-mac .process-button {
-    background-color: #007aff;
-    /* Mac blue */
-    border-color: #007aff;
     font-weight: 500;
-}
-
-body.is-mac .camera-button:hover,
-body.is-mac .process-button:hover {
-    background-color: #0062cc;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 body.is-mac .gallery-button {
-    color: #0f0f0f;
-    border: 1px solid #d1d1d1;
-    background: linear-gradient(to bottom, #ffffff, #f1f1f1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-default);
+    background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
 }
 
 body.is-mac .gallery-button:hover {
+    background: linear-gradient(180deg, #ffffff 0%, #ebebed 100%);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    background: linear-gradient(to bottom, #ffffff, #e6e6e6);
+    border-color: var(--border-default);
+    color: var(--text-primary);
 }
 
-/* Android */
+/* macOS Dark Mode */
+@media (prefers-color-scheme: dark) {
+    body.is-mac {
+        --bg-primary: #1e1e1e;
+        --bg-surface: #2d2d2d;
+        --bg-surface-hover: #3d3d3d;
+        --text-primary: #ffffff;
+        --text-secondary: #98989d;
+        --accent: #0a84ff;
+        --accent-hover: #409cff;
+        --accent-active: #0066cc;
+        --border-default: #48484a;
+        --shadow-sm: rgba(0, 0, 0, 0.3);
+    }
+
+    body.is-mac .gallery-button {
+        background: linear-gradient(180deg, #3d3d3d 0%, #2d2d2d 100%);
+        border-color: var(--border-default);
+        color: var(--text-primary);
+    }
+
+    body.is-mac .gallery-button:hover {
+        background: linear-gradient(180deg, #4a4a4a 0%, #3a3a3a 100%);
+        color: var(--text-primary);
+    }
+}
+
+/* ===== Android Platform Styles (Material 3) ===== */
 body.is-android {
-    font-family: Roboto, sans-serif;
-    background-color: #fafafa;
+    font-family: Roboto, "Google Sans", sans-serif;
+    --bg-primary: #fef7ff;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #f3edf7;
+    --text-primary: #1d1b20;
+    --text-secondary: #49454f;
+    --accent: #6750a4;
+    --accent-hover: #7965af;
+    --accent-active: #4f378b;
+    --border-default: #79747e;
+    --shadow-sm: rgba(0, 0, 0, 0.15);
+}
+
+body.is-android .container {
+    /* Extra padding for Android notch */
+    padding-top: calc(2rem + env(safe-area-inset-top, 0px));
+}
+
+body.is-android h1 {
+    font-weight: 400;
 }
 
 body.is-android .action-button {
-    border-radius: 20px;
-    /* Pill shape */
-    text-transform: uppercase;
-    font-size: 0.9rem;
-    letter-spacing: 0.5px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    border-radius: 100px;
+    text-transform: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+    height: 48px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
 }
 
 body.is-android .camera-button,
 body.is-android .process-button {
-    background-color: #6200ee;
-    /* Material primary */
-    border-color: #6200ee;
-}
-
-body.is-android .gallery-button {
-    color: #6200ee;
-    border-color: #6200ee;
-}
-
-/* Process button specific layout */
-.process-button {
-    width: 100%;
-    max-width: 500px;
-    margin-top: 1rem;
-    padding: 1rem;
-    font-size: 1.1rem;
-    background-color: #396cd8;
+    background-color: var(--accent);
+    border-color: var(--accent);
     color: #ffffff;
 }
 
-/* Responsive design */
+body.is-android .camera-button:active,
+body.is-android .process-button:active {
+    background-color: var(--accent-active);
+}
+
+body.is-android .gallery-button {
+    color: var(--accent);
+    border: 1px solid var(--border-default);
+    background-color: var(--bg-surface);
+    box-shadow: none;
+}
+
+body.is-android .gallery-button:active {
+    background-color: var(--bg-surface-hover);
+    border-color: var(--accent);
+}
+
+body.is-android .drag-drop-area {
+    background-color: var(--bg-surface);
+    border-radius: 16px;
+    border: 2px dashed var(--border-default);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+body.is-android .drag-drop-area:hover,
+body.is-android .drag-drop-area:active {
+    border-color: var(--accent);
+    background-color: var(--bg-surface-hover);
+}
+
+body.is-android .image-preview {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    background-color: var(--bg-surface);
+    border-radius: 16px;
+}
+
+/* Android: Fixed height process button - CRITICAL FIX */
+body.is-android .process-button {
+    height: 56px;
+    min-height: 56px;
+    max-height: 56px;
+    flex-shrink: 0;
+    flex-grow: 0;
+    border-radius: 100px;
+}
+
+/* Android Dark Mode (Material 3 Dark) */
+@media (prefers-color-scheme: dark) {
+    body.is-android {
+        --bg-primary: #141218;
+        --bg-surface: #1d1b20;
+        --bg-surface-hover: #2b2930;
+        --text-primary: #e6e0e9;
+        --text-secondary: #cac4d0;
+        --accent: #d0bcff;
+        --accent-hover: #e8def8;
+        --accent-active: #b69df8;
+        --border-default: #938f99;
+    }
+
+    body.is-android .camera-button,
+    body.is-android .process-button {
+        background-color: var(--accent);
+        color: #381e72;
+        border-color: var(--accent);
+    }
+
+    body.is-android .camera-button:active,
+    body.is-android .process-button:active {
+        background-color: var(--accent-active);
+    }
+
+    body.is-android .gallery-button {
+        color: var(--accent);
+        border-color: var(--border-default);
+        background-color: transparent;
+    }
+
+    body.is-android .gallery-button:active {
+        background-color: var(--bg-surface-hover);
+    }
+}
+
+/* ===== Responsive Design ===== */
 @media (max-width: 600px) {
+    .container {
+        padding: 1.5rem;
+        gap: 1.5rem;
+    }
+
     h1 {
         font-size: 1.5rem;
+        margin-top: 0.5rem;
     }
 
     .drag-drop-area {

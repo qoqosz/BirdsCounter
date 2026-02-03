@@ -4,14 +4,21 @@
 <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Birds Counter</title>
     <script type="module" src="/main.js" defer></script>
 </head>
 
 <body>
     <main class="container">
-        <h1>Birds Counter</h1>
+        <header class="app-header">
+            <button id="backBtn" class="back-button" style="display: none;" aria-label="Go back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+            <h1>Birds Counter</h1>
+        </header>
 
         <div class="drag-drop-area" id="dragDropArea">
             <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

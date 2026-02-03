@@ -10,7 +10,9 @@ let cameraInput;
 let previewImg;
 let imagePreview;
 let processBtn;
+let backBtn;
 let currentImageBytes = null;
+let isPreviewVisible = false;
 
 function setupDragAndDrop() {
   // Prevent default drag behaviors
@@ -99,11 +101,23 @@ function handleFileObject(file) {
 }
 
 function showPreview() {
+  isPreviewVisible = true;
   imagePreview.style.display = "block";
-  if (processBtn) processBtn.style.display = "flex"; // Show process button
+  if (processBtn) processBtn.style.display = "flex";
+  if (backBtn) backBtn.style.display = "flex";
   dragDropArea.style.display = "none";
-  cameraBtn.style.display = "none";
-  galleryBtn.style.display = "none";
+  document.querySelector(".button-container").style.display = "none";
+}
+
+function resetApp() {
+  isPreviewVisible = false;
+  imagePreview.style.display = "none";
+  if (processBtn) processBtn.style.display = "none";
+  if (backBtn) backBtn.style.display = "none";
+  dragDropArea.style.display = "flex";
+  document.querySelector(".button-container").style.display = "flex";
+  currentImageBytes = null;
+  if (previewImg) previewImg.src = "";
 }
 
 async function openCamera() {
@@ -222,6 +236,7 @@ window.addEventListener("DOMContentLoaded", () => {
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
   processBtn = document.querySelector("#processBtn");
+  backBtn = document.querySelector("#backBtn");
 
   if (dragDropArea) {
     setupDragAndDrop();
@@ -239,16 +254,9 @@ window.addEventListener("DOMContentLoaded", () => {
     processBtn.addEventListener("click", processImage);
   }
 
-  // Close preview on image click
-  if (previewImg) {
-    previewImg.addEventListener("click", () => {
-      imagePreview.style.display = "none";
-      if (processBtn) processBtn.style.display = "none"; // Hide process button
-      dragDropArea.style.display = "flex";
-      cameraBtn.style.display = "flex";
-      galleryBtn.style.display = "flex";
-      currentImageBytes = null; // Clear bytes when closing
-    });
+  // Back button click handler
+  if (backBtn) {
+    backBtn.addEventListener("click", resetApp);
   }
 
   // Platform detection for styling
@@ -259,5 +267,34 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.classList.add("is-android");
   } else if (isMac) {
     document.body.classList.add("is-mac");
+  }
+
+  // Swipe back gesture for Android
+  // Note: We use a swipe area starting at 50px to avoid conflict with system edge gestures
+  if (isAndroid) {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const swipeThreshold = 100;
+    const maxVerticalDeviation = 80;
+    const swipeStartZone = 100; // Start zone width (outside system edge gesture area)
+
+    document.addEventListener("touchstart", (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener("touchend", (e) => {
+      if (!isPreviewVisible) return;
+
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaX = touchEndX - touchStartX;
+      const deltaY = Math.abs(touchEndY - touchStartY);
+
+      // Swipe from left side (within swipeStartZone) to right
+      if (touchStartX < swipeStartZone && deltaX > swipeThreshold && deltaY < maxVerticalDeviation) {
+        resetApp();
+      }
+    }, { passive: true });
   }
 });
