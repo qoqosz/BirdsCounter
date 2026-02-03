@@ -70,13 +70,43 @@ async fn open_camera() -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+fn process_image(payload: Vec<u8>) -> Result<Vec<u8>, String> {
+    use opencv::prelude::*;
+    use opencv::{core, core::AlgorithmHint, imgcodecs, imgproc};
+
+    // Decode the image from the byte vector
+    let vec: core::Vector<u8> = core::Vector::from_iter(payload);
+    let src = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_COLOR)
+        .map_err(|e| format!("OpenCV decode error: {}", e))?;
+
+    // Convert to grayscale
+    let mut gray = Mat::default();
+    imgproc::cvt_color(
+        &src,
+        &mut gray,
+        imgproc::COLOR_BGR2GRAY,
+        0,
+        AlgorithmHint::ALGO_HINT_DEFAULT,
+    )
+    .map_err(|e| format!("OpenCV color conversion error: {}", e))?;
+
+    // Encode the grayscale image back to a byte vector (using PNG format for example)
+    let mut buf = core::Vector::new();
+    let params = core::Vector::new(); // default params
+    imgcodecs::imencode(".png", &gray, &mut buf, &params)
+        .map_err(|e| format!("OpenCV encode error: {}", e))?;
+
+    Ok(buf.to_vec())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![greet, open_camera])
+        .invoke_handler(tauri::generate_handler![greet, open_camera, process_image])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -259,6 +259,81 @@ h1 {
     }
 }
 
+/* Platform-specific styles */
+/* macOS */
+body.is-mac {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #ececec;
+    /* Mac window background */
+}
+
+body.is-mac .action-button {
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+body.is-mac .camera-button,
+body.is-mac .process-button {
+    background-color: #007aff;
+    /* Mac blue */
+    border-color: #007aff;
+    font-weight: 500;
+}
+
+body.is-mac .camera-button:hover,
+body.is-mac .process-button:hover {
+    background-color: #0062cc;
+}
+
+body.is-mac .gallery-button {
+    color: #0f0f0f;
+    border: 1px solid #d1d1d1;
+    background: linear-gradient(to bottom, #ffffff, #f1f1f1);
+}
+
+body.is-mac .gallery-button:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: linear-gradient(to bottom, #ffffff, #e6e6e6);
+}
+
+/* Android */
+body.is-android {
+    font-family: Roboto, sans-serif;
+    background-color: #fafafa;
+}
+
+body.is-android .action-button {
+    border-radius: 20px;
+    /* Pill shape */
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+body.is-android .camera-button,
+body.is-android .process-button {
+    background-color: #6200ee;
+    /* Material primary */
+    border-color: #6200ee;
+}
+
+body.is-android .gallery-button {
+    color: #6200ee;
+    border-color: #6200ee;
+}
+
+/* Process button specific layout */
+.process-button {
+    width: 100%;
+    max-width: 500px;
+    margin-top: 1rem;
+    padding: 1rem;
+    font-size: 1.1rem;
+    background-color: #396cd8;
+    color: #ffffff;
+}
+
 /* Responsive design */
 @media (max-width: 600px) {
     h1 {

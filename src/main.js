@@ -9,6 +9,8 @@ let imageInput;
 let cameraInput;
 let previewImg;
 let imagePreview;
+let processBtn;
+let currentImageBytes = null;
 
 function setupDragAndDrop() {
   // Prevent default drag behaviors
@@ -85,14 +87,20 @@ function handleDrop(e) {
 function handleFileObject(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
-    previewImg.src = e.target.result;
+    // Store raw bytes for processing
+    currentImageBytes = new Uint8Array(e.target.result);
+    // Create blob for display
+    const blob = new Blob([currentImageBytes], { type: file.type });
+    previewImg.src = URL.createObjectURL(blob);
     showPreview();
   };
-  reader.readAsDataURL(file);
+  // Read as ArrayBuffer to get raw bytes
+  reader.readAsArrayBuffer(file);
 }
 
 function showPreview() {
   imagePreview.style.display = "block";
+  if (processBtn) processBtn.style.display = "flex"; // Show process button
   dragDropArea.style.display = "none";
   cameraBtn.style.display = "none";
   galleryBtn.style.display = "none";
@@ -125,9 +133,17 @@ async function openCamera() {
 }
 
 // Global callback function for Android camera result
-window.onCameraResult = function (dataUrl) {
+window.onCameraResult = async function (dataUrl) {
   if (dataUrl) {
     previewImg.src = dataUrl;
+    // For Android dataUrl, we might need to fetch it to get bytes if we want to process it
+    try {
+      const res = await fetch(dataUrl);
+      const buf = await res.arrayBuffer();
+      currentImageBytes = new Uint8Array(buf);
+    } catch (e) {
+      console.error("Failed to load camera image bytes", e);
+    }
     showPreview();
   }
 };
@@ -149,6 +165,7 @@ async function openGallery() {
       // This bypasses asset protocol issues by reading into memory
       try {
         const contents = await readFile(filePath);
+        currentImageBytes = contents; // contents is already Uint8Array from tauri-plugin-fs
         const blob = new Blob([contents]);
         previewImg.src = URL.createObjectURL(blob);
         showPreview();
@@ -156,11 +173,43 @@ async function openGallery() {
         console.error("Error reading file with fs:", readError);
         // Fallback to convertFileSrc
         previewImg.src = convertFileSrc(filePath);
+        // NOTE: convertFileSrc gives a URL, not bytes. Processing might fail if we can't fetch it.
+        // Attempt to fetch bytes from the asset URL
+        try {
+          const res = await fetch(convertFileSrc(filePath));
+          const buf = await res.arrayBuffer();
+          currentImageBytes = new Uint8Array(buf);
+        } catch (e) {
+          console.error("Failed to fetch asset bytes", e);
+        }
         showPreview();
       }
     }
   } catch (error) {
     console.error("Error opening gallery:", error);
+  }
+}
+
+async function processImage() {
+  if (!currentImageBytes) {
+    alert("No image loaded to process!");
+    return;
+  }
+
+  try {
+    // Invoke Rust command
+    const processedBytes = await invoke("process_image", { payload: Array.from(currentImageBytes) });
+
+    // Update current bytes
+    currentImageBytes = new Uint8Array(processedBytes);
+
+    // Update preview
+    const blob = new Blob([currentImageBytes]);
+    previewImg.src = URL.createObjectURL(blob);
+
+  } catch (e) {
+    console.error("Image processing failed:", e);
+    alert("Failed to process image: " + e);
   }
 }
 
@@ -172,6 +221,7 @@ window.addEventListener("DOMContentLoaded", () => {
   cameraInput = document.querySelector("#cameraInput");
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
+  processBtn = document.querySelector("#processBtn");
 
   if (dragDropArea) {
     setupDragAndDrop();
@@ -185,13 +235,29 @@ window.addEventListener("DOMContentLoaded", () => {
     galleryBtn.addEventListener("click", openGallery);
   }
 
+  if (processBtn) {
+    processBtn.addEventListener("click", processImage);
+  }
+
   // Close preview on image click
   if (previewImg) {
     previewImg.addEventListener("click", () => {
       imagePreview.style.display = "none";
+      if (processBtn) processBtn.style.display = "none"; // Hide process button
       dragDropArea.style.display = "flex";
       cameraBtn.style.display = "flex";
       galleryBtn.style.display = "flex";
+      currentImageBytes = null; // Clear bytes when closing
     });
+  }
+
+  // Platform detection for styling
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const isMac = /Mac/i.test(navigator.userAgent);
+
+  if (isAndroid) {
+    document.body.classList.add("is-android");
+  } else if (isMac) {
+    document.body.classList.add("is-mac");
   }
 });
