@@ -15,5 +15,19 @@
   "alert_open_camera_fail": "Could not open camera. Please ensure camera permissions are granted.",
   "file_filter_image": "Image",
   "alert_no_image": "No image loaded to process!",
-  "alert_process_fail": "Failed to process image: {error}"
+  "alert_process_fail": "Failed to process image: {error}",
+  "settings_title": "Detection settings",
+  "min_radius": "Min radius",
+  "max_radius": "Max radius",
+  "blur": "Blur (odd)",
+  "threshold_method": "Threshold",
+  "threshold_adaptive": "Adaptive",
+  "threshold_otsu": "Otsu",
+  "adaptive_block": "Adaptive block",
+  "adaptive_c": "Adaptive C",
+  "morph_kernel": "Morph kernel",
+  "morph_open_iter": "Morph open",
+  "morph_close_iter": "Morph close",
+  "auto_invert": "Auto invert",
+  "invert": "Invert"
 }

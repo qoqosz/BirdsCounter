@@ -13,16 +13,18 @@ let imageInput;
 let cameraInput;
 let previewImg;
 let imagePreview;
-let processBtn;
 let cropBtn;
 let processActions;
+let settingsPanel;
 let cropOverlay;
 let cropBox;
 let cropMasks = {};
 let countLabel;
 let countValue;
 let backBtn;
+let fullscreenCloseBtn;
 let currentImageBytes = null;
+let originalImageBytes = null;
 let isPreviewVisible = false;
 let isCropping = false;
 let cropState = null;
@@ -31,6 +33,33 @@ let cropDragState = null;
 let langSelect;
 let translations = {};
 let currentLang = DEFAULT_LANG;
+let radiusInitialized = false;
+let minRadiusInput;
+let minRadiusValue;
+let maxRadiusInput;
+let maxRadiusValue;
+let blurInput;
+let blurValue;
+let thresholdMethodSelect;
+let adaptiveBlockInput;
+let adaptiveBlockValue;
+let adaptiveCInput;
+let adaptiveCValue;
+let morphKernelInput;
+let morphKernelValue;
+let morphOpenIterInput;
+let morphOpenIterValue;
+let morphCloseIterInput;
+let morphCloseIterValue;
+let autoInvertInput;
+let invertInput;
+let isProcessing = false;
+let pendingProcess = false;
+let pendingProcessOptions = null;
+let processTimer = null;
+let isFullscreenPreview = false;
+let lastTouchTime = 0;
+let lastTouchTarget = null;
 
 function normalizeLang(lang) {
   if (!lang) return DEFAULT_LANG;
@@ -176,9 +205,10 @@ function handleFileObject(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     // Store raw bytes for processing
-    currentImageBytes = new Uint8Array(e.target.result);
+    originalImageBytes = new Uint8Array(e.target.result);
+    currentImageBytes = originalImageBytes;
     // Create blob for display
-    const blob = new Blob([currentImageBytes], { type: file.type });
+    const blob = new Blob([originalImageBytes], { type: file.type });
     previewImg.src = URL.createObjectURL(blob);
     showPreview();
   };
@@ -188,33 +218,139 @@ function handleFileObject(file) {
 
 function showPreview() {
   isPreviewVisible = true;
+  radiusInitialized = false;
   imagePreview.style.display = "block";
   if (countLabel) countLabel.style.display = "block";
   if (processActions) processActions.style.display = "flex";
+  if (settingsPanel) settingsPanel.style.display = "flex";
   if (backBtn) backBtn.style.display = "flex";
   dragDropArea.style.display = "none";
   document.querySelector(".button-container").style.display = "none";
   resetCropUI();
   updateCount(0);
+  scheduleProcess({ applyCrop: false });
 }
 
 function resetApp() {
   isPreviewVisible = false;
+  if (processTimer) {
+    clearTimeout(processTimer);
+    processTimer = null;
+  }
+  pendingProcess = false;
+  pendingProcessOptions = null;
   imagePreview.style.display = "none";
+  setFullscreenPreview(false);
   if (countLabel) countLabel.style.display = "none";
   if (processActions) processActions.style.display = "none";
+  if (settingsPanel) settingsPanel.style.display = "none";
   if (backBtn) backBtn.style.display = "none";
   dragDropArea.style.display = "flex";
   document.querySelector(".button-container").style.display = "flex";
   currentImageBytes = null;
+  originalImageBytes = null;
   if (previewImg) previewImg.src = "";
   resetCropUI();
   updateCount(0);
 }
 
+function setFullscreenPreview(active) {
+  if (!imagePreview || !previewImg) return;
+  isFullscreenPreview = active;
+  imagePreview.classList.toggle("is-fullscreen", active);
+  document.body.classList.toggle("fullscreen-preview", active);
+}
+
+function toggleFullscreenPreview() {
+  if (!isPreviewVisible || isCropping) return;
+  setFullscreenPreview(!isFullscreenPreview);
+}
+
 function updateCount(value) {
   if (!countValue) return;
   countValue.textContent = String(value);
+}
+
+function formatFixed(value, digits) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return num.toFixed(digits);
+}
+
+function bindRangeValue(input, output, formatter) {
+  if (!input || !output) return () => {};
+  const format = formatter ?? ((value) => String(value));
+  const update = () => {
+    output.textContent = format(input.value);
+  };
+  input.addEventListener("input", update);
+  update();
+  return update;
+}
+
+function clampRadiusValues() {
+  if (!minRadiusInput || !maxRadiusInput) return;
+  const minValue = parseFloat(minRadiusInput.value);
+  const maxValue = parseFloat(maxRadiusInput.value);
+  if (Number.isNaN(minValue) || Number.isNaN(maxValue)) return;
+
+  if (minValue > maxValue) {
+    minRadiusInput.value = maxValue.toString();
+  }
+  syncSettingsOutputs();
+}
+
+function updateRadiusLimits() {
+  if (!previewImg || !minRadiusInput || !maxRadiusInput) return;
+  if (!previewImg.naturalWidth || !previewImg.naturalHeight) return;
+
+  const maxAllowed = Math.max(
+    1,
+    Math.min(previewImg.naturalWidth, previewImg.naturalHeight) / 2,
+  );
+  minRadiusInput.max = maxAllowed.toString();
+  maxRadiusInput.max = maxAllowed.toString();
+
+  if (!radiusInitialized) {
+    maxRadiusInput.value = maxAllowed.toFixed(1);
+    radiusInitialized = true;
+  }
+
+  if (parseFloat(maxRadiusInput.value) > maxAllowed) {
+    maxRadiusInput.value = maxAllowed.toFixed(1);
+  }
+  if (parseFloat(minRadiusInput.value) > parseFloat(maxRadiusInput.value)) {
+    minRadiusInput.value = Math.max(1, parseFloat(maxRadiusInput.value) - 1).toFixed(1);
+  }
+  syncSettingsOutputs();
+  scheduleProcess({ applyCrop: false });
+}
+
+function syncSettingsOutputs() {
+  if (minRadiusInput && minRadiusValue) {
+    minRadiusValue.textContent = formatFixed(minRadiusInput.value, 1);
+  }
+  if (maxRadiusInput && maxRadiusValue) {
+    maxRadiusValue.textContent = formatFixed(maxRadiusInput.value, 1);
+  }
+  if (blurInput && blurValue) {
+    blurValue.textContent = String(blurInput.value);
+  }
+  if (adaptiveBlockInput && adaptiveBlockValue) {
+    adaptiveBlockValue.textContent = String(adaptiveBlockInput.value);
+  }
+  if (adaptiveCInput && adaptiveCValue) {
+    adaptiveCValue.textContent = formatFixed(adaptiveCInput.value, 1);
+  }
+  if (morphKernelInput && morphKernelValue) {
+    morphKernelValue.textContent = String(morphKernelInput.value);
+  }
+  if (morphOpenIterInput && morphOpenIterValue) {
+    morphOpenIterValue.textContent = String(morphOpenIterInput.value);
+  }
+  if (morphCloseIterInput && morphCloseIterValue) {
+    morphCloseIterValue.textContent = String(morphCloseIterInput.value);
+  }
 }
 
 function updateCropButtonState(active) {
@@ -242,14 +378,15 @@ function syncCropBounds() {
   };
 }
 
-function setCropToFull() {
+function setCropToDefault() {
   syncCropBounds();
-  cropState = {
-    x: 0,
-    y: 0,
-    width: cropBounds.width,
-    height: cropBounds.height,
-  };
+  const minDimension = Math.min(cropBounds.width, cropBounds.height);
+  const margin = Math.max(12, Math.min(40, Math.round(minDimension * 0.05)));
+  const width = Math.max(MIN_CROP_SIZE, cropBounds.width - margin * 2);
+  const height = Math.max(MIN_CROP_SIZE, cropBounds.height - margin * 2);
+  const x = Math.max(0, Math.round((cropBounds.width - width) / 2));
+  const y = Math.max(0, Math.round((cropBounds.height - height) / 2));
+  cropState = clampCropState({ x, y, width, height });
   updateCropUI();
 }
 
@@ -333,12 +470,15 @@ function enterCropMode() {
     return;
   }
 
+  if (isFullscreenPreview) {
+    setFullscreenPreview(false);
+  }
   cropOverlay.classList.add("is-active");
   isCropping = true;
   updateCropButtonState(true);
   requestAnimationFrame(() => {
     if (isCropping) {
-      setCropToFull();
+      setCropToDefault();
     }
   });
 }
@@ -378,7 +518,8 @@ async function applyCrop() {
   if (!blob) return;
 
   const buf = await blob.arrayBuffer();
-  currentImageBytes = new Uint8Array(buf);
+  originalImageBytes = new Uint8Array(buf);
+  currentImageBytes = originalImageBytes;
   previewImg.src = URL.createObjectURL(blob);
   updateCount(0);
 }
@@ -391,6 +532,7 @@ async function toggleCrop() {
 
   await applyCrop();
   exitCropMode();
+  scheduleProcess({ applyCrop: false });
 }
 
 function onCropPointerDown(e) {
@@ -477,7 +619,8 @@ window.onCameraResult = async function (dataUrl) {
     try {
       const res = await fetch(dataUrl);
       const buf = await res.arrayBuffer();
-      currentImageBytes = new Uint8Array(buf);
+      originalImageBytes = new Uint8Array(buf);
+      currentImageBytes = originalImageBytes;
     } catch (e) {
       console.error("Failed to load camera image bytes", e);
     }
@@ -502,8 +645,9 @@ async function openGallery() {
       // This bypasses asset protocol issues by reading into memory
       try {
         const contents = await readFile(filePath);
-        currentImageBytes = contents; // contents is already Uint8Array from tauri-plugin-fs
-        const blob = new Blob([contents]);
+        originalImageBytes = new Uint8Array(contents);
+        currentImageBytes = originalImageBytes;
+        const blob = new Blob([originalImageBytes]);
         previewImg.src = URL.createObjectURL(blob);
         showPreview();
       } catch (readError) {
@@ -515,7 +659,8 @@ async function openGallery() {
         try {
           const res = await fetch(convertFileSrc(filePath));
           const buf = await res.arrayBuffer();
-          currentImageBytes = new Uint8Array(buf);
+          originalImageBytes = new Uint8Array(buf);
+          currentImageBytes = originalImageBytes;
         } catch (e) {
           console.error("Failed to fetch asset bytes", e);
         }
@@ -527,20 +672,85 @@ async function openGallery() {
   }
 }
 
-async function processImage() {
-  if (!currentImageBytes) {
+function readFloat(input, fallback) {
+  if (!input) return fallback;
+  const value = parseFloat(input.value);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function readInt(input, fallback) {
+  if (!input) return fallback;
+  const value = parseInt(input.value, 10);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function readParamsFromUI() {
+  return {
+    min_radius: readFloat(minRadiusInput, 2.0),
+    max_radius: readFloat(maxRadiusInput, 100.0),
+    blur: readInt(blurInput, 3),
+    threshold_method: thresholdMethodSelect ? thresholdMethodSelect.value : "adaptive",
+    adaptive_block: readInt(adaptiveBlockInput, 31),
+    adaptive_c: readFloat(adaptiveCInput, 4.0),
+    morph_kernel: readInt(morphKernelInput, 3),
+    morph_open_iter: readInt(morphOpenIterInput, 1),
+    morph_close_iter: readInt(morphCloseIterInput, 1),
+    auto_invert: autoInvertInput ? autoInvertInput.checked : true,
+    invert: invertInput ? invertInput.checked : false,
+  };
+}
+
+function scheduleProcess(options = {}) {
+  if (!isPreviewVisible) return;
+  if (!originalImageBytes && !currentImageBytes) return;
+  if (processTimer) clearTimeout(processTimer);
+  processTimer = setTimeout(() => {
+    processTimer = null;
+    runProcess(options);
+  }, 100);
+}
+
+async function runProcess(options = {}) {
+  if (!isPreviewVisible) return;
+  if (isProcessing) {
+    pendingProcess = true;
+    pendingProcessOptions = options;
+    return;
+  }
+  isProcessing = true;
+  try {
+    await processImage(options);
+  } finally {
+    isProcessing = false;
+    if (pendingProcess) {
+      pendingProcess = false;
+      const nextOptions = pendingProcessOptions ?? {};
+      pendingProcessOptions = null;
+      runProcess(nextOptions);
+    }
+  }
+}
+
+async function processImage(options = {}) {
+  const { applyCrop = true } = options;
+  const sourceBytes = originalImageBytes ?? currentImageBytes;
+  if (!sourceBytes) {
     alert(t("alert_no_image"));
     return;
   }
 
-  if (isCropping) {
+  if (applyCrop && isCropping) {
     await applyCrop();
     exitCropMode();
   }
 
   try {
     // Invoke Rust command
-    const result = await invoke("process_image", { payload: Array.from(currentImageBytes) });
+    const params = readParamsFromUI();
+    const result = await invoke("process_image", {
+      payload: Array.from(sourceBytes),
+      params,
+    });
 
     // Update current bytes
     currentImageBytes = new Uint8Array(result.bytes);
@@ -564,10 +774,11 @@ window.addEventListener("DOMContentLoaded", () => {
   cameraInput = document.querySelector("#cameraInput");
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
+  fullscreenCloseBtn = document.querySelector("#fullscreenCloseBtn");
   countLabel = document.querySelector("#countLabel");
   countValue = document.querySelector("#countValue");
   processActions = document.querySelector("#processActions");
-  processBtn = document.querySelector("#processBtn");
+  settingsPanel = document.querySelector("#settingsPanel");
   cropBtn = document.querySelector("#cropBtn");
   cropOverlay = document.querySelector("#cropOverlay");
   cropBox = document.querySelector("#cropBox");
@@ -579,6 +790,25 @@ window.addEventListener("DOMContentLoaded", () => {
   };
   backBtn = document.querySelector("#backBtn");
   langSelect = document.querySelector("#langSelect");
+  minRadiusInput = document.querySelector("#minRadius");
+  minRadiusValue = document.querySelector("#minRadiusValue");
+  maxRadiusInput = document.querySelector("#maxRadius");
+  maxRadiusValue = document.querySelector("#maxRadiusValue");
+  blurInput = document.querySelector("#blur");
+  blurValue = document.querySelector("#blurValue");
+  thresholdMethodSelect = document.querySelector("#thresholdMethod");
+  adaptiveBlockInput = document.querySelector("#adaptiveBlock");
+  adaptiveBlockValue = document.querySelector("#adaptiveBlockValue");
+  adaptiveCInput = document.querySelector("#adaptiveC");
+  adaptiveCValue = document.querySelector("#adaptiveCValue");
+  morphKernelInput = document.querySelector("#morphKernel");
+  morphKernelValue = document.querySelector("#morphKernelValue");
+  morphOpenIterInput = document.querySelector("#morphOpenIter");
+  morphOpenIterValue = document.querySelector("#morphOpenIterValue");
+  morphCloseIterInput = document.querySelector("#morphCloseIter");
+  morphCloseIterValue = document.querySelector("#morphCloseIterValue");
+  autoInvertInput = document.querySelector("#autoInvert");
+  invertInput = document.querySelector("#invert");
 
   if (dragDropArea) {
     setupDragAndDrop();
@@ -592,12 +822,62 @@ window.addEventListener("DOMContentLoaded", () => {
     galleryBtn.addEventListener("click", openGallery);
   }
 
-  if (processBtn) {
-    processBtn.addEventListener("click", processImage);
-  }
-
   if (cropBtn) {
     cropBtn.addEventListener("click", toggleCrop);
+  }
+
+  bindRangeValue(minRadiusInput, minRadiusValue, (value) => formatFixed(value, 1));
+  bindRangeValue(maxRadiusInput, maxRadiusValue, (value) => formatFixed(value, 1));
+  bindRangeValue(blurInput, blurValue);
+  bindRangeValue(adaptiveBlockInput, adaptiveBlockValue);
+  bindRangeValue(adaptiveCInput, adaptiveCValue, (value) => formatFixed(value, 1));
+  bindRangeValue(morphKernelInput, morphKernelValue);
+  bindRangeValue(morphOpenIterInput, morphOpenIterValue);
+  bindRangeValue(morphCloseIterInput, morphCloseIterValue);
+
+  if (minRadiusInput) {
+    minRadiusInput.addEventListener("input", clampRadiusValues);
+  }
+  if (maxRadiusInput) {
+    maxRadiusInput.addEventListener("input", clampRadiusValues);
+  }
+  if (previewImg) {
+    previewImg.addEventListener("load", updateRadiusLimits);
+  }
+  if (previewImg) {
+    previewImg.addEventListener("click", () => {
+      const isMac = /Mac/i.test(navigator.userAgent);
+      if (!isMac) return;
+      toggleFullscreenPreview();
+    });
+    previewImg.addEventListener("dblclick", () => {
+      toggleFullscreenPreview();
+    });
+
+    previewImg.addEventListener(
+      "touchend",
+      (e) => {
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        if (!isAndroid) return;
+        const now = Date.now();
+        const target = e.target;
+        if (now - lastTouchTime < 350 && lastTouchTarget === target) {
+          toggleFullscreenPreview();
+          lastTouchTime = 0;
+          lastTouchTarget = null;
+          return;
+        }
+        lastTouchTime = now;
+        lastTouchTarget = target;
+      },
+      { passive: true },
+    );
+  }
+  if (fullscreenCloseBtn) {
+    fullscreenCloseBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setFullscreenPreview(false);
+    });
   }
 
   if (cropBox) {
@@ -617,6 +897,31 @@ window.addEventListener("DOMContentLoaded", () => {
       setLanguage(e.target.value);
     });
   }
+
+  const settingsControls = [
+    minRadiusInput,
+    maxRadiusInput,
+    blurInput,
+    thresholdMethodSelect,
+    adaptiveBlockInput,
+    adaptiveCInput,
+    morphKernelInput,
+    morphOpenIterInput,
+    morphCloseIterInput,
+    autoInvertInput,
+    invertInput,
+  ];
+
+  settingsControls.forEach((control) => {
+    if (!control) return;
+    const eventName =
+      control.tagName === "SELECT" || control.type === "checkbox"
+        ? "change"
+        : "input";
+    control.addEventListener(eventName, () => {
+      scheduleProcess({ applyCrop: false });
+    });
+  });
 
   let initialLang = DEFAULT_LANG;
   try {

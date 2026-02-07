@@ -1,6 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-mod threshold_filter;
-pub use threshold_filter::ThresholdFilter;
+mod blob_filter;
+use blob_filter::{BlobFilter, BlobParams};
 
 #[derive(serde::Serialize)]
 struct ProcessResult {
@@ -79,8 +79,8 @@ async fn open_camera() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn process_image(payload: Vec<u8>) -> Result<ProcessResult, String> {
-    let filter = ThresholdFilter::new(117);
+fn process_image(payload: Vec<u8>, params: BlobParams) -> Result<ProcessResult, String> {
+    let filter = BlobFilter::new(params);
     let (bytes, count) = filter.apply(payload)?;
     Ok(ProcessResult {
         bytes,

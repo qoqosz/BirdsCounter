@@ -15,5 +15,19 @@
   "alert_open_camera_fail": "Nie można otworzyć aparatu. Upewnij się, że przyznano uprawnienia do aparatu.",
   "file_filter_image": "Obraz",
   "alert_no_image": "Brak obrazu do przetworzenia!",
-  "alert_process_fail": "Nie udało się przetworzyć obrazu: {error}"
+  "alert_process_fail": "Nie udało się przetworzyć obrazu: {error}",
+  "settings_title": "Ustawienia detekcji",
+  "min_radius": "Min. promień",
+  "max_radius": "Maks. promień",
+  "blur": "Rozmycie (nieparz.)",
+  "threshold_method": "Próg",
+  "threshold_adaptive": "Adaptacyjny",
+  "threshold_otsu": "Otsu",
+  "adaptive_block": "Blok adapt.",
+  "adaptive_c": "Adaptacyjne C",
+  "morph_kernel": "Jądro morf.",
+  "morph_open_iter": "Morf. otwarcie",
+  "morph_close_iter": "Morf. zamknięcie",
+  "auto_invert": "Auto odwracanie",
+  "invert": "Odwróć"
 }
