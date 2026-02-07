@@ -1,0 +1,19 @@
+{
+  "app_title": "Birds Counter",
+  "drag_text": "Drag and drop an image here",
+  "drag_subtext": "or use the buttons below",
+  "use_camera": "Use Camera",
+  "load_gallery": "Load from Gallery",
+  "count_prefix": "Counted",
+  "count_suffix": "birds",
+  "crop": "Crop",
+  "count": "Count",
+  "back_aria": "Go back",
+  "preview_alt": "Preview",
+  "lang_label": "Language",
+  "alert_drop_image": "Please drop an image file",
+  "alert_open_camera_fail": "Could not open camera. Please ensure camera permissions are granted.",
+  "file_filter_image": "Image",
+  "alert_no_image": "No image loaded to process!",
+  "alert_process_fail": "Failed to process image: {error}"
+}

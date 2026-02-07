@@ -1,0 +1,19 @@
+{
+  "app_title": "Licznik Ptaków",
+  "drag_text": "Przeciągnij i upuść obraz tutaj",
+  "drag_subtext": "lub użyj przycisków poniżej",
+  "use_camera": "Użyj aparatu",
+  "load_gallery": "Wczytaj z galerii",
+  "count_prefix": "Zliczono",
+  "count_suffix": "ptaków",
+  "crop": "Kadruj",
+  "count": "Zlicz",
+  "back_aria": "Wróć",
+  "preview_alt": "Podgląd",
+  "lang_label": "Język",
+  "alert_drop_image": "Upuść plik obrazu",
+  "alert_open_camera_fail": "Nie można otworzyć aparatu. Upewnij się, że przyznano uprawnienia do aparatu.",
+  "file_filter_image": "Obraz",
+  "alert_no_image": "Brak obrazu do przetworzenia!",
+  "alert_process_fail": "Nie udało się przetworzyć obrazu: {error}"
+}

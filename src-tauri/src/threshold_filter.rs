@@ -12,7 +12,7 @@ impl ThresholdFilter {
     }
 
     /// Identify birds in the image by applying thresholding and finding contours.
-    pub fn apply(&self, payload: Vec<u8>) -> Result<Vec<u8>, String> {
+    pub fn apply(&self, payload: Vec<u8>) -> Result<(Vec<u8>, usize), String> {
         let vec: core::Vector<u8> = core::Vector::from_iter(payload);
         let gray = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_GRAYSCALE)
             .map_err(|e| format!("Failed to read image: {}", e))?;
@@ -60,6 +60,8 @@ impl ThresholdFilter {
         )
         .map_err(|e| format!("Find contours error: {}", e))?;
 
+        let contour_count = contours.len();
+
         // Draw all contours on the RGB image (red color)
         imgproc::draw_contours(
             &mut rgb_image,
@@ -80,6 +82,6 @@ impl ThresholdFilter {
         imgcodecs::imencode(".png", &rgb_image, &mut buf, &params)
             .map_err(|e| format!("OpenCV encode error: {}", e))?;
 
-        Ok(buf.to_vec())
+        Ok((buf.to_vec(), contour_count))
     }
 }

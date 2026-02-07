@@ -2,6 +2,12 @@
 mod threshold_filter;
 pub use threshold_filter::ThresholdFilter;
 
+#[derive(serde::Serialize)]
+struct ProcessResult {
+    bytes: Vec<u8>,
+    count: u32,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -73,9 +79,13 @@ async fn open_camera() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn process_image(payload: Vec<u8>) -> Result<Vec<u8>, String> {
+fn process_image(payload: Vec<u8>) -> Result<ProcessResult, String> {
     let filter = ThresholdFilter::new(117);
-    filter.apply(payload)
+    let (bytes, count) = filter.apply(payload)?;
+    Ok(ProcessResult {
+        bytes,
+        count: count as u32,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

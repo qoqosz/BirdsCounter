@@ -133,6 +133,47 @@ h1 {
     color: var(--text-primary);
 }
 
+.lang-switch {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.lang-switch select {
+    appearance: none;
+    border: 1px solid var(--border-default);
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    padding: 0.35rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    box-shadow: 0 1px 4px var(--shadow-sm);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lang-switch select:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 6px var(--shadow-accent);
+}
+
+.lang-switch select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
 /* ===== Drag & Drop Area ===== */
 .drag-drop-area {
     width: 100%;
@@ -263,6 +304,7 @@ h1 {
     background-color: var(--bg-surface);
     flex-shrink: 1;
     min-height: 0;
+    position: relative;
 }
 
 .image-preview img {
@@ -271,6 +313,127 @@ h1 {
     max-height: 100%;
     display: block;
     object-fit: contain;
+}
+
+/* ===== Count Label ===== */
+.count-label {
+    width: 100%;
+    max-width: 500px;
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 0.5rem;
+}
+
+/* ===== Crop Overlay ===== */
+.crop-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;
+}
+
+.crop-overlay.is-active {
+    display: block;
+}
+
+.crop-mask {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.crop-box {
+    position: absolute;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+    cursor: move;
+    touch-action: none;
+    pointer-events: auto;
+}
+
+.crop-box::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px dashed rgba(255, 255, 255, 0.6);
+    pointer-events: none;
+}
+
+.crop-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: #ffffff;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    pointer-events: auto;
+}
+
+.handle-nw {
+    left: -6px;
+    top: -6px;
+    cursor: nwse-resize;
+}
+
+.handle-ne {
+    right: -6px;
+    top: -6px;
+    cursor: nesw-resize;
+}
+
+.handle-sw {
+    left: -6px;
+    bottom: -6px;
+    cursor: nesw-resize;
+}
+
+.handle-se {
+    right: -6px;
+    bottom: -6px;
+    cursor: nwse-resize;
+}
+
+/* ===== Process Actions ===== */
+.process-actions {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1rem;
+}
+
+.process-actions .action-button {
+    flex: 1;
+    min-width: 0;
+    height: 56px;
+    min-height: 56px;
+}
+
+.process-actions .process-button {
+    width: auto;
+    max-width: none;
+}
+
+.crop-button {
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    border-color: var(--border-default);
+}
+
+.crop-button:hover {
+    background-color: var(--bg-surface-hover);
+    border-color: var(--accent-hover);
+    color: var(--accent-hover);
+    box-shadow: 0 4px 12px var(--shadow-accent);
+}
+
+.crop-button.is-active {
+    background-color: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px var(--shadow-accent);
 }
 
 /* ===== Process Button ===== */
@@ -522,5 +685,9 @@ body.is-android .process-button {
     .action-button {
         width: 100%;
         min-width: unset;
+    }
+
+    .process-actions {
+        flex-direction: column;
     }
 }
