@@ -90,6 +90,9 @@
         </p>
 
         <div id="processActions" class="process-actions" style="display: none;">
+            <button id="cropCancelBtn" class="action-button cancel-button" type="button">
+                <span data-i18n="cancel">Anuluj</span>
+            </button>
             <button id="cropBtn" class="action-button crop-button" aria-pressed="false">
                 <span data-i18n="crop">Kadruj</span>
             </button>
@@ -97,7 +100,7 @@
 
         <div id="settingsPanel" class="settings-panel" style="display: none;">
             <h2 class="settings-title" data-i18n="settings_title">Detection settings</h2>
-            <div class="settings-grid">
+            <div class="settings-grid settings-basic">
                 <div class="settings-field">
                     <label for="minRadius" data-i18n="min_radius">Min radius</label>
                     <div class="range-row">
@@ -112,68 +115,75 @@
                         <span id="maxRadiusValue" class="range-value">20.0</span>
                     </div>
                 </div>
-                <div class="settings-field">
-                    <label for="blur" data-i18n="blur">Blur (odd)</label>
-                    <div class="range-row">
-                        <input type="range" id="blur" min="1" max="15" step="2" value="3" />
-                        <span id="blurValue" class="range-value">3</span>
-                    </div>
-                </div>
-                <div class="settings-field">
-                    <label for="thresholdMethod" data-i18n="threshold_method">Threshold</label>
-                    <select id="thresholdMethod" class="settings-select">
-                        <option value="adaptive" data-i18n="threshold_adaptive">Adaptive</option>
-                        <option value="otsu" data-i18n="threshold_otsu">Otsu</option>
-                    </select>
-                </div>
-                <div class="settings-field">
-                    <label for="adaptiveBlock" data-i18n="adaptive_block">Adaptive block</label>
-                    <div class="range-row">
-                        <input type="range" id="adaptiveBlock" min="3" max="61" step="2" value="31" />
-                        <span id="adaptiveBlockValue" class="range-value">31</span>
-                    </div>
-                </div>
-                <div class="settings-field">
-                    <label for="adaptiveC" data-i18n="adaptive_c">Adaptive C</label>
-                    <div class="range-row">
-                        <input type="range" id="adaptiveC" min="-10" max="10" step="0.5" value="4" />
-                        <span id="adaptiveCValue" class="range-value">4.0</span>
-                    </div>
-                </div>
-                <div class="settings-field">
-                    <label for="morphKernel" data-i18n="morph_kernel">Morph kernel</label>
-                    <div class="range-row">
-                        <input type="range" id="morphKernel" min="1" max="11" step="2" value="3" />
-                        <span id="morphKernelValue" class="range-value">3</span>
-                    </div>
-                </div>
-                <div class="settings-field">
-                    <label for="morphOpenIter" data-i18n="morph_open_iter">Morph open</label>
-                    <div class="range-row">
-                        <input type="range" id="morphOpenIter" min="0" max="5" step="1" value="1" />
-                        <span id="morphOpenIterValue" class="range-value">1</span>
-                    </div>
-                </div>
-                <div class="settings-field">
-                    <label for="morphCloseIter" data-i18n="morph_close_iter">Morph close</label>
-                    <div class="range-row">
-                        <input type="range" id="morphCloseIter" min="0" max="5" step="1" value="1" />
-                        <span id="morphCloseIterValue" class="range-value">1</span>
-                    </div>
-                </div>
-                <div class="settings-field toggle-field">
-                    <label class="toggle-label" for="autoInvert">
-                        <input type="checkbox" id="autoInvert" checked />
-                        <span data-i18n="auto_invert">Auto invert</span>
-                    </label>
-                </div>
-                <div class="settings-field toggle-field">
-                    <label class="toggle-label" for="invert">
-                        <input type="checkbox" id="invert" />
-                        <span data-i18n="invert">Invert</span>
-                    </label>
-                </div>
             </div>
+            <details id="advancedSettings" class="settings-advanced">
+                <summary class="advanced-summary">
+                    <span data-i18n="advanced_settings">Advanced</span>
+                </summary>
+                <div class="settings-grid settings-advanced-grid">
+                    <div class="settings-field">
+                        <label for="blur" data-i18n="blur">Blur (odd)</label>
+                        <div class="range-row">
+                            <input type="range" id="blur" min="1" max="15" step="2" value="3" />
+                            <span id="blurValue" class="range-value">3</span>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="thresholdMethod" data-i18n="threshold_method">Threshold</label>
+                        <select id="thresholdMethod" class="settings-select">
+                            <option value="adaptive" data-i18n="threshold_adaptive">Adaptive</option>
+                            <option value="otsu" data-i18n="threshold_otsu">Otsu</option>
+                        </select>
+                    </div>
+                    <div class="settings-field">
+                        <label for="adaptiveBlock" data-i18n="adaptive_block">Adaptive block</label>
+                        <div class="range-row">
+                            <input type="range" id="adaptiveBlock" min="3" max="61" step="2" value="31" />
+                            <span id="adaptiveBlockValue" class="range-value">31</span>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="adaptiveC" data-i18n="adaptive_c">Adaptive C</label>
+                        <div class="range-row">
+                            <input type="range" id="adaptiveC" min="-10" max="10" step="0.5" value="4" />
+                            <span id="adaptiveCValue" class="range-value">4.0</span>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="morphKernel" data-i18n="morph_kernel">Morph kernel</label>
+                        <div class="range-row">
+                            <input type="range" id="morphKernel" min="1" max="11" step="2" value="3" />
+                            <span id="morphKernelValue" class="range-value">3</span>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="morphOpenIter" data-i18n="morph_open_iter">Morph open</label>
+                        <div class="range-row">
+                            <input type="range" id="morphOpenIter" min="0" max="5" step="1" value="1" />
+                            <span id="morphOpenIterValue" class="range-value">1</span>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="morphCloseIter" data-i18n="morph_close_iter">Morph close</label>
+                        <div class="range-row">
+                            <input type="range" id="morphCloseIter" min="0" max="5" step="1" value="1" />
+                            <span id="morphCloseIterValue" class="range-value">1</span>
+                        </div>
+                    </div>
+                    <div class="settings-field toggle-field">
+                        <label class="toggle-label" for="autoInvert">
+                            <input type="checkbox" id="autoInvert" checked />
+                            <span data-i18n="auto_invert">Auto invert</span>
+                        </label>
+                    </div>
+                    <div class="settings-field toggle-field">
+                        <label class="toggle-label" for="invert">
+                            <input type="checkbox" id="invert" />
+                            <span data-i18n="invert">Invert</span>
+                        </label>
+                    </div>
+                </div>
+            </details>
         </div>
     </main>
 </body>

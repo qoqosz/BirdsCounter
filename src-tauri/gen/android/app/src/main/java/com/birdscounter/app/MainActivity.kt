@@ -3,6 +3,7 @@ package com.birdscounter.app
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
@@ -68,6 +69,7 @@ class MainActivity : TauriActivity() {
     override fun onWebViewCreate(webView: WebView) {
         this.webView = webView
         webView.addJavascriptInterface(CameraInterface(), "Android")
+        applySystemAccentToWebView()
     }
     
     private fun hasCameraPermission(): Boolean {
@@ -146,6 +148,35 @@ class MainActivity : TauriActivity() {
             }
         }
     }
+
+    private fun applySystemAccentToWebView() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+
+        val accent400 = colorToHex(ContextCompat.getColor(this, android.R.color.system_accent1_400))
+        val accent500 = colorToHex(ContextCompat.getColor(this, android.R.color.system_accent1_500))
+        val accent600 = colorToHex(ContextCompat.getColor(this, android.R.color.system_accent1_600))
+
+        val js = """
+            (function () {
+                var root = document.documentElement;
+                if (!root) return;
+                root.style.setProperty('--system-accent', '$accent500');
+                root.style.setProperty('--system-accent-hover', '$accent400');
+                root.style.setProperty('--system-accent-active', '$accent600');
+            })();
+        """.trimIndent()
+
+        webView?.post {
+            webView?.evaluateJavascript(js, null)
+        }
+    }
+
+    private fun colorToHex(color: Int): String {
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        return String.format("#%02X%02X%02X", r, g, b)
+    }
     
     inner class CameraInterface {
         @JavascriptInterface
@@ -157,6 +188,17 @@ class MainActivity : TauriActivity() {
                     permissionLauncher.launch(Manifest.permission.CAMERA)
                 }
             }
+        }
+
+        @JavascriptInterface
+        fun getSystemAccentPalette(): String? {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+
+            val accent400 = colorToHex(ContextCompat.getColor(this@MainActivity, android.R.color.system_accent1_400))
+            val accent500 = colorToHex(ContextCompat.getColor(this@MainActivity, android.R.color.system_accent1_500))
+            val accent600 = colorToHex(ContextCompat.getColor(this@MainActivity, android.R.color.system_accent1_600))
+
+            return "{\"accent\":\"$accent500\",\"hover\":\"$accent400\",\"active\":\"$accent600\"}"
         }
     }
 }

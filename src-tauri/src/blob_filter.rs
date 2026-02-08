@@ -186,7 +186,7 @@ impl BlobFilter {
                 radius.round().max(1.0) as i32,
                 core::Scalar::new(0.0, 0.0, 255.0, 0.0),
                 2,
-                imgproc::LINE_8,
+                imgproc::LINE_AA,
                 0,
             )
             .map_err(|e| format!("Draw circle error: {}", e))?;

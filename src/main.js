@@ -14,6 +14,7 @@ let cameraInput;
 let previewImg;
 let imagePreview;
 let cropBtn;
+let cropCancelBtn;
 let processActions;
 let settingsPanel;
 let cropOverlay;
@@ -25,6 +26,7 @@ let backBtn;
 let fullscreenCloseBtn;
 let currentImageBytes = null;
 let originalImageBytes = null;
+let originalImageMime = null;
 let isPreviewVisible = false;
 let isCropping = false;
 let cropState = null;
@@ -58,8 +60,14 @@ let pendingProcess = false;
 let pendingProcessOptions = null;
 let processTimer = null;
 let isFullscreenPreview = false;
-let lastTouchTime = 0;
-let lastTouchTarget = null;
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
+let tapStartTime = 0;
+let tapStartX = 0;
+let tapStartY = 0;
+let isAndroid = false;
+let isMac = false;
 
 function normalizeLang(lang) {
   if (!lang) return DEFAULT_LANG;
@@ -206,9 +214,10 @@ function handleFileObject(file) {
   reader.onload = (e) => {
     // Store raw bytes for processing
     originalImageBytes = new Uint8Array(e.target.result);
-    currentImageBytes = originalImageBytes;
+    currentImageBytes = new Uint8Array(originalImageBytes);
+    originalImageMime = file.type || null;
     // Create blob for display
-    const blob = new Blob([originalImageBytes], { type: file.type });
+    const blob = new Blob([originalImageBytes], { type: file.type || undefined });
     previewImg.src = URL.createObjectURL(blob);
     showPreview();
   };
@@ -224,7 +233,9 @@ function showPreview() {
   if (processActions) processActions.style.display = "flex";
   if (settingsPanel) settingsPanel.style.display = "flex";
   if (backBtn) backBtn.style.display = "flex";
-  dragDropArea.style.display = "none";
+  if (dragDropArea && !isAndroid) {
+    dragDropArea.style.display = "none";
+  }
   document.querySelector(".button-container").style.display = "none";
   resetCropUI();
   updateCount(0);
@@ -245,10 +256,13 @@ function resetApp() {
   if (processActions) processActions.style.display = "none";
   if (settingsPanel) settingsPanel.style.display = "none";
   if (backBtn) backBtn.style.display = "none";
-  dragDropArea.style.display = "flex";
+  if (dragDropArea && !isAndroid) {
+    dragDropArea.style.display = "flex";
+  }
   document.querySelector(".button-container").style.display = "flex";
   currentImageBytes = null;
   originalImageBytes = null;
+  originalImageMime = null;
   if (previewImg) previewImg.src = "";
   resetCropUI();
   updateCount(0);
@@ -265,6 +279,7 @@ function toggleFullscreenPreview() {
   if (!isPreviewVisible || isCropping) return;
   setFullscreenPreview(!isFullscreenPreview);
 }
+
 
 function updateCount(value) {
   if (!countValue) return;
@@ -357,6 +372,9 @@ function updateCropButtonState(active) {
   if (!cropBtn) return;
   cropBtn.classList.toggle("is-active", active);
   cropBtn.setAttribute("aria-pressed", active ? "true" : "false");
+  if (cropCancelBtn) {
+    cropCancelBtn.style.display = active ? "inline-flex" : "none";
+  }
 }
 
 function resetCropUI() {
@@ -494,11 +512,17 @@ function exitCropMode() {
 
 async function applyCrop() {
   if (!cropState || !previewImg) return;
+  const sourceBytes = originalImageBytes ?? currentImageBytes;
+  if (!sourceBytes) return;
   const imageRect = previewImg.getBoundingClientRect();
   if (imageRect.width === 0 || imageRect.height === 0) return;
 
-  const scaleX = previewImg.naturalWidth / imageRect.width;
-  const scaleY = previewImg.naturalHeight / imageRect.height;
+  const sourceImage = await loadImageFromBytes(
+    sourceBytes,
+    originalImageMime,
+  );
+  const scaleX = sourceImage.naturalWidth / imageRect.width;
+  const scaleY = sourceImage.naturalHeight / imageRect.height;
 
   const sx = Math.max(0, Math.round(cropState.x * scaleX));
   const sy = Math.max(0, Math.round(cropState.y * scaleY));
@@ -510,7 +534,7 @@ async function applyCrop() {
   canvas.height = sHeight;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  ctx.drawImage(previewImg, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+  ctx.drawImage(sourceImage, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
   const blob = await new Promise((resolve) =>
     canvas.toBlob(resolve, "image/png"),
@@ -519,7 +543,8 @@ async function applyCrop() {
 
   const buf = await blob.arrayBuffer();
   originalImageBytes = new Uint8Array(buf);
-  currentImageBytes = originalImageBytes;
+  currentImageBytes = new Uint8Array(originalImageBytes);
+  originalImageMime = "image/png";
   previewImg.src = URL.createObjectURL(blob);
   updateCount(0);
 }
@@ -617,10 +642,12 @@ window.onCameraResult = async function (dataUrl) {
     previewImg.src = dataUrl;
     // For Android dataUrl, we might need to fetch it to get bytes if we want to process it
     try {
+      const match = dataUrl.match(/^data:([^;,]+)[;,]/i);
+      originalImageMime = match ? match[1] : null;
       const res = await fetch(dataUrl);
       const buf = await res.arrayBuffer();
       originalImageBytes = new Uint8Array(buf);
-      currentImageBytes = originalImageBytes;
+      currentImageBytes = new Uint8Array(originalImageBytes);
     } catch (e) {
       console.error("Failed to load camera image bytes", e);
     }
@@ -646,7 +673,8 @@ async function openGallery() {
       try {
         const contents = await readFile(filePath);
         originalImageBytes = new Uint8Array(contents);
-        currentImageBytes = originalImageBytes;
+        currentImageBytes = new Uint8Array(originalImageBytes);
+        originalImageMime = guessMimeFromPath(filePath);
         const blob = new Blob([originalImageBytes]);
         previewImg.src = URL.createObjectURL(blob);
         showPreview();
@@ -660,7 +688,8 @@ async function openGallery() {
           const res = await fetch(convertFileSrc(filePath));
           const buf = await res.arrayBuffer();
           originalImageBytes = new Uint8Array(buf);
-          currentImageBytes = originalImageBytes;
+          currentImageBytes = new Uint8Array(originalImageBytes);
+          originalImageMime = guessMimeFromPath(filePath);
         } catch (e) {
           console.error("Failed to fetch asset bytes", e);
         }
@@ -733,7 +762,7 @@ async function runProcess(options = {}) {
 
 async function processImage(options = {}) {
   const { applyCrop = true } = options;
-  const sourceBytes = originalImageBytes ?? currentImageBytes;
+  const sourceBytes = originalImageBytes;
   if (!sourceBytes) {
     alert(t("alert_no_image"));
     return;
@@ -766,6 +795,34 @@ async function processImage(options = {}) {
   }
 }
 
+function guessMimeFromPath(path) {
+  if (!path) return null;
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".bmp")) return "image/bmp";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return null;
+}
+
+async function loadImageFromBytes(bytes, mime) {
+  const blob = new Blob([bytes], { type: mime || "image/png" });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  return await new Promise((resolve, reject) => {
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = (e) => {
+      URL.revokeObjectURL(url);
+      reject(e);
+    };
+    img.src = url;
+  });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   dragDropArea = document.querySelector("#dragDropArea");
   cameraBtn = document.querySelector("#cameraBtn");
@@ -780,6 +837,7 @@ window.addEventListener("DOMContentLoaded", () => {
   processActions = document.querySelector("#processActions");
   settingsPanel = document.querySelector("#settingsPanel");
   cropBtn = document.querySelector("#cropBtn");
+  cropCancelBtn = document.querySelector("#cropCancelBtn");
   cropOverlay = document.querySelector("#cropOverlay");
   cropBox = document.querySelector("#cropBox");
   cropMasks = {
@@ -810,7 +868,38 @@ window.addEventListener("DOMContentLoaded", () => {
   autoInvertInput = document.querySelector("#autoInvert");
   invertInput = document.querySelector("#invert");
 
-  if (dragDropArea) {
+  const applySystemAccentFromAndroid = () => {
+    if (!window.Android || typeof window.Android.getSystemAccentPalette !== "function") {
+      return;
+    }
+    try {
+      const paletteJson = window.Android.getSystemAccentPalette();
+      if (!paletteJson) return;
+      const palette = JSON.parse(paletteJson);
+      const root = document.documentElement;
+      if (!root) return;
+      if (palette.accent) root.style.setProperty("--system-accent", palette.accent);
+      if (palette.hover) root.style.setProperty("--system-accent-hover", palette.hover);
+      if (palette.active) root.style.setProperty("--system-accent-active", palette.active);
+    } catch (e) {
+      console.warn("Failed to apply Android system accent:", e);
+    }
+  };
+
+  isAndroid = /Android/i.test(navigator.userAgent);
+  isMac = /Mac/i.test(navigator.userAgent);
+
+  if (isAndroid) {
+    document.body.classList.add("is-android");
+    applySystemAccentFromAndroid();
+    if (dragDropArea) {
+      dragDropArea.style.display = "none";
+    }
+  } else if (isMac) {
+    document.body.classList.add("is-mac");
+  }
+
+  if (dragDropArea && !isAndroid) {
     setupDragAndDrop();
   }
 
@@ -824,6 +913,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
   if (cropBtn) {
     cropBtn.addEventListener("click", toggleCrop);
+  }
+  if (cropCancelBtn) {
+    cropCancelBtn.addEventListener("click", () => {
+      if (!isCropping) return;
+      exitCropMode();
+    });
   }
 
   bindRangeValue(minRadiusInput, minRadiusValue, (value) => formatFixed(value, 1));
@@ -845,30 +940,53 @@ window.addEventListener("DOMContentLoaded", () => {
     previewImg.addEventListener("load", updateRadiusLimits);
   }
   if (previewImg) {
-    previewImg.addEventListener("click", () => {
-      const isMac = /Mac/i.test(navigator.userAgent);
-      if (!isMac) return;
+    previewImg.addEventListener("dblclick", (e) => {
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      if (isAndroid) return;
+      e.preventDefault();
+      e.stopPropagation();
       toggleFullscreenPreview();
     });
-    previewImg.addEventListener("dblclick", () => {
-      toggleFullscreenPreview();
-    });
+
+    previewImg.addEventListener(
+      "touchstart",
+      (e) => {
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        if (!isAndroid) return;
+        if (e.touches.length !== 1) return;
+        tapStartTime = Date.now();
+        tapStartX = e.touches[0].clientX;
+        tapStartY = e.touches[0].clientY;
+      },
+      { passive: true },
+    );
 
     previewImg.addEventListener(
       "touchend",
       (e) => {
         const isAndroid = /Android/i.test(navigator.userAgent);
         if (!isAndroid) return;
+        if (e.changedTouches.length !== 1) return;
         const now = Date.now();
-        const target = e.target;
-        if (now - lastTouchTime < 350 && lastTouchTarget === target) {
-          toggleFullscreenPreview();
-          lastTouchTime = 0;
-          lastTouchTarget = null;
+        const touch = e.changedTouches[0];
+        const travel = Math.hypot(touch.clientX - tapStartX, touch.clientY - tapStartY);
+        const elapsed = now - tapStartTime;
+        const isTap = travel < 12 && elapsed < 250;
+        if (!isTap) {
+          lastTapTime = 0;
           return;
         }
-        lastTouchTime = now;
-        lastTouchTarget = target;
+
+        const delta = now - lastTapTime;
+        const dist = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+        if (delta < 320 && dist < 28) {
+          toggleFullscreenPreview();
+          lastTapTime = 0;
+          return;
+        }
+        lastTapTime = now;
+        lastTapX = touch.clientX;
+        lastTapY = touch.clientY;
       },
       { passive: true },
     );
@@ -933,16 +1051,6 @@ window.addEventListener("DOMContentLoaded", () => {
     initialLang = normalizeLang(navigator.language);
   }
   setLanguage(initialLang);
-
-  // Platform detection for styling
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const isMac = /Mac/i.test(navigator.userAgent);
-
-  if (isAndroid) {
-    document.body.classList.add("is-android");
-  } else if (isMac) {
-    document.body.classList.add("is-mac");
-  }
 
   // Swipe back gesture for Android
   // Note: We use a swipe area starting at 50px to avoid conflict with system edge gestures

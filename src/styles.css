@@ -298,8 +298,8 @@ h1 {
 
 /* ===== Image Preview ===== */
 .image-preview {
-    width: 100%;
-    max-width: none;
+    width: fit-content;
+    max-width: 100%;
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 4px 12px var(--shadow-md);
@@ -307,13 +307,14 @@ h1 {
     flex-shrink: 1;
     min-height: 0;
     position: relative;
-    align-self: stretch;
+    align-self: center;
 }
 
 .image-preview img {
-    width: 100%;
+    width: auto;
     height: auto;
-    max-height: none;
+    max-width: 100%;
+    max-height: 100%;
     display: block;
     object-fit: contain;
 }
@@ -326,6 +327,11 @@ body.fullscreen-preview {
     position: fixed;
     inset: 0;
     z-index: 40;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    box-sizing: border-box;
     border-radius: 0;
     background: #000000;
     box-shadow: none;
@@ -336,10 +342,11 @@ body.fullscreen-preview {
 }
 
 .image-preview.is-fullscreen img {
-    width: auto;
+    width: 100%;
     height: 100%;
     max-width: 100%;
     max-height: 100%;
+    object-fit: contain;
     border-radius: 0;
 }
 
@@ -372,6 +379,15 @@ body.fullscreen-preview {
 .fullscreen-close:active {
     background: rgba(0, 0, 0, 0.75);
     transform: scale(0.96);
+}
+
+body.is-android .image-preview.is-fullscreen .fullscreen-close {
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+}
+
+body.is-android .image-preview img {
+    touch-action: manipulation;
 }
 
 /* ===== Count Label ===== */
@@ -495,6 +511,20 @@ body.fullscreen-preview {
     box-shadow: 0 4px 12px var(--shadow-accent);
 }
 
+.cancel-button {
+    display: none;
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    border-color: var(--border-default);
+}
+
+.cancel-button:hover {
+    background-color: var(--bg-surface-hover);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px var(--shadow-md);
+}
+
 /* ===== Process Button ===== */
 .process-button {
     width: 100%;
@@ -546,6 +576,45 @@ body.fullscreen-preview {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 0.75rem 1rem;
+}
+
+.settings-advanced {
+    border-top: 1px solid var(--border-default);
+    padding-top: 0.75rem;
+}
+
+.advanced-summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    gap: 0.75rem;
+}
+
+.advanced-summary::-webkit-details-marker {
+    display: none;
+}
+
+.advanced-summary::after {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--text-secondary);
+    transition: transform 0.2s ease;
+}
+
+.settings-advanced[open] .advanced-summary::after {
+    transform: rotate(180deg);
+}
+
+.settings-advanced-grid {
+    margin-top: 0.75rem;
 }
 
 .settings-field {
@@ -673,9 +742,9 @@ body.is-android {
     --bg-surface-hover: #f3edf7;
     --text-primary: #1d1b20;
     --text-secondary: #49454f;
-    --accent: #6750a4;
-    --accent-hover: #7965af;
-    --accent-active: #4f378b;
+    --accent: var(--system-accent, #6750a4);
+    --accent-hover: var(--system-accent-hover, #7965af);
+    --accent-active: var(--system-accent-active, #4f378b);
     --border-default: #79747e;
     --shadow-sm: rgba(0, 0, 0, 0.15);
 }
@@ -683,6 +752,12 @@ body.is-android {
 body.is-android .container {
     /* Extra padding for Android notch */
     padding-top: calc(2rem + env(safe-area-inset-top, 0px));
+    min-height: 100vh;
+}
+
+body.is-android .button-container {
+    margin-top: auto;
+    margin-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 body.is-android h1 {
@@ -724,6 +799,7 @@ body.is-android .gallery-button:active {
 }
 
 body.is-android .drag-drop-area {
+    display: none;
     background-color: var(--bg-surface);
     border-radius: 16px;
     border: 2px dashed var(--border-default);
@@ -760,9 +836,9 @@ body.is-android .process-button {
         --bg-surface-hover: #2b2930;
         --text-primary: #e6e0e9;
         --text-secondary: #cac4d0;
-        --accent: #d0bcff;
-        --accent-hover: #e8def8;
-        --accent-active: #b69df8;
+        --accent: var(--system-accent, #d0bcff);
+        --accent-hover: var(--system-accent-hover, #e8def8);
+        --accent-active: var(--system-accent-active, #b69df8);
         --border-default: #938f99;
     }
 
