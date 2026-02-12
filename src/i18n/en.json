@@ -7,6 +7,8 @@
   "count_prefix": "Counted",
   "count_suffix": "birds",
   "crop": "Crop",
+  "mask": "Mask",
+  "mask_brush_size": "Brush size",
   "cancel": "Cancel",
   "count": "Count",
   "back_aria": "Go back",

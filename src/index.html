@@ -69,6 +69,9 @@
                     <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
             </button>
+            <div id="maskOverlay" class="mask-overlay" aria-hidden="true">
+                <canvas id="maskCanvas"></canvas>
+            </div>
             <div id="cropOverlay" class="crop-overlay" aria-hidden="true">
                 <div class="crop-mask crop-mask-top"></div>
                 <div class="crop-mask crop-mask-right"></div>
@@ -96,6 +99,17 @@
             <button id="cropBtn" class="action-button crop-button" aria-pressed="false">
                 <span data-i18n="crop">Kadruj</span>
             </button>
+            <button id="maskBtn" class="action-button mask-button" aria-pressed="false">
+                <span data-i18n="mask">Maskuj</span>
+            </button>
+        </div>
+
+        <div id="maskBrushControls" class="mask-brush-controls" style="display: none;">
+            <label for="maskBrushSize" data-i18n="mask_brush_size">Rozmiar pędzla</label>
+            <div class="range-row">
+                <input type="range" id="maskBrushSize" min="6" max="120" step="1" value="24" />
+                <span id="maskBrushSizeValue" class="range-value">24</span>
+            </div>
         </div>
 
         <div id="settingsPanel" class="settings-panel" style="display: none;">

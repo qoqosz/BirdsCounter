@@ -45,7 +45,11 @@ impl BlobFilter {
         Self { params }
     }
 
-    pub fn apply(&self, payload: Vec<u8>) -> Result<(Vec<u8>, usize), String> {
+    pub fn apply(
+        &self,
+        payload: Vec<u8>,
+        mask_payload: Option<Vec<u8>>,
+    ) -> Result<(Vec<u8>, usize), String> {
         let params = &self.params;
 
         let vec: core::Vector<u8> = core::Vector::from_iter(payload);
@@ -145,6 +149,11 @@ impl BlobFilter {
             cleaned = opened
                 .try_clone()
                 .map_err(|e| format!("Morph close clone error: {}", e))?;
+        }
+
+        if let Some(mask_bytes) = mask_payload {
+            let mask = decode_mask(mask_bytes, cleaned.cols(), cleaned.rows())?;
+            cleaned = apply_exclusion_mask(&cleaned, &mask)?;
         }
 
         let mut contours: core::Vector<core::Vector<core::Point>> = core::Vector::new();
@@ -247,6 +256,52 @@ fn invert_image(src: &core::Mat) -> Result<core::Mat, String> {
     core::bitwise_not(src, &mut inverted, &core::no_array())
         .map_err(|e| format!("Invert error: {}", e))?;
     Ok(inverted)
+}
+
+fn decode_mask(mask_bytes: Vec<u8>, width: i32, height: i32) -> Result<core::Mat, String> {
+    let vec: core::Vector<u8> = core::Vector::from_iter(mask_bytes);
+    let decoded = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_GRAYSCALE)
+        .map_err(|e| format!("Mask decode error: {}", e))?;
+    if decoded.empty() {
+        return Err("Mask decode failed".to_string());
+    }
+
+    let mut resized = core::Mat::default();
+    if decoded.cols() != width || decoded.rows() != height {
+        imgproc::resize(
+            &decoded,
+            &mut resized,
+            core::Size::new(width, height),
+            0.0,
+            0.0,
+            imgproc::INTER_NEAREST,
+        )
+        .map_err(|e| format!("Mask resize error: {}", e))?;
+    } else {
+        resized = decoded;
+    }
+
+    let mut binary_mask = core::Mat::default();
+    imgproc::threshold(
+        &resized,
+        &mut binary_mask,
+        1.0,
+        255.0,
+        imgproc::THRESH_BINARY,
+    )
+    .map_err(|e| format!("Mask threshold error: {}", e))?;
+    Ok(binary_mask)
+}
+
+fn apply_exclusion_mask(src: &core::Mat, exclusion_mask: &core::Mat) -> Result<core::Mat, String> {
+    let mut keep_mask = core::Mat::default();
+    core::bitwise_not(exclusion_mask, &mut keep_mask, &core::no_array())
+        .map_err(|e| format!("Mask invert error: {}", e))?;
+
+    let mut masked = core::Mat::default();
+    core::bitwise_and(src, &keep_mask, &mut masked, &core::no_array())
+        .map_err(|e| format!("Mask apply error: {}", e))?;
+    Ok(masked)
 }
 
 fn contour_center(contour: &core::Vector<core::Point>) -> Result<Option<core::Point>, String> {

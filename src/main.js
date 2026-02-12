@@ -3,6 +3,7 @@ const { open } = window.__TAURI__.dialog;
 const { readFile } = window.__TAURI__.fs;
 
 const MIN_CROP_SIZE = 40;
+const DEFAULT_MASK_BRUSH_SIZE = 24;
 const SUPPORTED_LANGS = ["en", "pl"];
 const DEFAULT_LANG = "en";
 
@@ -14,12 +15,18 @@ let cameraInput;
 let previewImg;
 let imagePreview;
 let cropBtn;
+let maskBtn;
 let cropCancelBtn;
 let processActions;
 let settingsPanel;
 let cropOverlay;
 let cropBox;
 let cropMasks = {};
+let maskOverlay;
+let maskCanvas;
+let maskBrushControls;
+let maskBrushInput;
+let maskBrushValue;
 let countLabel;
 let countValue;
 let backBtn;
@@ -29,9 +36,14 @@ let originalImageBytes = null;
 let originalImageMime = null;
 let isPreviewVisible = false;
 let isCropping = false;
+let isMasking = false;
 let cropState = null;
 let cropBounds = { width: 0, height: 0 };
 let cropDragState = null;
+let maskDragState = null;
+let maskBitmap = null;
+let maskContext = null;
+let maskHasPaint = false;
 let langSelect;
 let translations = {};
 let currentLang = DEFAULT_LANG;
@@ -238,6 +250,8 @@ function showPreview() {
   }
   document.querySelector(".button-container").style.display = "none";
   resetCropUI();
+  clearMaskData();
+  resetMaskUI();
   updateCount(0);
   scheduleProcess({ applyCrop: false });
 }
@@ -265,6 +279,8 @@ function resetApp() {
   originalImageMime = null;
   if (previewImg) previewImg.src = "";
   resetCropUI();
+  clearMaskData();
+  resetMaskUI();
   updateCount(0);
 }
 
@@ -273,10 +289,15 @@ function setFullscreenPreview(active) {
   isFullscreenPreview = active;
   imagePreview.classList.toggle("is-fullscreen", active);
   document.body.classList.toggle("fullscreen-preview", active);
+  updateMaskOverlayState();
+  requestAnimationFrame(() => {
+    syncMaskCanvasSize();
+    renderMaskPreview();
+  });
 }
 
 function toggleFullscreenPreview() {
-  if (!isPreviewVisible || isCropping) return;
+  if (!isPreviewVisible || isCropping || isMasking) return;
   setFullscreenPreview(!isFullscreenPreview);
 }
 
@@ -371,9 +392,209 @@ function updateCropButtonState(active) {
   if (!cropBtn) return;
   cropBtn.classList.toggle("is-active", active);
   cropBtn.setAttribute("aria-pressed", active ? "true" : "false");
-  if (cropCancelBtn) {
-    cropCancelBtn.style.display = active ? "inline-flex" : "none";
+}
+
+function updateMaskButtonState(active) {
+  if (!maskBtn) return;
+  maskBtn.classList.toggle("is-active", active);
+  maskBtn.setAttribute("aria-pressed", active ? "true" : "false");
+}
+
+function updateCancelButtonState() {
+  if (!cropCancelBtn) return;
+  cropCancelBtn.style.display = isCropping || isMasking ? "inline-flex" : "none";
+}
+
+function updateMaskBrushControlsState() {
+  if (!maskBrushControls) return;
+  maskBrushControls.style.display = isMasking ? "flex" : "none";
+}
+
+function updateMaskOverlayState() {
+  if (!maskOverlay) return;
+  maskOverlay.classList.toggle("is-active", isMasking);
+  maskOverlay.classList.toggle(
+    "has-mask",
+    maskHasPaint && !isMasking && !isCropping && !isFullscreenPreview,
+  );
+}
+
+function updateMaskBrushValue() {
+  if (!maskBrushInput || !maskBrushValue) return;
+  maskBrushValue.textContent = String(maskBrushInput.value);
+}
+
+function clearMaskData() {
+  maskHasPaint = false;
+  maskDragState = null;
+  maskBitmap = null;
+  maskContext = null;
+  if (maskCanvas) {
+    const ctx = maskCanvas.getContext("2d");
+    if (ctx) {
+      ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    }
   }
+  updateMaskOverlayState();
+}
+
+function resetMaskUI() {
+  isMasking = false;
+  maskDragState = null;
+  updateMaskButtonState(false);
+  updateCancelButtonState();
+  updateMaskBrushControlsState();
+  updateMaskOverlayState();
+}
+
+function ensureMaskBitmap() {
+  if (!previewImg) return false;
+  if (!previewImg.naturalWidth || !previewImg.naturalHeight) return false;
+
+  const width = previewImg.naturalWidth;
+  const height = previewImg.naturalHeight;
+  if (maskBitmap && maskBitmap.width === width && maskBitmap.height === height && maskContext) {
+    return true;
+  }
+
+  maskBitmap = document.createElement("canvas");
+  maskBitmap.width = width;
+  maskBitmap.height = height;
+  maskContext = maskBitmap.getContext("2d");
+  if (!maskContext) {
+    maskBitmap = null;
+    return false;
+  }
+  return true;
+}
+
+function syncMaskCanvasSize() {
+  if (!maskCanvas || !previewImg) return;
+  const rect = previewImg.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  if (maskCanvas.width === width && maskCanvas.height === height) return;
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+}
+
+function renderMaskPreview() {
+  if (!maskCanvas) return;
+  syncMaskCanvasSize();
+  const overlayCtx = maskCanvas.getContext("2d");
+  if (!overlayCtx) return;
+  overlayCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+  if (!maskHasPaint || !maskBitmap) return;
+  overlayCtx.save();
+  overlayCtx.globalAlpha = isMasking ? 1.0 : 0.9;
+  overlayCtx.drawImage(maskBitmap, 0, 0, maskCanvas.width, maskCanvas.height);
+  overlayCtx.restore();
+}
+
+function getMaskBrushRadiusPixels() {
+  if (!maskBrushInput) return DEFAULT_MASK_BRUSH_SIZE;
+  const parsed = Number(maskBrushInput.value);
+  if (!Number.isFinite(parsed)) return DEFAULT_MASK_BRUSH_SIZE;
+  return Math.max(1, parsed);
+}
+
+function toMaskImagePoint(clientX, clientY) {
+  if (!maskCanvas || !maskBitmap) return null;
+  const rect = maskCanvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const x = Math.min(Math.max(clientX - rect.left, 0), rect.width);
+  const y = Math.min(Math.max(clientY - rect.top, 0), rect.height);
+
+  return {
+    x: (x / rect.width) * maskBitmap.width,
+    y: (y / rect.height) * maskBitmap.height,
+  };
+}
+
+function drawMaskStroke(from, to) {
+  if (!ensureMaskBitmap() || !maskContext || !maskCanvas || !maskBitmap) return;
+  const rect = maskCanvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+
+  const scaleX = maskBitmap.width / rect.width;
+  const scaleY = maskBitmap.height / rect.height;
+  const radius = getMaskBrushRadiusPixels() * Math.max(scaleX, scaleY);
+
+  maskContext.save();
+  maskContext.strokeStyle = "#ffffff";
+  maskContext.fillStyle = "#ffffff";
+  maskContext.lineCap = "round";
+  maskContext.lineJoin = "round";
+  maskContext.lineWidth = Math.max(1, radius * 2);
+  maskContext.beginPath();
+  maskContext.moveTo(from.x, from.y);
+  maskContext.lineTo(to.x, to.y);
+  maskContext.stroke();
+  maskContext.beginPath();
+  maskContext.arc(to.x, to.y, Math.max(1, radius), 0, Math.PI * 2);
+  maskContext.fill();
+  maskContext.restore();
+
+  maskHasPaint = true;
+  updateMaskOverlayState();
+  renderMaskPreview();
+}
+
+async function buildMaskPayload() {
+  if (!maskHasPaint || !maskBitmap) return null;
+  const blob = await new Promise((resolve) =>
+    maskBitmap.toBlob(resolve, "image/png"),
+  );
+  if (!blob) return null;
+  const buf = await blob.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+function enterMaskMode() {
+  if (!previewImg || !maskOverlay || !maskCanvas) return;
+  if (!previewImg.complete || previewImg.naturalWidth === 0) {
+    previewImg.addEventListener("load", enterMaskMode, { once: true });
+    return;
+  }
+
+  if (isFullscreenPreview) {
+    setFullscreenPreview(false);
+  }
+  if (isCropping) {
+    exitCropMode();
+  }
+
+  if (!ensureMaskBitmap()) return;
+  isMasking = true;
+  updateMaskButtonState(true);
+  updateCancelButtonState();
+  updateMaskBrushControlsState();
+  updateMaskOverlayState();
+  syncMaskCanvasSize();
+  renderMaskPreview();
+}
+
+function exitMaskMode(options = {}) {
+  const { process = false } = options;
+  isMasking = false;
+  maskDragState = null;
+  updateMaskButtonState(false);
+  updateCancelButtonState();
+  updateMaskBrushControlsState();
+  updateMaskOverlayState();
+  renderMaskPreview();
+  if (process) {
+    scheduleProcess({ applyCrop: false });
+  }
+}
+
+function toggleMask() {
+  if (!isMasking) {
+    enterMaskMode();
+    return;
+  }
+  exitMaskMode({ process: true });
 }
 
 function resetCropUI() {
@@ -384,6 +605,8 @@ function resetCropUI() {
     cropOverlay.classList.remove("is-active");
   }
   updateCropButtonState(false);
+  updateCancelButtonState();
+  updateMaskOverlayState();
 }
 
 function syncCropBounds() {
@@ -490,9 +713,14 @@ function enterCropMode() {
   if (isFullscreenPreview) {
     setFullscreenPreview(false);
   }
+  if (isMasking) {
+    exitMaskMode();
+  }
   cropOverlay.classList.add("is-active");
   isCropping = true;
   updateCropButtonState(true);
+  updateCancelButtonState();
+  updateMaskOverlayState();
   requestAnimationFrame(() => {
     if (isCropping) {
       setCropToDefault();
@@ -507,6 +735,8 @@ function exitCropMode() {
     cropOverlay.classList.remove("is-active");
   }
   updateCropButtonState(false);
+  updateCancelButtonState();
+  updateMaskOverlayState();
 }
 
 async function applyCrop() {
@@ -545,6 +775,8 @@ async function applyCrop() {
   currentImageBytes = new Uint8Array(originalImageBytes);
   originalImageMime = "image/png";
   previewImg.src = URL.createObjectURL(blob);
+  clearMaskData();
+  resetMaskUI();
   updateCount(0);
 }
 
@@ -607,6 +839,40 @@ function onCropPointerMove(e) {
 function onCropPointerUp(e) {
   if (!cropDragState || e.pointerId !== cropDragState.pointerId) return;
   cropDragState = null;
+}
+
+function onMaskPointerDown(e) {
+  if (!isMasking) return;
+  if (!ensureMaskBitmap() || !maskCanvas) return;
+
+  syncMaskCanvasSize();
+  const point = toMaskImagePoint(e.clientX, e.clientY);
+  if (!point) return;
+
+  maskDragState = {
+    pointerId: e.pointerId,
+    lastPoint: point,
+  };
+  maskCanvas.setPointerCapture(e.pointerId);
+  drawMaskStroke(point, point);
+  e.preventDefault();
+}
+
+function onMaskPointerMove(e) {
+  if (!maskDragState || e.pointerId !== maskDragState.pointerId) return;
+  const next = toMaskImagePoint(e.clientX, e.clientY);
+  if (!next) return;
+  drawMaskStroke(maskDragState.lastPoint, next);
+  maskDragState.lastPoint = next;
+  e.preventDefault();
+}
+
+function onMaskPointerUp(e) {
+  if (!maskDragState || e.pointerId !== maskDragState.pointerId) return;
+  if (maskCanvas && maskCanvas.hasPointerCapture(e.pointerId)) {
+    maskCanvas.releasePointerCapture(e.pointerId);
+  }
+  maskDragState = null;
 }
 
 async function openCamera() {
@@ -760,24 +1026,27 @@ async function runProcess(options = {}) {
 }
 
 async function processImage(options = {}) {
-  const { applyCrop = true } = options;
+  const { applyCrop: shouldApplyCrop = true } = options;
+  if (shouldApplyCrop && isCropping) {
+    await applyCrop();
+    exitCropMode();
+  }
+
   const sourceBytes = originalImageBytes;
   if (!sourceBytes) {
     alert(t("alert_no_image"));
     return;
   }
 
-  if (applyCrop && isCropping) {
-    await applyCrop();
-    exitCropMode();
-  }
-
   try {
     // Invoke Rust command
     const params = readParamsFromUI();
+    const maskPayload = await buildMaskPayload();
     const result = await invoke("process_image", {
       payload: Array.from(sourceBytes),
       params,
+      maskPayload: maskPayload ? Array.from(maskPayload) : null,
+      mask_payload: maskPayload ? Array.from(maskPayload) : null,
     });
 
     // Update current bytes
@@ -836,9 +1105,15 @@ window.addEventListener("DOMContentLoaded", () => {
   processActions = document.querySelector("#processActions");
   settingsPanel = document.querySelector("#settingsPanel");
   cropBtn = document.querySelector("#cropBtn");
+  maskBtn = document.querySelector("#maskBtn");
   cropCancelBtn = document.querySelector("#cropCancelBtn");
   cropOverlay = document.querySelector("#cropOverlay");
   cropBox = document.querySelector("#cropBox");
+  maskOverlay = document.querySelector("#maskOverlay");
+  maskCanvas = document.querySelector("#maskCanvas");
+  maskBrushControls = document.querySelector("#maskBrushControls");
+  maskBrushInput = document.querySelector("#maskBrushSize");
+  maskBrushValue = document.querySelector("#maskBrushSizeValue");
   cropMasks = {
     top: document.querySelector(".crop-mask-top"),
     right: document.querySelector(".crop-mask-right"),
@@ -913,11 +1188,22 @@ window.addEventListener("DOMContentLoaded", () => {
   if (cropBtn) {
     cropBtn.addEventListener("click", toggleCrop);
   }
+  if (maskBtn) {
+    maskBtn.addEventListener("click", toggleMask);
+  }
   if (cropCancelBtn) {
     cropCancelBtn.addEventListener("click", () => {
-      if (!isCropping) return;
-      exitCropMode();
+      if (isCropping) {
+        exitCropMode();
+      } else if (isMasking) {
+        exitMaskMode();
+      }
     });
+  }
+  if (maskBrushInput) {
+    maskBrushInput.value = String(DEFAULT_MASK_BRUSH_SIZE);
+    maskBrushInput.addEventListener("input", updateMaskBrushValue);
+    updateMaskBrushValue();
   }
 
   bindRangeValue(minRadiusInput, minRadiusValue, (value) => formatFixed(value, 1));
@@ -936,7 +1222,11 @@ window.addEventListener("DOMContentLoaded", () => {
     maxRadiusInput.addEventListener("input", clampRadiusValues);
   }
   if (previewImg) {
-    previewImg.addEventListener("load", updateRadiusLimits);
+    previewImg.addEventListener("load", () => {
+      updateRadiusLimits();
+      syncMaskCanvasSize();
+      renderMaskPreview();
+    });
   }
   if (previewImg) {
     previewImg.addEventListener("dblclick", (e) => {
@@ -1000,9 +1290,18 @@ window.addEventListener("DOMContentLoaded", () => {
   if (cropBox) {
     cropBox.addEventListener("pointerdown", onCropPointerDown);
   }
+  if (maskCanvas) {
+    maskCanvas.addEventListener("pointerdown", onMaskPointerDown);
+  }
 
   window.addEventListener("pointermove", onCropPointerMove);
   window.addEventListener("pointerup", onCropPointerUp);
+  window.addEventListener("pointermove", onMaskPointerMove);
+  window.addEventListener("pointerup", onMaskPointerUp);
+  window.addEventListener("resize", () => {
+    syncMaskCanvasSize();
+    renderMaskPreview();
+  });
 
   // Back button click handler
   if (backBtn) {
@@ -1039,6 +1338,12 @@ window.addEventListener("DOMContentLoaded", () => {
       scheduleProcess({ applyCrop: false });
     });
   });
+
+  updateCropButtonState(false);
+  updateMaskButtonState(false);
+  updateCancelButtonState();
+  updateMaskBrushControlsState();
+  updateMaskOverlayState();
 
   let initialLang = DEFAULT_LANG;
   try {

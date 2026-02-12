@@ -79,9 +79,13 @@ async fn open_camera() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn process_image(payload: Vec<u8>, params: BlobParams) -> Result<ProcessResult, String> {
+fn process_image(
+    payload: Vec<u8>,
+    params: BlobParams,
+    mask_payload: Option<Vec<u8>>,
+) -> Result<ProcessResult, String> {
     let filter = BlobFilter::new(params);
-    let (bytes, count) = filter.apply(payload)?;
+    let (bytes, count) = filter.apply(payload, mask_payload)?;
     Ok(ProcessResult {
         bytes,
         count: count as u32,

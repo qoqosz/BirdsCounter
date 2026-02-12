@@ -407,6 +407,7 @@ body.is-android .image-preview img {
     inset: 0;
     display: none;
     pointer-events: none;
+    z-index: 20;
 }
 
 .crop-overlay.is-active {
@@ -469,6 +470,32 @@ body.is-android .image-preview img {
     cursor: nwse-resize;
 }
 
+/* ===== Mask Overlay ===== */
+.mask-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;
+    z-index: 21;
+}
+
+.mask-overlay.is-active,
+.mask-overlay.has-mask {
+    display: block;
+}
+
+.mask-overlay.is-active {
+    pointer-events: auto;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+.mask-overlay canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
 /* ===== Process Actions ===== */
 .process-actions {
     width: 100%;
@@ -491,12 +518,14 @@ body.is-android .image-preview img {
     max-width: none;
 }
 
+.mask-button,
 .crop-button {
     background-color: var(--bg-surface);
     color: var(--text-primary);
     border-color: var(--border-default);
 }
 
+.mask-button:hover,
 .crop-button:hover {
     background-color: var(--bg-surface-hover);
     border-color: var(--accent-hover);
@@ -504,6 +533,7 @@ body.is-android .image-preview img {
     box-shadow: 0 4px 12px var(--shadow-accent);
 }
 
+.mask-button.is-active,
 .crop-button.is-active {
     background-color: var(--accent);
     color: #ffffff;
@@ -523,6 +553,24 @@ body.is-android .image-preview img {
     border-color: var(--border-default);
     color: var(--text-primary);
     box-shadow: 0 4px 12px var(--shadow-md);
+}
+
+.mask-brush-controls {
+    width: 100%;
+    max-width: 500px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 2px 8px var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.mask-brush-controls label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
 }
 
 /* ===== Process Button ===== */

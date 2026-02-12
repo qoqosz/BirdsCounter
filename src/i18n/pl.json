@@ -7,6 +7,8 @@
   "count_prefix": "Zliczono",
   "count_suffix": "ptaków",
   "crop": "Kadruj",
+  "mask": "Maskuj",
+  "mask_brush_size": "Rozmiar pędzla",
   "cancel": "Anuluj",
   "count": "Zlicz",
   "back_aria": "Wróć",
