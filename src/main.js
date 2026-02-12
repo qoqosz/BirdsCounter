@@ -338,7 +338,6 @@ function updateRadiusLimits() {
     minRadiusInput.value = Math.max(1, parseFloat(maxRadiusInput.value) - 1).toFixed(1);
   }
   syncSettingsOutputs();
-  scheduleProcess({ applyCrop: false });
 }
 
 function syncSettingsOutputs() {

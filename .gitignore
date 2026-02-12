@@ -27,3 +27,4 @@ dist-ssr
 
 scripts/
 src-tauri/opencv-android-sdk/*
+src-tauri/opencv2.framework/*

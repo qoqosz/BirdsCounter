@@ -1,0 +1,19 @@
+[target.aarch64-apple-ios]
+rustflags = [
+    "-L", "framework=/Users/qoqosz/Documents/Coding/Rust/BirdsCounter/BirdsCounter/src-tauri/opencv2.framework",
+]
+
+[target.aarch64-apple-ios-sim]
+rustflags = [
+    "-L", "framework=/Users/qoqosz/Documents/Coding/Rust/BirdsCounter/BirdsCounter/src-tauri/opencv2.framework",
+]
+
+[target.x86_64-apple-ios]
+rustflags = [
+    "-L", "framework=/Users/qoqosz/Documents/Coding/Rust/BirdsCounter/BirdsCounter/src-tauri/opencv2.framework",
+]
+
+[env]
+# Prevent opencv-rust from using Homebrew's macOS OpenCV for iOS builds
+OPENCV_PACKAGE_NAME = { value = "", force = true, relative = true }
+OPENCV_PKGCONFIG_NAME = { value = "", force = true, relative = true }
