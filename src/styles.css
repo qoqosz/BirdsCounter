@@ -423,7 +423,7 @@ body.is-android .image-preview img {
     position: absolute;
     border: 2px solid #ffffff;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-    cursor: move;
+    cursor: default;
     touch-action: none;
     pointer-events: auto;
 }
@@ -438,36 +438,54 @@ body.is-android .image-preview img {
 
 .crop-handle {
     position: absolute;
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     background: #ffffff;
     border: 2px solid var(--accent);
     border-radius: 50%;
     pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .handle-nw {
-    left: -6px;
-    top: -6px;
-    cursor: nwse-resize;
+    left: -8px;
+    top: -8px;
+    cursor: move;
 }
 
 .handle-ne {
-    right: -6px;
-    top: -6px;
-    cursor: nesw-resize;
+    right: -8px;
+    top: -8px;
+    cursor: default;
 }
 
 .handle-sw {
-    left: -6px;
-    bottom: -6px;
-    cursor: nesw-resize;
+    left: -8px;
+    bottom: -8px;
+    cursor: default;
 }
 
 .handle-se {
-    right: -6px;
-    bottom: -6px;
+    right: -8px;
+    bottom: -8px;
     cursor: nwse-resize;
+}
+
+.crop-handle.is-inactive {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.resize-icon {
+    width: 10px;
+    height: 10px;
+    stroke: var(--accent);
+    stroke-width: 1.7;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 /* ===== Mask Overlay ===== */

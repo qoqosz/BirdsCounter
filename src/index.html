@@ -78,10 +78,14 @@
                 <div class="crop-mask crop-mask-bottom"></div>
                 <div class="crop-mask crop-mask-left"></div>
                 <div id="cropBox" class="crop-box" role="presentation">
-                    <div class="crop-handle handle-nw" data-handle="nw"></div>
-                    <div class="crop-handle handle-ne" data-handle="ne"></div>
-                    <div class="crop-handle handle-sw" data-handle="sw"></div>
-                    <div class="crop-handle handle-se" data-handle="se"></div>
+                    <div class="crop-handle handle-nw" data-mode="move"></div>
+                    <div class="crop-handle handle-ne is-inactive" aria-hidden="true"></div>
+                    <div class="crop-handle handle-sw is-inactive" aria-hidden="true"></div>
+                    <div class="crop-handle handle-se" data-mode="resize" data-handle="se">
+                        <svg class="resize-icon" viewBox="0 0 12 12" aria-hidden="true">
+                            <path d="M3 9L9 3M6 3H9V6" />
+                        </svg>
+                    </div>
                 </div>
             </div>
         </div>

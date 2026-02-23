@@ -895,10 +895,13 @@ async function toggleCrop() {
 function onCropPointerDown(e) {
   if (!isCropping || !cropState || !cropBox) return;
   const handle = e.target.closest(".crop-handle");
+  if (!handle) return;
+  const mode = handle.dataset.mode;
+  if (!mode) return;
   cropDragState = {
     pointerId: e.pointerId,
-    mode: handle ? "resize" : "move",
-    handle: handle ? handle.dataset.handle : null,
+    mode,
+    handle: mode === "resize" ? handle.dataset.handle || null : null,
     startX: e.clientX,
     startY: e.clientY,
     startCrop: { ...cropState },
@@ -916,20 +919,12 @@ function onCropPointerMove(e) {
   if (cropDragState.mode === "move") {
     x += dx;
     y += dy;
-  } else if (cropDragState.handle) {
+  } else if (cropDragState.handle === "se") {
     if (cropDragState.handle.includes("e")) {
       width += dx;
     }
-    if (cropDragState.handle.includes("w")) {
-      width -= dx;
-      x += dx;
-    }
     if (cropDragState.handle.includes("s")) {
       height += dy;
-    }
-    if (cropDragState.handle.includes("n")) {
-      height -= dy;
-      y += dy;
     }
   }
 
