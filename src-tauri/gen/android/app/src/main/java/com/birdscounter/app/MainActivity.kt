@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
+import android.graphics.Rect
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.content.Intent
@@ -16,6 +17,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -24,6 +27,7 @@ import java.util.*
 class MainActivity : TauriActivity() {
     private var webView: WebView? = null
     private var currentPhotoUri: Uri? = null
+    private val gestureExclusionRects = mutableListOf<Rect>()
     
     private lateinit var cameraLauncher: ActivityResultLauncher<Intent>
     private lateinit var permissionLauncher: ActivityResultLauncher<String>
@@ -64,6 +68,7 @@ class MainActivity : TauriActivity() {
         }
         
         super.onCreate(savedInstanceState)
+        configureBackGestureExclusion()
     }
     
     override fun onWebViewCreate(webView: WebView) {
@@ -176,6 +181,36 @@ class MainActivity : TauriActivity() {
         val g = (color shr 8) and 0xFF
         val b = color and 0xFF
         return String.format("#%02X%02X%02X", r, g, b)
+    }
+
+    private fun configureBackGestureExclusion() {
+        val rootView = window.decorView.findViewById<android.view.View>(android.R.id.content)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, insets ->
+            updateGestureExclusionRects(view, insets)
+            insets
+        }
+
+        rootView.post {
+            updateGestureExclusionRects(rootView, ViewCompat.getRootWindowInsets(rootView))
+        }
+    }
+
+    private fun updateGestureExclusionRects(view: android.view.View, insets: WindowInsetsCompat?) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val systemInsets = insets?.getInsets(WindowInsetsCompat.Type.systemGestures())
+        val edgeWidth = maxOf(dpToPx(48), systemInsets?.left ?: 0, systemInsets?.right ?: 0)
+        if (view.width == 0 || view.height == 0 || edgeWidth == 0) return
+
+        gestureExclusionRects.clear()
+        gestureExclusionRects.add(Rect(0, 0, edgeWidth, view.height))
+        gestureExclusionRects.add(Rect(view.width - edgeWidth, 0, view.width, view.height))
+        view.systemGestureExclusionRects = gestureExclusionRects
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
     }
     
     inner class CameraInterface {

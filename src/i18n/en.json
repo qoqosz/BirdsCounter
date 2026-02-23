@@ -33,5 +33,6 @@
   "morph_open_iter": "Morph open",
   "morph_close_iter": "Morph close",
   "auto_invert": "Auto invert",
-  "invert": "Invert"
+  "invert": "Invert",
+  "counting_in_progress": "Counting"
 }

@@ -4,6 +4,9 @@ const { readFile } = window.__TAURI__.fs;
 
 const MIN_CROP_SIZE = 40;
 const DEFAULT_MASK_BRUSH_SIZE = 24;
+const MASK_TINT_COLOR = "#e24d5c";
+const MASK_BRUSH_OUTLINE = "rgba(226, 77, 92, 0.95)";
+const MASK_BRUSH_FILL = "rgba(226, 77, 92, 0.2)";
 const SUPPORTED_LANGS = ["en", "pl"];
 const DEFAULT_LANG = "en";
 
@@ -28,7 +31,9 @@ let maskBrushControls;
 let maskBrushInput;
 let maskBrushValue;
 let countLabel;
+let countPrefix;
 let countValue;
+let countSuffix;
 let backBtn;
 let fullscreenCloseBtn;
 let currentImageBytes = null;
@@ -44,6 +49,7 @@ let maskDragState = null;
 let maskBitmap = null;
 let maskContext = null;
 let maskHasPaint = false;
+let maskHoverPoint = null;
 let langSelect;
 let translations = {};
 let currentLang = DEFAULT_LANG;
@@ -80,6 +86,8 @@ let tapStartX = 0;
 let tapStartY = 0;
 let isAndroid = false;
 let isMac = false;
+let countingAnimationTimer = null;
+let countingDotCount = 1;
 
 function normalizeLang(lang) {
   if (!lang) return DEFAULT_LANG;
@@ -139,6 +147,10 @@ async function setLanguage(lang) {
   currentLang = normalizeLang(lang);
   translations = await loadTranslations(currentLang);
   applyTranslations();
+  if (!countingAnimationTimer && countValue) {
+    const parsed = Number(countValue.textContent);
+    updateCount(Number.isFinite(parsed) ? parsed : 0);
+  }
   if (langSelect) {
     langSelect.value = currentLang;
   }
@@ -303,8 +315,50 @@ function toggleFullscreenPreview() {
 
 
 function updateCount(value) {
+  stopCountingAnimation();
   if (!countValue) return;
   countValue.textContent = String(value);
+  if (!countSuffix) return;
+  if (currentLang === "pl") {
+    const n = Math.abs(Math.trunc(value));
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    let suffixKey = "count_suffix_many";
+    if (n === 1) {
+      suffixKey = "count_suffix_one";
+    } else if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
+      suffixKey = "count_suffix_few";
+    }
+    countSuffix.textContent = t(suffixKey);
+    return;
+  }
+  countSuffix.textContent = t("count_suffix");
+}
+
+function stopCountingAnimation() {
+  if (countingAnimationTimer) {
+    clearInterval(countingAnimationTimer);
+    countingAnimationTimer = null;
+  }
+  countingDotCount = 1;
+  if (countPrefix) countPrefix.style.display = "";
+  if (countSuffix) countSuffix.style.display = "";
+}
+
+function startCountingAnimation() {
+  stopCountingAnimation();
+  if (!countValue) return;
+
+  if (countPrefix) countPrefix.style.display = "none";
+  if (countSuffix) countSuffix.style.display = "none";
+
+  const render = () => {
+    countValue.textContent = `${t("counting_in_progress")}${".".repeat(countingDotCount)}`;
+    countingDotCount = (countingDotCount % 3) + 1;
+  };
+
+  render();
+  countingAnimationTimer = setInterval(render, 350);
 }
 
 function formatFixed(value, digits) {
@@ -427,6 +481,7 @@ function updateMaskBrushValue() {
 function clearMaskData() {
   maskHasPaint = false;
   maskDragState = null;
+  maskHoverPoint = null;
   maskBitmap = null;
   maskContext = null;
   if (maskCanvas) {
@@ -441,6 +496,7 @@ function clearMaskData() {
 function resetMaskUI() {
   isMasking = false;
   maskDragState = null;
+  maskHoverPoint = null;
   updateMaskButtonState(false);
   updateCancelButtonState();
   updateMaskBrushControlsState();
@@ -484,11 +540,27 @@ function renderMaskPreview() {
   const overlayCtx = maskCanvas.getContext("2d");
   if (!overlayCtx) return;
   overlayCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-  if (!maskHasPaint || !maskBitmap) return;
-  overlayCtx.save();
-  overlayCtx.globalAlpha = isMasking ? 1.0 : 0.9;
-  overlayCtx.drawImage(maskBitmap, 0, 0, maskCanvas.width, maskCanvas.height);
-  overlayCtx.restore();
+  if (maskHasPaint && maskBitmap) {
+    overlayCtx.save();
+    overlayCtx.globalAlpha = isMasking ? 1.0 : 0.9;
+    overlayCtx.drawImage(maskBitmap, 0, 0, maskCanvas.width, maskCanvas.height);
+    overlayCtx.globalCompositeOperation = "source-in";
+    overlayCtx.fillStyle = MASK_TINT_COLOR;
+    overlayCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+    overlayCtx.restore();
+  }
+  if (isMasking && maskHoverPoint) {
+    const radius = getMaskBrushRadiusPixels();
+    overlayCtx.save();
+    overlayCtx.lineWidth = 2;
+    overlayCtx.strokeStyle = MASK_BRUSH_OUTLINE;
+    overlayCtx.fillStyle = MASK_BRUSH_FILL;
+    overlayCtx.beginPath();
+    overlayCtx.arc(maskHoverPoint.x, maskHoverPoint.y, radius, 0, Math.PI * 2);
+    overlayCtx.fill();
+    overlayCtx.stroke();
+    overlayCtx.restore();
+  }
 }
 
 function getMaskBrushRadiusPixels() {
@@ -509,6 +581,34 @@ function toMaskImagePoint(clientX, clientY) {
   return {
     x: (x / rect.width) * maskBitmap.width,
     y: (y / rect.height) * maskBitmap.height,
+  };
+}
+
+function toMaskCanvasPoint(clientX, clientY) {
+  if (!maskCanvas) return null;
+  const rect = maskCanvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  if (
+    clientX < rect.left ||
+    clientX > rect.right ||
+    clientY < rect.top ||
+    clientY > rect.bottom
+  ) {
+    return null;
+  }
+
+  return {
+    x: ((clientX - rect.left) / rect.width) * maskCanvas.width,
+    y: ((clientY - rect.top) / rect.height) * maskCanvas.height,
+  };
+}
+
+function toMaskCanvasPointFromImagePoint(point) {
+  if (!maskCanvas || !maskBitmap || !point) return null;
+  if (!maskBitmap.width || !maskBitmap.height) return null;
+  return {
+    x: (point.x / maskBitmap.width) * maskCanvas.width,
+    y: (point.y / maskBitmap.height) * maskCanvas.height,
   };
 }
 
@@ -579,6 +679,7 @@ function exitMaskMode(options = {}) {
   const { process = false } = options;
   isMasking = false;
   maskDragState = null;
+  maskHoverPoint = null;
   updateMaskButtonState(false);
   updateCancelButtonState();
   updateMaskBrushControlsState();
@@ -848,6 +949,10 @@ function onMaskPointerDown(e) {
   syncMaskCanvasSize();
   const point = toMaskImagePoint(e.clientX, e.clientY);
   if (!point) return;
+  const hoverPoint = toMaskCanvasPoint(e.clientX, e.clientY);
+  if (hoverPoint) {
+    maskHoverPoint = hoverPoint;
+  }
 
   maskDragState = {
     pointerId: e.pointerId,
@@ -860,6 +965,17 @@ function onMaskPointerDown(e) {
 
 function onMaskPointerMove(e) {
   if (!maskDragState || e.pointerId !== maskDragState.pointerId) return;
+  if (isMasking) {
+    const hoverPoint = toMaskCanvasPoint(e.clientX, e.clientY);
+    if (hoverPoint) {
+      maskHoverPoint = hoverPoint;
+    } else {
+      const fallback = toMaskCanvasPointFromImagePoint(maskDragState.lastPoint);
+      if (fallback) {
+        maskHoverPoint = fallback;
+      }
+    }
+  }
   const next = toMaskImagePoint(e.clientX, e.clientY);
   if (!next) return;
   drawMaskStroke(maskDragState.lastPoint, next);
@@ -873,6 +989,28 @@ function onMaskPointerUp(e) {
     maskCanvas.releasePointerCapture(e.pointerId);
   }
   maskDragState = null;
+}
+
+function onMaskPointerHover(e) {
+  if (!isMasking) return;
+  const point = toMaskCanvasPoint(e.clientX, e.clientY);
+  if (!point) {
+    if (!maskDragState && maskHoverPoint) {
+      maskHoverPoint = null;
+      renderMaskPreview();
+    }
+    return;
+  }
+  maskHoverPoint = point;
+  renderMaskPreview();
+}
+
+function clearMaskHover() {
+  if (!isMasking) return;
+  if (maskDragState) return;
+  if (!maskHoverPoint) return;
+  maskHoverPoint = null;
+  renderMaskPreview();
 }
 
 async function openCamera() {
@@ -1038,6 +1176,10 @@ async function processImage(options = {}) {
     return;
   }
 
+  const previousCount = countValue ? Number(countValue.textContent) : 0;
+  const fallbackCount = Number.isFinite(previousCount) ? previousCount : 0;
+  startCountingAnimation();
+
   try {
     // Invoke Rust command
     const params = readParamsFromUI();
@@ -1058,6 +1200,7 @@ async function processImage(options = {}) {
     updateCount(result.count);
 
   } catch (e) {
+    updateCount(fallbackCount);
     console.error("Image processing failed:", e);
     alert(t("alert_process_fail", { error: e }));
   }
@@ -1101,7 +1244,9 @@ window.addEventListener("DOMContentLoaded", () => {
   imagePreview = document.querySelector("#imagePreview");
   fullscreenCloseBtn = document.querySelector("#fullscreenCloseBtn");
   countLabel = document.querySelector("#countLabel");
+  countPrefix = document.querySelector("#countLabel [data-i18n='count_prefix']");
   countValue = document.querySelector("#countValue");
+  countSuffix = document.querySelector("#countSuffix");
   processActions = document.querySelector("#processActions");
   settingsPanel = document.querySelector("#settingsPanel");
   cropBtn = document.querySelector("#cropBtn");
@@ -1292,6 +1437,10 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if (maskCanvas) {
     maskCanvas.addEventListener("pointerdown", onMaskPointerDown);
+    maskCanvas.addEventListener("pointermove", onMaskPointerHover);
+    maskCanvas.addEventListener("pointerenter", onMaskPointerHover);
+    maskCanvas.addEventListener("pointerleave", clearMaskHover);
+    maskCanvas.addEventListener("pointerout", clearMaskHover);
   }
 
   window.addEventListener("pointermove", onCropPointerMove);

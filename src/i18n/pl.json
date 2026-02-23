@@ -6,6 +6,9 @@
   "load_gallery": "Wczytaj z galerii",
   "count_prefix": "Zliczono",
   "count_suffix": "ptaków",
+  "count_suffix_one": "ptak",
+  "count_suffix_few": "ptaki",
+  "count_suffix_many": "ptaków",
   "crop": "Kadruj",
   "mask": "Maskuj",
   "mask_brush_size": "Rozmiar pędzla",
@@ -33,5 +36,6 @@
   "morph_open_iter": "Morf. otwarcie",
   "morph_close_iter": "Morf. zamknięcie",
   "auto_invert": "Auto odwracanie",
-  "invert": "Odwróć"
+  "invert": "Odwróć",
+  "counting_in_progress": "Zliczanie"
 }

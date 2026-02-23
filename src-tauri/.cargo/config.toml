@@ -12,3 +12,13 @@ rustflags = [
 rustflags = [
     "-L", "framework=/Users/qoqosz/Documents/Coding/Rust/BirdsCounter/BirdsCounter/src-tauri/opencv2.framework",
 ]
+
+[target.aarch64-apple-darwin.env]
+# Prevent the iOS framework from being picked up via OPENCV_* env vars.
+OPENCV_DISABLE_PROBES = "environment"
+OPENCV_PKGCONFIG_NAME = "opencv4"
+
+[target.x86_64-apple-darwin.env]
+# Prevent the iOS framework from being picked up via OPENCV_* env vars.
+OPENCV_DISABLE_PROBES = "environment"
+OPENCV_PKGCONFIG_NAME = "opencv4"
