@@ -1,4 +1,5 @@
 target/*
+src-tauri/target/
 
 # Logs
 logs
@@ -28,3 +29,6 @@ dist-ssr
 scripts/
 src-tauri/opencv-android-sdk/*
 src-tauri/opencv2.framework/*
+src-tauri/gen/android/keystore.properties
+src-tauri/gen/android/*.jks
+src-tauri/gen/android/*.keystore

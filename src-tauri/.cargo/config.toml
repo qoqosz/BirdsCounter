@@ -1,16 +1,16 @@
 [target.aarch64-apple-ios]
 rustflags = [
-    "-L", "framework=/Users/qoqosz/Documents/Coding/Rust/BirdsCounter/BirdsCounter/src-tauri/opencv2.framework",
+    "-L", "framework=src-tauri/opencv2.framework",
 ]
 
 [target.aarch64-apple-ios-sim]
 rustflags = [
-    "-L", "framework=/Users/qoqosz/Documents/Coding/Rust/BirdsCounter/BirdsCounter/src-tauri/opencv2.framework",
+    "-L", "framework=src-tauri/opencv2.framework",
 ]
 
 [target.x86_64-apple-ios]
 rustflags = [
-    "-L", "framework=/Users/qoqosz/Documents/Coding/Rust/BirdsCounter/BirdsCounter/src-tauri/opencv2.framework",
+    "-L", "framework=src-tauri/opencv2.framework",
 ]
 
 [target.aarch64-apple-darwin.env]

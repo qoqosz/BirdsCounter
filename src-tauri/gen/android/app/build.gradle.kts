@@ -1,3 +1,4 @@
+import java.io.File
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -14,6 +15,35 @@ val tauriProperties = Properties().apply {
     }
 }
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+if (keystorePropertiesFile.exists()) {
+    FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
+}
+
+fun signingValue(key: String, envVar: String): String? {
+    val prop = keystoreProperties.getProperty(key)
+    if (!prop.isNullOrBlank()) return prop
+    val env = System.getenv(envVar)
+    return if (env.isNullOrBlank()) null else env
+}
+
+val signingStoreFile = signingValue("storeFile", "ANDROID_KEYSTORE_FILE")
+val signingAlias = signingValue("keyAlias", "ANDROID_KEY_ALIAS")
+val signingStorePassword = signingValue("storePassword", "ANDROID_STORE_PASSWORD")
+    ?: signingValue("password", "ANDROID_KEYSTORE_PASSWORD")
+val signingKeyPassword = signingValue("keyPassword", "ANDROID_KEY_PASSWORD")
+    ?: signingValue("password", "ANDROID_KEYSTORE_PASSWORD")
+val hasReleaseSigning = !signingStoreFile.isNullOrBlank()
+    && !signingAlias.isNullOrBlank()
+    && !signingStorePassword.isNullOrBlank()
+    && !signingKeyPassword.isNullOrBlank()
+
+val resolvedSigningStoreFile = signingStoreFile?.let {
+    val candidate = File(it)
+    if (candidate.isAbsolute) candidate else rootProject.file(it)
+}
+
 android {
     compileSdk = 36
     namespace = "com.birdscounter.app"
@@ -25,20 +55,16 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
-   signingConfigs {
-    create("release") {
-      val keystorePropertiesFile = rootProject.file("keystore.properties")
-      val keystoreProperties = Properties()
-      if (keystorePropertiesFile.exists()) {
-        keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-      }
-
-      keyAlias = keystoreProperties["keyAlias"] as String
-      keyPassword = keystoreProperties["password"] as String
-      storeFile = file(keystoreProperties["storeFile"] as String)
-      storePassword = keystoreProperties["password"] as String
-      }
-    } 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                keyAlias = signingAlias
+                keyPassword = signingKeyPassword
+                storeFile = resolvedSigningStoreFile
+                storePassword = signingStorePassword
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -53,7 +79,14 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "Release signing is not configured. " +
+                        "Set src-tauri/gen/android/keystore.properties or ANDROID_* env vars."
+                )
+            }
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
