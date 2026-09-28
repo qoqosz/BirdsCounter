@@ -1,5 +1,30 @@
 use opencv::prelude::*;
-use opencv::{core, imgcodecs, imgproc};
+use opencv::{core, geometry, imgcodecs, imgproc};
+
+/// Birds are silhouettes: at least this much darker than the sky (as a fraction of
+/// its brightness), whatever the sky texture.
+const MIN_CONTRAST: f64 = 0.08;
+/// Contrast is capped at this value when measuring sky texture, so birds themselves
+/// barely raise the local threshold.
+const TEXTURE_CLIP: f32 = 0.07;
+/// Hysteresis: a detection seeded above the threshold grows into neighbouring
+/// pixels that exceed this fraction of it (keeps faint wing tips attached).
+const LOW_THRESHOLD_RATIO: f32 = 0.6;
+/// Maximum number of nearest detections used to estimate the local single-bird area.
+const SPLIT_NEIGHBOURS: usize = 12;
+/// A detection is a neighbour of a blob when it is at most this many of its own
+/// sizes (sqrt of area) away, i.e. it belongs to the same flock.
+const SPLIT_NEIGHBOUR_DISTANCE: f64 = 12.0;
+/// Minimum number of neighbours (including the blob itself) for a reliable estimate.
+const SPLIT_MIN_NEIGHBOURS: usize = 4;
+/// Above this many detections splitting is skipped to keep the neighbour search cheap
+/// (such images are dominated by texture, not flocks).
+const SPLIT_MAX_DETECTIONS: usize = 4000;
+/// Blobs touching the image edge that are larger than this many median blobs are
+/// clutter (trees, roofs, lamps) rather than birds.
+const BORDER_CLUTTER_RATIO: f64 = 3.0;
+/// Blobs larger than this many median blobs are clutter wherever they are.
+const MAX_CLUTTER_RATIO: f64 = 25.0;
 
 #[derive(Clone, serde::Deserialize)]
 #[serde(default)]
@@ -15,15 +40,20 @@ pub struct BlobParams {
     pub morph_close_iter: i32,
     pub auto_invert: bool,
     pub invert: bool,
+    /// Detection threshold for the `background` method, as a multiple of the local
+    /// sky texture (contrast of clouds around each pixel).
+    pub sensitivity: f64,
+    /// Count blobs larger than a typical bird as several birds.
+    pub split_clusters: bool,
 }
 
 impl Default for BlobParams {
     fn default() -> Self {
         Self {
-            min_radius: 2.0,
+            min_radius: 1.0,
             max_radius: 100.0,
             blur: 3,
-            threshold_method: "adaptive".to_string(),
+            threshold_method: "background".to_string(),
             adaptive_block: 31,
             adaptive_c: 4.0,
             morph_kernel: 3,
@@ -31,11 +61,28 @@ impl Default for BlobParams {
             morph_close_iter: 1,
             auto_invert: true,
             invert: false,
+            sensitivity: 6.0,
+            split_clusters: true,
         }
     }
 }
 
-/// Detects blobs by thresholding, morphological cleanup, and contour filtering.
+/// A detected blob; `count` is the estimated number of birds it contains.
+#[derive(Clone, Debug)]
+struct Blob {
+    center: core::Point2d,
+    area: f64,
+    count: u32,
+    touches_border: bool,
+}
+
+impl Blob {
+    fn radius(&self) -> f64 {
+        (self.area / std::f64::consts::PI).sqrt()
+    }
+}
+
+/// Detects birds as small blobs that differ from the local sky background.
 pub struct BlobFilter {
     params: BlobParams,
 }
@@ -69,10 +116,257 @@ impl BlobFilter {
         )
         .map_err(|e| format!("Color conversion error: {}", e))?;
 
+        let exclusion_mask = match mask_payload {
+            Some(mask_bytes) => Some(decode_mask(mask_bytes, gray.cols(), gray.rows())?),
+            None => None,
+        };
+
+        let mut blobs = if params.threshold_method.trim().eq_ignore_ascii_case("background") {
+            self.detect_background(&gray, exclusion_mask.as_ref())?
+        } else {
+            self.detect_threshold(&gray, exclusion_mask.as_ref())?
+        };
+
+        let min_radius = params.min_radius.max(0.0);
+        let max_radius = params.max_radius.max(min_radius);
+        blobs.retain(|blob| {
+            let radius = blob.radius();
+            radius >= min_radius && radius <= max_radius
+        });
+
+        blobs = drop_clutter(blobs);
+        if params.split_clusters {
+            blobs = split_merged(blobs);
+        }
+
+        let annotated = annotate(&image, &blobs)?;
+        let mut buf = core::Vector::new();
+        let encode_params = core::Vector::new();
+        imgcodecs::imencode(".png", &annotated, &mut buf, &encode_params)
+            .map_err(|e| format!("OpenCV encode error: {}", e))?;
+
+        let count = blobs.iter().map(|blob| blob.count as usize).sum();
+        Ok((buf.to_vec(), count))
+    }
+
+    /// Estimates the sky without birds and keeps blobs that are clearly darker than it.
+    /// Contrast is relative to the sky brightness (birds are silhouettes against both
+    /// bright and dark clouds), and the threshold rises with the local cloud texture.
+    /// Birds are assumed darker than the sky unless `invert` is set.
+    fn detect_background(
+        &self,
+        gray: &core::Mat,
+        exclusion_mask: Option<&core::Mat>,
+    ) -> Result<Vec<Blob>, String> {
+        let params = &self.params;
+        let subject = if params.invert {
+            invert_image(gray)?
+        } else {
+            gray.try_clone()
+                .map_err(|e| format!("Image clone error: {}", e))?
+        };
+
+        // Closing with a window larger than a bird's thickness erases the birds and
+        // leaves the sky; the box blur smooths its blocky edges.
+        let window = odd_kernel(params.adaptive_block, 3);
+        let kernel = imgproc::get_structuring_element(
+            imgproc::MORPH_RECT,
+            core::Size::new(window, window),
+            core::Point::new(-1, -1),
+        )
+        .map_err(|e| format!("Kernel error: {}", e))?;
+        let border_value = imgproc::morphology_default_border_value()
+            .map_err(|e| format!("Border value error: {}", e))?;
+        let mut background = core::Mat::default();
+        imgproc::morphology_ex(
+            &subject,
+            &mut background,
+            imgproc::MORPH_CLOSE,
+            &kernel,
+            core::Point::new(-1, -1),
+            1,
+            core::BORDER_REPLICATE,
+            border_value,
+        )
+        .map_err(|e| format!("Background estimate error: {}", e))?;
+        let mut smooth_background = core::Mat::default();
+        imgproc::blur(
+            &background,
+            &mut smooth_background,
+            core::Size::new(window, window),
+            core::Point::new(-1, -1),
+            core::BORDER_REPLICATE,
+        )
+        .map_err(|e| format!("Background blur error: {}", e))?;
+
+        let mut subject_f = core::Mat::default();
+        subject
+            .convert_to(&mut subject_f, core::CV_32F, 1.0, 0.0)
+            .map_err(|e| format!("Convert error: {}", e))?;
+        let blur_k = odd_kernel(params.blur, 1);
+        if blur_k > 1 {
+            let mut smoothed = core::Mat::default();
+            imgproc::gaussian_blur(
+                &subject_f,
+                &mut smoothed,
+                core::Size::new(blur_k, blur_k),
+                0.0,
+                0.0,
+                core::BORDER_DEFAULT,
+                core::AlgorithmHint::ALGO_HINT_DEFAULT,
+            )
+            .map_err(|e| format!("Blur error: {}", e))?;
+            subject_f = smoothed;
+        }
+
+        // Relative darkness (Weber contrast) and its square capped for the texture estimate.
+        let rows = gray.rows();
+        let cols = gray.cols();
+        let mut contrast =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_32F, core::Scalar::all(0.0))
+                .map_err(|e| format!("Alloc error: {}", e))?;
+        let mut texture_sq =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_32F, core::Scalar::all(0.0))
+                .map_err(|e| format!("Alloc error: {}", e))?;
+        {
+            let background_data = smooth_background
+                .data_bytes()
+                .map_err(|e| format!("Background access error: {}", e))?;
+            let subject_data = subject_f
+                .data_typed::<f32>()
+                .map_err(|e| format!("Image access error: {}", e))?;
+            let contrast_data = contrast
+                .data_typed_mut::<f32>()
+                .map_err(|e| format!("Contrast access error: {}", e))?;
+            for ((out, &sky), &value) in contrast_data.iter_mut().zip(background_data).zip(subject_data) {
+                let sky = sky as f32;
+                *out = ((sky - value) / sky.max(1.0)).clamp(0.0, 1.0);
+            }
+            let texture_data = texture_sq
+                .data_typed_mut::<f32>()
+                .map_err(|e| format!("Texture access error: {}", e))?;
+            for (out, &c) in texture_data.iter_mut().zip(contrast_data.iter()) {
+                let capped = c.min(TEXTURE_CLIP);
+                *out = capped * capped;
+            }
+        }
+
+        let texture_window = odd_kernel(3 * window, 3);
+        let mut texture = core::Mat::default();
+        imgproc::blur(
+            &texture_sq,
+            &mut texture,
+            core::Size::new(texture_window, texture_window),
+            core::Point::new(-1, -1),
+            core::BORDER_REPLICATE,
+        )
+        .map_err(|e| format!("Texture blur error: {}", e))?;
+
+        // Significance: contrast divided by the local threshold (> 1 means a detection).
+        let sensitivity = params.sensitivity.max(0.0) as f32;
+        let mut significance =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_32F, core::Scalar::all(0.0))
+                .map_err(|e| format!("Alloc error: {}", e))?;
+        let mut candidates =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_8U, core::Scalar::all(0.0))
+                .map_err(|e| format!("Alloc error: {}", e))?;
+        {
+            let contrast_data = contrast
+                .data_typed::<f32>()
+                .map_err(|e| format!("Contrast access error: {}", e))?;
+            let texture_data = texture
+                .data_typed::<f32>()
+                .map_err(|e| format!("Texture access error: {}", e))?;
+            let significance_data = significance
+                .data_typed_mut::<f32>()
+                .map_err(|e| format!("Significance access error: {}", e))?;
+            for ((out, &c), &t) in significance_data.iter_mut().zip(contrast_data).zip(texture_data) {
+                let threshold = (sensitivity * t.max(0.0).sqrt()).max(MIN_CONTRAST as f32);
+                *out = c / threshold;
+            }
+            let candidate_data = candidates
+                .data_bytes_mut()
+                .map_err(|e| format!("Candidate access error: {}", e))?;
+            for (out, &q) in candidate_data.iter_mut().zip(significance_data.iter()) {
+                *out = if q > LOW_THRESHOLD_RATIO { 255 } else { 0 };
+            }
+        }
+        if let Some(mask) = exclusion_mask {
+            candidates = apply_exclusion_mask(&candidates, mask)?;
+        }
+
+        let mut labels = core::Mat::default();
+        let mut stats = core::Mat::default();
+        let mut centroids = core::Mat::default();
+        let label_count = imgproc::connected_components_with_stats(
+            &candidates,
+            &mut labels,
+            &mut stats,
+            &mut centroids,
+            8,
+            core::CV_32S,
+        )
+        .map_err(|e| format!("Connected components error: {}", e))?
+            as usize;
+
+        // Hysteresis: keep only components whose strongest pixel passes the threshold.
+        let mut peaks = vec![0f32; label_count];
+        let label_data = labels
+            .data_typed::<i32>()
+            .map_err(|e| format!("Label access error: {}", e))?;
+        let significance_data = significance
+            .data_typed::<f32>()
+            .map_err(|e| format!("Significance access error: {}", e))?;
+        for (&label, &value) in label_data.iter().zip(significance_data) {
+            let peak = &mut peaks[label as usize];
+            *peak = peak.max(value);
+        }
+
+        let mut blobs = Vec::new();
+        for label in 1..label_count {
+            if peaks[label] <= 1.0 {
+                continue;
+            }
+            let stat = |field: i32| -> Result<i32, String> {
+                stats
+                    .at_2d::<i32>(label as i32, field)
+                    .copied()
+                    .map_err(|e| format!("Stats access error: {}", e))
+            };
+            let left = stat(imgproc::CC_STAT_LEFT)?;
+            let top = stat(imgproc::CC_STAT_TOP)?;
+            let touches_border = left == 0
+                || top == 0
+                || left + stat(imgproc::CC_STAT_WIDTH)? >= cols
+                || top + stat(imgproc::CC_STAT_HEIGHT)? >= rows;
+            let cx = *centroids
+                .at_2d::<f64>(label as i32, 0)
+                .map_err(|e| format!("Centroid access error: {}", e))?;
+            let cy = *centroids
+                .at_2d::<f64>(label as i32, 1)
+                .map_err(|e| format!("Centroid access error: {}", e))?;
+            blobs.push(Blob {
+                center: core::Point2d::new(cx, cy),
+                area: stat(imgproc::CC_STAT_AREA)? as f64,
+                count: 1,
+                touches_border,
+            });
+        }
+        Ok(blobs)
+    }
+
+    /// Classic pipeline: global/adaptive threshold, morphology and external contours.
+    fn detect_threshold(
+        &self,
+        gray: &core::Mat,
+        exclusion_mask: Option<&core::Mat>,
+    ) -> Result<Vec<Blob>, String> {
+        let params = &self.params;
+
         let blur_k = odd_kernel(params.blur, 1);
         let mut blurred = core::Mat::default();
         imgproc::gaussian_blur(
-            &gray,
+            gray,
             &mut blurred,
             core::Size::new(blur_k, blur_k),
             0.0,
@@ -151,9 +445,8 @@ impl BlobFilter {
                 .map_err(|e| format!("Morph close clone error: {}", e))?;
         }
 
-        if let Some(mask_bytes) = mask_payload {
-            let mask = decode_mask(mask_bytes, cleaned.cols(), cleaned.rows())?;
-            cleaned = apply_exclusion_mask(&cleaned, &mask)?;
+        if let Some(mask) = exclusion_mask {
+            cleaned = apply_exclusion_mask(&cleaned, mask)?;
         }
 
         let mut contours: core::Vector<core::Vector<core::Point>> = core::Vector::new();
@@ -166,48 +459,148 @@ impl BlobFilter {
         )
         .map_err(|e| format!("Find contours error: {}", e))?;
 
-        let min_radius = params.min_radius.max(0.0);
-        let max_radius = params.max_radius.max(min_radius);
-
-        let mut annotated = image
-            .try_clone()
-            .map_err(|e| format!("Image clone error: {}", e))?;
-        let mut kept = 0usize;
-
+        let mut blobs = Vec::new();
         for contour in contours.iter() {
-            let area = imgproc::contour_area(&contour, false)
+            let area = geometry::contour_area(&contour, false)
                 .map_err(|e| format!("Contour area error: {}", e))?;
             if area <= 0.0 {
                 continue;
             }
-            let radius = (area / std::f64::consts::PI).sqrt();
-            if radius < min_radius || radius > max_radius {
-                continue;
-            }
-            let center = contour_center(&contour)?;
-            let Some(center) = center else {
+            let Some(center) = contour_center(&contour)? else {
                 continue;
             };
-            kept += 1;
-            imgproc::circle(
-                &mut annotated,
+            let bounds = geometry::bounding_rect(&contour)
+                .map_err(|e| format!("Bounding rect error: {}", e))?;
+            let touches_border = bounds.x == 0
+                || bounds.y == 0
+                || bounds.x + bounds.width >= cleaned.cols()
+                || bounds.y + bounds.height >= cleaned.rows();
+            blobs.push(Blob {
                 center,
-                radius.round().max(1.0) as i32,
-                core::Scalar::new(0.0, 0.0, 255.0, 0.0),
-                2,
-                imgproc::LINE_AA,
-                0,
-            )
-            .map_err(|e| format!("Draw circle error: {}", e))?;
+                area,
+                count: 1,
+                touches_border,
+            });
         }
-
-        let mut buf = core::Vector::new();
-        let encode_params = core::Vector::new();
-        imgcodecs::imencode(".png", &annotated, &mut buf, &encode_params)
-            .map_err(|e| format!("OpenCV encode error: {}", e))?;
-
-        Ok((buf.to_vec(), kept))
+        Ok(blobs)
     }
+}
+
+/// Removes blobs much larger than a typical detection: anything touching the image
+/// edge (trees, roofs, lamps) above `BORDER_CLUTTER_RATIO` and anything at all above
+/// `MAX_CLUTTER_RATIO` median blobs.
+fn drop_clutter(blobs: Vec<Blob>) -> Vec<Blob> {
+    let mut areas: Vec<f64> = blobs.iter().map(|blob| blob.area).collect();
+    let typical = median(&mut areas);
+    if typical <= 0.0 {
+        return blobs;
+    }
+    blobs
+        .into_iter()
+        .filter(|blob| {
+            let ratio = blob.area / typical;
+            ratio <= MAX_CLUTTER_RATIO && !(blob.touches_border && ratio > BORDER_CLUTTER_RATIO)
+        })
+        .collect()
+}
+
+/// Estimates how many birds each blob holds by comparing its area with the median
+/// area of nearby detections from the same flock. A detection counts as nearby when
+/// it lies within `SPLIT_NEIGHBOUR_DISTANCE` of *its own* sizes, so small noise specks
+/// or a distant flock of smaller birds do not make a single large bird look merged.
+fn split_merged(mut blobs: Vec<Blob>) -> Vec<Blob> {
+    if blobs.len() > SPLIT_MAX_DETECTIONS {
+        return blobs;
+    }
+    let counts: Vec<u32> = blobs
+        .iter()
+        .map(|blob| {
+            let mut neighbours: Vec<(f64, f64)> = blobs
+                .iter()
+                .filter_map(|other| {
+                    let distance = (other.center.x - blob.center.x)
+                        .hypot(other.center.y - blob.center.y);
+                    (distance <= SPLIT_NEIGHBOUR_DISTANCE * other.area.sqrt())
+                        .then_some((distance, other.area))
+                })
+                .collect();
+            if neighbours.len() < SPLIT_MIN_NEIGHBOURS {
+                return 1;
+            }
+            neighbours.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+            let mut areas: Vec<f64> = neighbours
+                .iter()
+                .take(SPLIT_NEIGHBOURS)
+                .map(|(_, area)| *area)
+                .collect();
+            let reference = median(&mut areas);
+            if reference <= 0.0 {
+                return 1;
+            }
+            (blob.area / reference).round().max(1.0) as u32
+        })
+        .collect();
+    for (blob, count) in blobs.iter_mut().zip(counts) {
+        blob.count = count;
+    }
+    blobs
+}
+
+fn median(values: &mut [f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_unstable_by(f64::total_cmp);
+    let mid = values.len() / 2;
+    if values.len() % 2 == 0 {
+        (values[mid - 1] + values[mid]) / 2.0
+    } else {
+        values[mid]
+    }
+}
+
+/// Draws a ring around every blob; blobs counted as several birds are orange
+/// and labelled with their count.
+fn annotate(image: &core::Mat, blobs: &[Blob]) -> Result<core::Mat, String> {
+    let mut annotated = image
+        .try_clone()
+        .map_err(|e| format!("Image clone error: {}", e))?;
+    let min_side = image.cols().min(image.rows()) as f64;
+    let thickness = ((min_side / 1000.0).round() as i32).max(2);
+    let font_scale = (min_side / 1500.0).max(0.5);
+    let single = core::Scalar::new(0.0, 0.0, 255.0, 0.0);
+    let cluster = core::Scalar::new(0.0, 140.0, 255.0, 0.0);
+
+    for blob in blobs {
+        let center = core::Point::new(blob.center.x.round() as i32, blob.center.y.round() as i32);
+        let radius = (blob.radius() + 2.0).round() as i32;
+        let color = if blob.count > 1 { cluster } else { single };
+        imgproc::circle(
+            &mut annotated,
+            center,
+            radius,
+            color,
+            thickness,
+            imgproc::LINE_AA,
+            0,
+        )
+        .map_err(|e| format!("Draw circle error: {}", e))?;
+        if blob.count > 1 {
+            imgproc::put_text(
+                &mut annotated,
+                &blob.count.to_string(),
+                core::Point::new(center.x + radius + 2, center.y - radius),
+                imgproc::FONT_HERSHEY_SIMPLEX,
+                font_scale,
+                cluster,
+                thickness,
+                imgproc::LINE_AA,
+                false,
+            )
+            .map_err(|e| format!("Draw label error: {}", e))?;
+        }
+    }
+    Ok(annotated)
 }
 
 fn odd_kernel(value: i32, min_odd: i32) -> i32 {
@@ -294,22 +687,262 @@ fn decode_mask(mask_bytes: Vec<u8>, width: i32, height: i32) -> Result<core::Mat
 }
 
 fn apply_exclusion_mask(src: &core::Mat, exclusion_mask: &core::Mat) -> Result<core::Mat, String> {
-    let mut keep_mask = core::Mat::default();
-    core::bitwise_not(exclusion_mask, &mut keep_mask, &core::no_array())
-        .map_err(|e| format!("Mask invert error: {}", e))?;
-
+    let keep_mask = invert_image(exclusion_mask)?;
     let mut masked = core::Mat::default();
     core::bitwise_and(src, &keep_mask, &mut masked, &core::no_array())
         .map_err(|e| format!("Mask apply error: {}", e))?;
     Ok(masked)
 }
 
-fn contour_center(contour: &core::Vector<core::Point>) -> Result<Option<core::Point>, String> {
-    let moments = imgproc::moments(contour, false).map_err(|e| format!("Moments error: {}", e))?;
+fn contour_center(contour: &core::Vector<core::Point>) -> Result<Option<core::Point2d>, String> {
+    let moments = geometry::moments(contour, false).map_err(|e| format!("Moments error: {}", e))?;
     if moments.m00 == 0.0 {
         return Ok(None);
     }
-    let cx = (moments.m10 / moments.m00).round() as i32;
-    let cy = (moments.m01 / moments.m00).round() as i32;
-    Ok(Some(core::Point::new(cx, cy)))
+    Ok(Some(core::Point2d::new(
+        moments.m10 / moments.m00,
+        moments.m01 / moments.m00,
+    )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WIDTH: i32 = 800;
+    const HEIGHT: i32 = 500;
+
+    /// Overcast sky: horizontal brightness gradient, a few soft clouds and sensor noise.
+    fn sky(base: f64) -> core::Mat {
+        let mut img =
+            core::Mat::new_rows_cols_with_default(HEIGHT, WIDTH, core::CV_8UC3, core::Scalar::all(base))
+                .unwrap();
+        for (x, y, r, delta) in [(150, 120, 110, -25.0), (600, 350, 140, -20.0), (420, 60, 90, 15.0)] {
+            imgproc::circle(
+                &mut img,
+                core::Point::new(x, y),
+                r,
+                core::Scalar::all(base + delta),
+                -1,
+                imgproc::LINE_8,
+                0,
+            )
+            .unwrap();
+        }
+        let mut clouds = core::Mat::default();
+        imgproc::gaussian_blur(
+            &img,
+            &mut clouds,
+            core::Size::new(0, 0),
+            40.0,
+            40.0,
+            core::BORDER_REPLICATE,
+            core::AlgorithmHint::ALGO_HINT_DEFAULT,
+        )
+        .unwrap();
+        clouds
+    }
+
+    /// Draws a bird `contrast` levels darker (negative: brighter) than the sky under it.
+    fn draw_bird(img: &mut core::Mat, x: f64, y: f64, contrast: f64) {
+        let center = core::Point::new(x.round() as i32, y.round() as i32);
+        let sky = img.at_2d::<core::Vec3b>(center.y, center.x).unwrap()[0] as f64;
+        imgproc::ellipse(
+            img,
+            center,
+            core::Size::new(5, 2),
+            10.0,
+            0.0,
+            360.0,
+            core::Scalar::all(sky - contrast),
+            -1,
+            imgproc::LINE_AA,
+            0,
+        )
+        .unwrap();
+    }
+
+    fn encode(img: &core::Mat) -> Vec<u8> {
+        core::set_rng_seed(7).unwrap();
+        let mut noise = core::Mat::new_rows_cols_with_default(
+            img.rows(),
+            img.cols(),
+            core::CV_16SC3,
+            core::Scalar::all(0.0),
+        )
+        .unwrap();
+        core::randn(&mut noise, &core::Scalar::all(0.0), &core::Scalar::all(2.5)).unwrap();
+        let mut wide = core::Mat::default();
+        img.convert_to(&mut wide, core::CV_16SC3, 1.0, 0.0).unwrap();
+        let mut noisy = core::Mat::default();
+        core::add(&wide, &noise, &mut noisy, &core::no_array(), -1).unwrap();
+        let mut out = core::Mat::default();
+        noisy.convert_to(&mut out, core::CV_8UC3, 1.0, 0.0).unwrap();
+
+        let mut buf = core::Vector::new();
+        imgcodecs::imencode(".png", &out, &mut buf, &core::Vector::new()).unwrap();
+        buf.to_vec()
+    }
+
+    /// Grid of `rows` x 10 birds in the left 3/4 of the image; every cell listed in
+    /// `pairs` holds two touching birds. Returns the number of birds drawn.
+    fn draw_flock(img: &mut core::Mat, rows: i32, contrast: f64, pairs: &[i32]) -> usize {
+        let mut birds = 0;
+        for row in 0..rows {
+            for col in 0..10 {
+                let x = 40.0 + col as f64 * 55.0;
+                let y = 40.0 + row as f64 * 45.0;
+                draw_bird(img, x, y, contrast);
+                birds += 1;
+                if pairs.contains(&(row * 10 + col)) {
+                    draw_bird(img, x + 9.0, y + 1.0, contrast);
+                    birds += 1;
+                }
+            }
+        }
+        birds
+    }
+
+    fn count(image: Vec<u8>, params: BlobParams, mask: Option<Vec<u8>>) -> usize {
+        BlobFilter::new(params).apply(image, mask).unwrap().1
+    }
+
+    #[test]
+    fn counts_separate_birds_on_cloudy_sky() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 8, 90.0, &[]);
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
+    /// Faint birds are ~15% darker than the sky; the detector's floor is `MIN_CONTRAST`
+    /// (8%), measured after the default 3x3 blur.
+    #[test]
+    fn counts_faint_birds() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 8, 30.0, &[]);
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
+    #[test]
+    fn splits_touching_birds() {
+        let mut img = sky(200.0);
+        let pairs = [3, 14, 22, 37, 41, 58, 66, 75];
+        let expected = draw_flock(&mut img, 8, 90.0, &pairs);
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+
+        let unsplit = BlobParams {
+            split_clusters: false,
+            ..BlobParams::default()
+        };
+        assert_eq!(count(encode(&img), unsplit, None), expected - pairs.len());
+    }
+
+    #[test]
+    fn ignores_large_dark_clutter() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 8, 90.0, &[]);
+        imgproc::rectangle(
+            &mut img,
+            core::Rect::new(620, 280, 150, 150),
+            core::Scalar::all(60.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
+    #[test]
+    fn respects_exclusion_mask() {
+        let mut img = sky(200.0);
+        draw_flock(&mut img, 8, 90.0, &[]);
+        // Exclude the top half: rows 0..=4 (y <= 220) of the flock.
+        let mut mask =
+            core::Mat::new_rows_cols_with_default(HEIGHT, WIDTH, core::CV_8UC1, core::Scalar::all(0.0))
+                .unwrap();
+        imgproc::rectangle(
+            &mut mask,
+            core::Rect::new(0, 0, WIDTH, 240),
+            core::Scalar::all(255.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        let mut mask_png = core::Vector::new();
+        imgcodecs::imencode(".png", &mask, &mut mask_png, &core::Vector::new()).unwrap();
+        assert_eq!(
+            count(encode(&img), BlobParams::default(), Some(mask_png.to_vec())),
+            30
+        );
+    }
+
+    #[test]
+    fn counts_bright_birds_when_inverted() {
+        let mut img = sky(70.0);
+        let expected = draw_flock(&mut img, 8, -90.0, &[]);
+        let params = BlobParams {
+            invert: true,
+            ..BlobParams::default()
+        };
+        assert_eq!(count(encode(&img), params, None), expected);
+    }
+
+    #[test]
+    fn adaptive_method_still_works() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 8, 90.0, &[]);
+        let params = BlobParams {
+            threshold_method: "adaptive".to_string(),
+            min_radius: 2.0,
+            ..BlobParams::default()
+        };
+        assert_eq!(count(encode(&img), params, None), expected);
+    }
+
+    fn blob(x: f64, area: f64) -> Blob {
+        Blob {
+            center: core::Point2d::new(x, 0.0),
+            area,
+            count: 1,
+            touches_border: false,
+        }
+    }
+
+    #[test]
+    fn split_merged_uses_local_bird_size() {
+        // Two flocks at different distances: small birds near x=0, large near x=1000.
+        let mut blobs: Vec<Blob> = (0..12).map(|i| blob(i as f64 * 10.0, 10.0)).collect();
+        blobs.extend((0..12).map(|i| blob(1000.0 + i as f64 * 30.0, 60.0)));
+        blobs.push(blob(55.0, 31.0)); // three small birds merged
+        blobs.push(blob(1150.0, 125.0)); // two large birds merged
+        blobs.push(blob(3000.0, 60.0)); // lone large bird far from small ones: not split
+
+        let counts: Vec<u32> = split_merged(blobs).iter().map(|b| b.count).collect();
+        assert_eq!(counts.len(), 27);
+        assert_eq!(counts.iter().sum::<u32>(), 24 + 3 + 2 + 1);
+    }
+
+    #[test]
+    fn split_ignores_distant_small_specks() {
+        // Two large birds with a few far-away specks: none of them is merged.
+        let mut blobs = vec![blob(0.0, 80.0), blob(40.0, 90.0)];
+        blobs.extend((0..6).map(|i| blob(500.0 + i as f64 * 8.0, 4.0)));
+        let counts: Vec<u32> = split_merged(blobs).iter().map(|b| b.count).collect();
+        assert!(counts.iter().all(|&c| c == 1), "{:?}", counts);
+    }
+
+    #[test]
+    fn drop_clutter_removes_oversized_and_edge_blobs() {
+        let mut blobs: Vec<Blob> = (0..10).map(|i| blob(i as f64 * 20.0, 20.0)).collect();
+        blobs.push(blob(500.0, 10_000.0)); // huge dark area
+        let mut edge = blob(900.0, 100.0); // roof or tree at the image edge
+        edge.touches_border = true;
+        blobs.push(edge);
+        let mut edge_bird = blob(950.0, 22.0); // a bird cut by the edge stays
+        edge_bird.touches_border = true;
+        blobs.push(edge_bird);
+        assert_eq!(drop_clutter(blobs).len(), 11);
+    }
 }

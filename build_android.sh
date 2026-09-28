@@ -8,13 +8,13 @@ ANDROID_PROJECT_DIR="$SCRIPT_DIR/src-tauri/gen/android"
 KEYSTORE_PROPS_FILE="$ANDROID_PROJECT_DIR/keystore.properties"
 
 # Export OpenCV environment variables for the opencv-rust crate
-export OPENCV_VERSION="4.13.0"
+export OPENCV_VERSION="5.0.0"
 export OPENCV_STATIC="1"
 export OPENCV_INCLUDE_PATHS="$OPENCV_SDK/jni/include"
 export OPENCV_DISABLE_PROBES="pkg_config,cmake,vcpkg_cmake,vcpkg"
 
-# List of OpenCV libraries to link (in dependency order)
-export OPENCV_LINK_LIBS="opencv_gapi,opencv_stitching,opencv_calib3d,opencv_dnn,opencv_features2d,opencv_flann,opencv_highgui,opencv_imgcodecs,opencv_imgproc,opencv_ml,opencv_objdetect,opencv_photo,opencv_video,opencv_videoio,opencv_core"
+# OpenCV libraries used by the app (in dependency order); must match the crate features in Cargo.toml
+export OPENCV_LINK_LIBS="opencv_imgcodecs,opencv_geometry,opencv_imgproc,opencv_core"
 
 # Fail fast for release builds if signing is not configured.
 # Supported config sources:

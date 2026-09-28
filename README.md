@@ -12,23 +12,42 @@ The app loads an image, detects bird-like blobs, annotates them with circles, an
 
 - Tauri 2 (`tauri`, `tauri-build`)
 - Rust 2024 edition
-- OpenCV via `opencv` crate (`0.98.1`)
+- OpenCV 5 via `opencv` crate (`0.101`, modules `core`, `imgproc`, `imgcodecs`, `geometry`)
 - Frontend: static HTML/CSS/JS (no Node bundler required)
 
 
 ## Detection Pipeline
 
-`process_image` (Rust command) applies:
-1. Decode image bytes
-2. Convert to grayscale
-3. Gaussian blur
-4. Threshold (`adaptive` or `otsu`)
-5. Optional auto/manual inversion
-6. Morphological open/close cleanup
-7. Optional exclusion mask application
-8. External contour extraction
-9. Radius-based filtering from contour area
-10. Circle annotation + PNG encode
+`process_image` (Rust command, `src-tauri/src/blob_filter.rs`) supports three methods.
+
+**Sky background** (`background`, default):
+1. Decode image bytes, convert to grayscale (*Invert* looks for light birds on a dark background)
+2. Estimate the sky: morphological closing with a *local window* larger than a bird's thickness, then box blur
+3. Relative darkness (Weber contrast) `(sky − pixel) / sky` after a light Gaussian blur (*Blur*):
+   birds are silhouettes, so they stand out against bright and dark clouds alike
+4. Local sky texture: RMS of the contrast (capped at 7%) over a window 3× the local window
+5. Threshold per pixel = max(8%, *threshold* × local texture); hysteresis grows detections down to 60% of it,
+   so cloud texture needs more contrast than a smooth sky
+6. Connected components, radius filtering from pixel area
+
+**Adaptive / Otsu** (classic): blur → threshold → optional inversion → morphological open/close → exclusion mask → external contours → radius filtering.
+
+For all methods, blobs over 25× the median detection, or over 3× when touching the image edge
+(trees, roofs, lamps), are dropped. *Split merged birds* then compares every blob with the median
+area of up to 12 detections of the same flock (within 12 of their own sizes) and counts it as
+`round(area / reference)` birds. Single birds are circled in red, merged ones in orange with their count.
+
+### Testing the detector
+
+```bash
+cd src-tauri
+cargo test --lib
+cargo run --release --example count -- --out annotated/ photo1.jpg photo2.jpg
+```
+
+The unit tests count birds on synthetic cloudy-sky scenes (faint, touching and light birds,
+masks, large dark clutter). The `count` example prints the count per file and accepts
+`--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split`.
 
 
 ## Prerequisites
@@ -53,7 +72,7 @@ cargo install tauri-cli --version "^2"
 
 ### Desktop
 
-- OpenCV available on host system (used by `opencv` crate probing)
+- OpenCV 5 available on host system (used by `opencv` crate probing), e.g. `brew install opencv`
 - Platform dependencies required by Tauri (WebView/runtime toolchain)
 
 ### Android
@@ -65,7 +84,7 @@ cargo install tauri-cli --version "^2"
 ### iOS (macOS only)
 
 - Xcode + iOS toolchain + signing setup
-- OpenCV iOS framework at `src-tauri/opencv2.framework`
+- OpenCV iOS framework at `src-tauri/opencv2.framework` (download with `./setup_opencv_ios.sh`)
 
 ## Run in Development (Desktop)
 
@@ -77,7 +96,7 @@ The frontend is served from the static `src/` directory (`frontendDist: "../src"
 
 ## Build Android
 
-1. Download/update OpenCV Android SDK (pinned to `4.13.0`):
+1. Download/update OpenCV Android SDK (pinned to `5.0.0`, "16kb-page-fix" package):
 
 ```bash
 ./setup_opencv_android.sh
@@ -121,9 +140,11 @@ make android
 
 - OpenCV link/probe failures on desktop:
   - Ensure host OpenCV dev libraries are installed and discoverable by `opencv` crate.
+  - The project targets OpenCV 5 (`pkg-config --modversion opencv5`). OpenCV 4.x is not supported:
+    `contourArea`/`moments` live in the `geometry` module, which only exists in OpenCV 5.
 
 - iOS OpenCV link errors:
-  - Verify `src-tauri/opencv2.framework` exists and is valid for selected architecture.
+  - Verify `src-tauri/opencv2.framework` exists and is valid for selected architecture; re-run `./setup_opencv_ios.sh`.
 
 - Camera does not open on Linux desktop:
   - `open_camera` tries `gnome-photos`, `cheese`, then `ffplay`; install one of them or use gallery input.

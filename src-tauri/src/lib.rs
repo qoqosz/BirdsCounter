@@ -1,5 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-mod blob_filter;
+pub mod blob_filter;
 use blob_filter::{BlobFilter, BlobParams};
 
 #[derive(serde::Serialize)]

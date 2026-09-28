@@ -11,10 +11,11 @@ OPENCV_IOS_FRAMEWORK="$SCRIPT_DIR/src-tauri/opencv2.framework"
 export OPENCV_DISABLE_PROBES="pkg_config,cmake,vcpkg_cmake,vcpkg"
 
 # Configure OpenCV environment variables for iOS
-export OPENCV_VERSION="4.13.0"
-export OPENCV_LINK_LIBS="opencv2"
-export OPENCV_LINK_PATHS="$OPENCV_IOS_FRAMEWORK"
-export OPENCV_INCLUDE_PATHS="$OPENCV_IOS_FRAMEWORK/Headers"
+# (paths point at the directory containing opencv2.framework; the crate resolves Headers itself)
+export OPENCV_VERSION="5.0.0"
+export OPENCV_LINK_LIBS="opencv2.framework"
+export OPENCV_LINK_PATHS="$(dirname "$OPENCV_IOS_FRAMEWORK")"
+export OPENCV_INCLUDE_PATHS="$(dirname "$OPENCV_IOS_FRAMEWORK")"
 
 # Check if a specific target was requested
 if [ "$1" == "--target" ] && [ -n "$2" ]; then

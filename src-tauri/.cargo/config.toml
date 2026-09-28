@@ -16,9 +16,9 @@ rustflags = [
 [target.aarch64-apple-darwin.env]
 # Prevent the iOS framework from being picked up via OPENCV_* env vars.
 OPENCV_DISABLE_PROBES = "environment"
-OPENCV_PKGCONFIG_NAME = "opencv4"
+OPENCV_PKGCONFIG_NAME = "opencv5"
 
 [target.x86_64-apple-darwin.env]
 # Prevent the iOS framework from being picked up via OPENCV_* env vars.
 OPENCV_DISABLE_PROBES = "environment"
-OPENCV_PKGCONFIG_NAME = "opencv4"
+OPENCV_PKGCONFIG_NAME = "opencv5"

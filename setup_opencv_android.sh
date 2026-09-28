@@ -1,9 +1,10 @@
 #!/bin/bash
 set -e
 
-OPENCV_VERSION="4.13.0"
+OPENCV_VERSION="5.0.0"
 SDK_DIR="src-tauri/opencv-android-sdk"
-ZIP_FILE="opencv-${OPENCV_VERSION}-android-sdk.zip"
+# The "16kb-page-fix" package bundles a libc++ aligned for 16 KB page devices (required by Google Play).
+ZIP_FILE="opencv-${OPENCV_VERSION}-android-sdk-16kb-page-fix.zip"
 DOWNLOAD_URL="https://github.com/opencv/opencv/releases/download/${OPENCV_VERSION}/${ZIP_FILE}"
 
 # Force remove existing SDK directory to ensure clean update

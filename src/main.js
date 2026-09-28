@@ -65,6 +65,8 @@ let adaptiveBlockInput;
 let adaptiveBlockValue;
 let adaptiveCInput;
 let adaptiveCValue;
+let sensitivityInput;
+let sensitivityValue;
 let morphKernelInput;
 let morphKernelValue;
 let morphOpenIterInput;
@@ -73,6 +75,7 @@ let morphCloseIterInput;
 let morphCloseIterValue;
 let autoInvertInput;
 let invertInput;
+let splitClustersInput;
 let isProcessing = false;
 let pendingProcess = false;
 let pendingProcessOptions = null;
@@ -431,6 +434,9 @@ function syncSettingsOutputs() {
   if (adaptiveCInput && adaptiveCValue) {
     adaptiveCValue.textContent = formatFixed(adaptiveCInput.value, 1);
   }
+  if (sensitivityInput && sensitivityValue) {
+    sensitivityValue.textContent = formatFixed(sensitivityInput.value, 1);
+  }
   if (morphKernelInput && morphKernelValue) {
     morphKernelValue.textContent = String(morphKernelInput.value);
   }
@@ -440,6 +446,16 @@ function syncSettingsOutputs() {
   if (morphCloseIterInput && morphCloseIterValue) {
     morphCloseIterValue.textContent = String(morphCloseIterInput.value);
   }
+}
+
+// Shows only the settings used by the selected threshold method.
+function updateMethodSettingsVisibility() {
+  if (!thresholdMethodSelect) return;
+  const method = thresholdMethodSelect.value;
+  document.querySelectorAll("[data-methods]").forEach((field) => {
+    const methods = field.dataset.methods.split(" ");
+    field.style.display = methods.includes(method) ? "" : "none";
+  });
 }
 
 function updateCropButtonState(active) {
@@ -1113,10 +1129,10 @@ function readInt(input, fallback) {
 
 function readParamsFromUI() {
   return {
-    min_radius: readFloat(minRadiusInput, 2.0),
+    min_radius: readFloat(minRadiusInput, 1.0),
     max_radius: readFloat(maxRadiusInput, 100.0),
     blur: readInt(blurInput, 3),
-    threshold_method: thresholdMethodSelect ? thresholdMethodSelect.value : "adaptive",
+    threshold_method: thresholdMethodSelect ? thresholdMethodSelect.value : "background",
     adaptive_block: readInt(adaptiveBlockInput, 31),
     adaptive_c: readFloat(adaptiveCInput, 4.0),
     morph_kernel: readInt(morphKernelInput, 3),
@@ -1124,6 +1140,8 @@ function readParamsFromUI() {
     morph_close_iter: readInt(morphCloseIterInput, 1),
     auto_invert: autoInvertInput ? autoInvertInput.checked : true,
     invert: invertInput ? invertInput.checked : false,
+    sensitivity: readFloat(sensitivityInput, 6.0),
+    split_clusters: splitClustersInput ? splitClustersInput.checked : true,
   };
 }
 
@@ -1273,6 +1291,8 @@ window.addEventListener("DOMContentLoaded", () => {
   adaptiveBlockValue = document.querySelector("#adaptiveBlockValue");
   adaptiveCInput = document.querySelector("#adaptiveC");
   adaptiveCValue = document.querySelector("#adaptiveCValue");
+  sensitivityInput = document.querySelector("#sensitivity");
+  sensitivityValue = document.querySelector("#sensitivityValue");
   morphKernelInput = document.querySelector("#morphKernel");
   morphKernelValue = document.querySelector("#morphKernelValue");
   morphOpenIterInput = document.querySelector("#morphOpenIter");
@@ -1281,6 +1301,7 @@ window.addEventListener("DOMContentLoaded", () => {
   morphCloseIterValue = document.querySelector("#morphCloseIterValue");
   autoInvertInput = document.querySelector("#autoInvert");
   invertInput = document.querySelector("#invert");
+  splitClustersInput = document.querySelector("#splitClusters");
 
   const applySystemAccentFromAndroid = () => {
     if (!window.Android || typeof window.Android.getSystemAccentPalette !== "function") {
@@ -1351,10 +1372,15 @@ window.addEventListener("DOMContentLoaded", () => {
   bindRangeValue(blurInput, blurValue);
   bindRangeValue(adaptiveBlockInput, adaptiveBlockValue);
   bindRangeValue(adaptiveCInput, adaptiveCValue, (value) => formatFixed(value, 1));
+  bindRangeValue(sensitivityInput, sensitivityValue, (value) => formatFixed(value, 1));
   bindRangeValue(morphKernelInput, morphKernelValue);
   bindRangeValue(morphOpenIterInput, morphOpenIterValue);
   bindRangeValue(morphCloseIterInput, morphCloseIterValue);
 
+  if (thresholdMethodSelect) {
+    thresholdMethodSelect.addEventListener("change", updateMethodSettingsVisibility);
+    updateMethodSettingsVisibility();
+  }
   if (minRadiusInput) {
     minRadiusInput.addEventListener("input", clampRadiusValues);
   }
@@ -1465,11 +1491,13 @@ window.addEventListener("DOMContentLoaded", () => {
     thresholdMethodSelect,
     adaptiveBlockInput,
     adaptiveCInput,
+    sensitivityInput,
     morphKernelInput,
     morphOpenIterInput,
     morphCloseIterInput,
     autoInvertInput,
     invertInput,
+    splitClustersInput,
   ];
 
   settingsControls.forEach((control) => {
