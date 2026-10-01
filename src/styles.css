@@ -1,168 +1,124 @@
-/* ===== CSS Custom Properties for Theming ===== */
+/*
+ * Layout and components are shared; the look comes from tokens.
+ * body.is-mac follows the macOS Human Interface Guidelines (system colors, native controls),
+ * body.is-android follows Material 3 (dynamic color injected by MainActivity.kt).
+ */
+
+/* ===== Tokens: default (iOS / Windows / Linux / browser) ===== */
 :root {
-    /* Typography */
-    font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 400;
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    -webkit-text-size-adjust: 100%;
+    color-scheme: light dark;
 
-    /* Light theme colors */
-    --bg-primary: #f6f6f6;
-    --bg-surface: #ffffff;
-    --bg-surface-hover: #f9f9ff;
-    --text-primary: #0f0f0f;
-    --text-secondary: #666666;
-    --accent: #396cd8;
-    --accent-hover: #2d5ab8;
-    --accent-active: #1e3f7a;
-    --border-default: #d1d1d1;
-    --border-accent: #396cd8;
-    --shadow-sm: rgba(0, 0, 0, 0.1);
-    --shadow-md: rgba(0, 0, 0, 0.15);
-    --shadow-accent: rgba(57, 108, 216, 0.2);
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-size: 15px;
 
-    color: var(--text-primary);
-    background-color: var(--bg-primary);
+    --bg: #f2f2f7;
+    --header-bg: var(--bg);
+    --header-bg-scrolled: var(--bg);
+    --header-height: 52px;
+    --surface: #ffffff;
+    --surface-active: #e5e5ea;
+    --text: #000000;
+    --text-secondary: rgba(60, 60, 67, 0.6);
+    --text-tertiary: rgba(60, 60, 67, 0.3);
+    --accent: #007aff;
+    --on-accent: #ffffff;
+    --border: rgba(60, 60, 67, 0.29);
+    --separator: rgba(60, 60, 67, 0.18);
+    --track: rgba(120, 120, 128, 0.2);
+
+    --radius-group: 12px;
+    --radius-button: 10px;
+    --radius-image: 12px;
+    --button-height: 44px;
+    --gap: 20px;
+
+    /* Android reports system bar insets through --android-inset-* (see MainActivity.kt) */
+    --safe-top: max(env(safe-area-inset-top, 0px), var(--android-inset-top, 0px));
+    --safe-right: max(env(safe-area-inset-right, 0px), var(--android-inset-right, 0px));
+    --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--android-inset-bottom, 0px));
+    --safe-left: max(env(safe-area-inset-left, 0px), var(--android-inset-left, 0px));
+
+    /* Material 3 baseline scheme; replaced by the device's dynamic colors on Android 12+ */
+    --md-primary: #6750a4;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #eaddff;
+    --md-on-primary-container: #21005d;
+    --md-secondary-container: #e8def8;
+    --md-on-secondary-container: #1d192b;
+    --md-surface: #fef7ff;
+    --md-on-surface: #1d1b20;
+    --md-on-surface-variant: #49454f;
+    --md-outline: #79747e;
+    --md-outline-variant: #cac4d0;
+    --md-surface-container-low: #f7f2fa;
+    --md-surface-container: #f3edf7;
+    --md-surface-container-high: #ece6f0;
+    --md-surface-container-highest: #e6e0e9;
 }
 
-/* ===== Dark Theme ===== */
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg-primary: #1c1c1e;
-        --bg-surface: #2c2c2e;
-        --bg-surface-hover: #3a3a3c;
-        --text-primary: #f5f5f7;
-        --text-secondary: #a1a1a6;
+        --bg: #000000;
+        --surface: #1c1c1e;
+        --surface-active: #3a3a3c;
+        --text: #ffffff;
+        --text-secondary: rgba(235, 235, 245, 0.6);
+        --text-tertiary: rgba(235, 235, 245, 0.3);
         --accent: #0a84ff;
-        --accent-hover: #409cff;
-        --accent-active: #0066cc;
-        --border-default: #48484a;
-        --border-accent: #0a84ff;
-        --shadow-sm: rgba(0, 0, 0, 0.3);
-        --shadow-md: rgba(0, 0, 0, 0.4);
-        --shadow-accent: rgba(10, 132, 255, 0.3);
+        --border: rgba(84, 84, 88, 0.65);
+        --separator: rgba(84, 84, 88, 0.6);
+        --track: rgba(120, 120, 128, 0.36);
+
+        --md-primary: #d0bcff;
+        --md-on-primary: #381e72;
+        --md-primary-container: #4f378b;
+        --md-on-primary-container: #eaddff;
+        --md-secondary-container: #4a4458;
+        --md-on-secondary-container: #e8def8;
+        --md-surface: #141218;
+        --md-on-surface: #e6e0e9;
+        --md-on-surface-variant: #cac4d0;
+        --md-outline: #938f99;
+        --md-outline-variant: #49454f;
+        --md-surface-container-low: #1d1b20;
+        --md-surface-container: #211f26;
+        --md-surface-container-high: #2b2930;
+        --md-surface-container-highest: #36343b;
     }
 }
 
-/* ===== Reset ===== */
-* {
+/* ===== Reset & base ===== */
+*,
+*::before,
+*::after {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
 body {
-    width: 100%;
     min-height: 100vh;
-    display: flex;
-    align-items: stretch;
-    justify-content: flex-start;
-    overflow-y: auto;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    transition: background-color 0.2s ease, color 0.2s ease;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--font-size);
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
-/* ===== Layout ===== */
-.container {
-    width: 100%;
-    min-height: 100%;
-    height: auto;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: center;
-    padding: 2rem;
-    padding-top: calc(1rem + env(safe-area-inset-top, 0px));
-    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
-    padding-left: calc(2rem + env(safe-area-inset-left, 0px));
-    padding-right: calc(2rem + env(safe-area-inset-right, 0px));
-    gap: 2rem;
+button,
+select,
+input {
+    font: inherit;
+    color: inherit;
 }
 
-/* ===== App Header ===== */
-.app-header {
-    width: 100%;
-    max-width: 500px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    min-height: 44px;
-}
-
-.back-button {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    border-radius: 50%;
-    transition: background-color 0.2s ease;
-    color: var(--accent);
-}
-
-.back-button svg {
-    width: 24px;
-    height: 24px;
-    stroke: currentColor;
-}
-
-.back-button:hover {
-    background-color: var(--bg-surface-hover);
-}
-
-.back-button:active {
-    background-color: var(--bg-surface);
-    transform: translateY(-50%) scale(0.95);
-}
-
-h1 {
-    text-align: center;
-    font-size: 2rem;
-    color: var(--text-primary);
-}
-
-.lang-switch {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-}
-
-.lang-switch select {
-    appearance: none;
-    border: 1px solid var(--border-default);
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
-    padding: 0.35rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    box-shadow: 0 1px 4px var(--shadow-sm);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.lang-switch select:hover {
-    border-color: var(--accent);
-    box-shadow: 0 2px 6px var(--shadow-accent);
-}
-
-.lang-switch select:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+svg {
+    display: block;
 }
 
 .sr-only {
@@ -176,147 +132,207 @@ h1 {
     border: 0;
 }
 
-/* ===== Drag & Drop Area ===== */
-.drag-drop-area {
+/* ===== Header (toolbar / top app bar) ===== */
+.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: calc(var(--header-height) + var(--safe-top));
+    padding: var(--safe-top) calc(16px + var(--safe-right)) 0 calc(16px + var(--safe-left));
+    background-color: var(--header-bg);
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+body.is-scrolled .app-header {
+    background-color: var(--header-bg-scrolled);
+}
+
+h1 {
+    flex: 1;
+    min-width: 0;
+    font-size: 17px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.icon-button {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+}
+
+.icon-button svg {
+    width: 22px;
+    height: 22px;
+}
+
+.back-button .icon-arrow {
+    display: none;
+}
+
+.lang-switch {
+    flex: none;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.lang-icon {
+    display: none;
+}
+
+.lang-switch select {
+    border: 1px solid var(--border);
+    background-color: var(--surface);
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 0.875em;
+    cursor: pointer;
+}
+
+/* ===== Layout ===== */
+.container {
     width: 100%;
-    max-width: 500px;
-    height: 300px;
-    border: 3px dashed var(--border-accent);
-    border-radius: 12px;
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    padding: 12px calc(16px + var(--safe-right)) calc(24px + var(--safe-bottom)) calc(16px + var(--safe-left));
+}
+
+/* ===== Start screen ===== */
+.drag-drop-area {
+    min-height: 260px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 1rem;
-    padding: 2rem;
+    gap: 6px;
+    padding: 32px 24px;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-group);
+    background-color: var(--surface);
+    text-align: center;
     cursor: pointer;
-    transition: all 0.2s ease;
-    background-color: var(--bg-surface);
-    box-shadow: 0 2px 8px var(--shadow-sm);
-}
-
-.drag-drop-area:hover {
-    border-color: var(--accent-hover);
-    box-shadow: 0 4px 12px var(--shadow-accent);
-    background-color: var(--bg-surface-hover);
+    transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .drag-drop-area.drag-over {
     border-color: var(--accent);
-    background-color: var(--bg-surface-hover);
-    box-shadow: 0 4px 16px var(--shadow-accent);
+    background-color: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.empty-icon {
+    margin-bottom: 8px;
+    color: var(--text-tertiary);
 }
 
 .upload-icon {
-    width: 64px;
-    height: 64px;
-    color: var(--accent);
-    stroke-width: 1.5;
+    width: 56px;
+    height: 56px;
 }
 
 .drag-text {
-    font-size: 1.25rem;
+    font-size: 1.15em;
     font-weight: 600;
-    color: var(--text-primary);
-    text-align: center;
 }
 
 .drag-subtext {
-    font-size: 0.9rem;
     color: var(--text-secondary);
-    text-align: center;
 }
 
 /* ===== Buttons ===== */
-.button-container {
+.button-container,
+.process-actions {
     display: flex;
-    gap: 1rem;
-    justify-content: center;
-    width: 100%;
-    max-width: 500px;
     flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
 }
 
 .action-button {
-    display: flex;
+    position: relative;
+    overflow: hidden;
+    flex: 1;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    flex: 1;
-    min-width: 150px;
-    padding: 0.8rem 1.5rem;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    font-size: 1rem;
+    gap: 8px;
+    min-width: 0;
+    height: var(--button-height);
+    padding: 0 20px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-button);
     font-weight: 600;
-    font-family: inherit;
+    white-space: nowrap;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 8px var(--shadow-sm);
-}
-
-.action-button svg {
-    width: 20px;
-    height: 20px;
-    stroke: currentColor;
-}
-
-.camera-button {
-    background-color: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
-}
-
-.camera-button:hover {
-    background-color: var(--accent-hover);
-    border-color: var(--accent-hover);
-    box-shadow: 0 4px 12px var(--shadow-accent);
-}
-
-.camera-button:active {
-    background-color: var(--accent-active);
-    transform: scale(0.98);
-}
-
-.gallery-button {
-    background-color: var(--bg-surface);
+    background-color: var(--surface);
     color: var(--accent);
-    border-color: var(--border-accent);
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
 }
 
-.gallery-button:hover {
-    background-color: var(--bg-surface-hover);
-    border-color: var(--accent-hover);
-    color: var(--accent-hover);
-    box-shadow: 0 4px 12px var(--shadow-accent);
+.btn-icon {
+    flex: none;
+    width: 18px;
+    height: 18px;
 }
 
-.gallery-button:active {
-    background-color: var(--bg-surface);
-    transform: scale(0.98);
+.action-button:active {
+    background-color: var(--surface-active);
 }
 
-/* ===== Image Preview ===== */
+.camera-button,
+.action-button.is-active {
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.camera-button:active,
+.action-button.is-active:active {
+    background-color: var(--accent);
+    filter: brightness(0.88);
+}
+
+.cancel-button {
+    display: none;
+}
+
+/* ===== Image preview ===== */
 .image-preview {
-    width: fit-content;
-    max-width: 100%;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 4px 12px var(--shadow-md);
-    background-color: var(--bg-surface);
-    flex-shrink: 1;
-    min-height: 0;
     position: relative;
     align-self: center;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: var(--radius-image);
+    background-color: var(--surface);
 }
 
 .image-preview img {
+    display: block;
     width: auto;
     height: auto;
     max-width: 100%;
     max-height: 100%;
-    display: block;
     object-fit: contain;
+    -webkit-user-drag: none;
 }
 
 body.fullscreen-preview {
@@ -331,7 +347,6 @@ body.fullscreen-preview {
     height: 100vh;
     max-width: none;
     max-height: none;
-    box-sizing: border-box;
     border-radius: 0;
     background: #000000;
     box-shadow: none;
@@ -344,18 +359,17 @@ body.fullscreen-preview {
 .image-preview.is-fullscreen img {
     width: 100%;
     height: 100%;
-    max-width: 100%;
-    max-height: 100%;
     object-fit: contain;
     border-radius: 0;
 }
 
 .fullscreen-close {
     position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 42px;
-    height: 42px;
+    top: calc(12px + var(--safe-top));
+    right: calc(12px + var(--safe-right));
+    z-index: 45;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     border: none;
     background: rgba(0, 0, 0, 0.55);
@@ -364,12 +378,11 @@ body.fullscreen-preview {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 45;
 }
 
 .fullscreen-close svg {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
 }
 
 .image-preview.is-fullscreen .fullscreen-close {
@@ -378,30 +391,21 @@ body.fullscreen-preview {
 
 .fullscreen-close:active {
     background: rgba(0, 0, 0, 0.75);
-    transform: scale(0.96);
 }
 
-body.is-android .image-preview.is-fullscreen .fullscreen-close {
-    top: calc(16px + env(safe-area-inset-top, 0px));
-    right: calc(12px + env(safe-area-inset-right, 0px));
-}
-
-body.is-android .image-preview img {
-    touch-action: manipulation;
-}
-
-/* ===== Count Label ===== */
+/* ===== Count label ===== */
 .count-label {
-    width: 100%;
-    max-width: 500px;
     text-align: center;
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-top: 0.5rem;
+    font-size: 1.1em;
+    font-weight: 500;
 }
 
-/* ===== Crop Overlay ===== */
+#countValue {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ===== Crop overlay ===== */
 .crop-overlay {
     position: absolute;
     inset: 0;
@@ -416,7 +420,7 @@ body.is-android .image-preview img {
 
 .crop-mask {
     position: absolute;
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(0, 0, 0, 0.45);
 }
 
 .crop-box {
@@ -458,13 +462,11 @@ body.is-android .image-preview img {
 .handle-ne {
     right: -8px;
     top: -8px;
-    cursor: default;
 }
 
 .handle-sw {
     left: -8px;
     bottom: -8px;
-    cursor: default;
 }
 
 .handle-se {
@@ -488,7 +490,7 @@ body.is-android .image-preview img {
     stroke-linejoin: round;
 }
 
-/* ===== Mask Overlay ===== */
+/* ===== Mask overlay ===== */
 .mask-overlay {
     position: absolute;
     inset: 0;
@@ -514,468 +516,808 @@ body.is-android .image-preview img {
     display: block;
 }
 
-/* ===== Process Actions ===== */
-.process-actions {
-    width: 100%;
-    max-width: 500px;
-    display: flex;
-    gap: 1rem;
-    justify-content: center;
-    margin-top: 1rem;
-}
-
-.process-actions .action-button {
-    flex: 1;
-    min-width: 0;
-    height: 56px;
-    min-height: 56px;
-}
-
-.process-actions .process-button {
-    width: auto;
-    max-width: none;
-}
-
-.mask-button,
-.crop-button {
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
-    border-color: var(--border-default);
-}
-
-.mask-button:hover,
-.crop-button:hover {
-    background-color: var(--bg-surface-hover);
-    border-color: var(--accent-hover);
-    color: var(--accent-hover);
-    box-shadow: 0 4px 12px var(--shadow-accent);
-}
-
-.mask-button.is-active,
-.crop-button.is-active {
-    background-color: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
-    box-shadow: 0 4px 12px var(--shadow-accent);
-}
-
-.cancel-button {
-    display: none;
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
-    border-color: var(--border-default);
-}
-
-.cancel-button:hover {
-    background-color: var(--bg-surface-hover);
-    border-color: var(--border-default);
-    color: var(--text-primary);
-    box-shadow: 0 4px 12px var(--shadow-md);
-}
-
-.mask-brush-controls {
-    width: 100%;
-    max-width: 500px;
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: 12px;
-    padding: 0.75rem 1rem;
-    box-shadow: 0 2px 8px var(--shadow-sm);
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-}
-
-.mask-brush-controls label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-}
-
-/* ===== Process Button ===== */
-.process-button {
-    width: 100%;
-    max-width: 500px;
-    height: 56px;
-    min-height: 56px;
-    max-height: 56px;
-    flex-shrink: 0;
-    flex-grow: 0;
-    padding: 1rem;
-    font-size: 1.1rem;
-    background-color: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
-}
-
-.process-button:hover {
-    background-color: var(--accent-hover);
-    border-color: var(--accent-hover);
-    box-shadow: 0 4px 12px var(--shadow-accent);
-}
-
-.process-button:active {
-    background-color: var(--accent-active);
-    transform: scale(0.98);
-}
-
-/* ===== Settings Panel ===== */
+/* ===== Settings (grouped form) ===== */
 .settings-panel {
-    width: 100%;
-    max-width: 500px;
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: 12px;
-    padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    box-shadow: 0 2px 8px var(--shadow-sm);
+    gap: 6px;
 }
 
 .settings-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
+    padding: 0 16px;
+    font-size: 0.8125em;
+    font-weight: 400;
+    text-transform: uppercase;
+    color: var(--text-secondary);
 }
 
-.settings-grid {
+.group {
+    background-color: var(--surface);
+    border-radius: var(--radius-group);
+    overflow: hidden;
+}
+
+.settings-field {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem 1rem;
+    grid-template-columns: minmax(110px, 38%) 1fr;
+    align-items: center;
+    gap: 4px 12px;
+    min-height: 44px;
+    padding: 6px 16px;
 }
 
-.settings-advanced {
-    border-top: 1px solid var(--border-default);
-    padding-top: 0.75rem;
+.group .settings-field+.settings-field,
+.settings-advanced,
+.settings-advanced-grid {
+    border-top: 0.5px solid var(--separator);
 }
 
-.advanced-summary {
-    list-style: none;
+.settings-advanced-grid> :first-child {
+    border-top: none;
+}
+
+.settings-field label {
+    color: var(--text);
+}
+
+.range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.range-row input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--accent);
+}
+
+.range-value {
+    min-width: 3em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+}
+
+.select-wrap {
+    position: relative;
+    justify-self: end;
+    max-width: 100%;
+}
+
+.settings-select {
+    max-width: 100%;
+    border: 1px solid var(--border);
+    background-color: var(--surface);
+    padding: 4px 8px;
+    border-radius: 8px;
     cursor: pointer;
+}
+
+.toggle-field {
+    display: block;
+}
+
+.toggle-label {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 0.9rem;
-    color: var(--text-primary);
-    font-weight: 600;
-    gap: 0.75rem;
+    gap: 12px;
+    min-height: 32px;
+    cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+    flex: none;
+    accent-color: var(--accent);
+}
+
+.advanced-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    padding: 0 16px;
+    list-style: none;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
 }
 
 .advanced-summary::-webkit-details-marker {
     display: none;
 }
 
-.advanced-summary::after {
-    content: "";
-    width: 0;
-    height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid var(--text-secondary);
+.expand-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--text-secondary);
     transition: transform 0.2s ease;
 }
 
-.settings-advanced[open] .advanced-summary::after {
+.settings-advanced[open] .expand-icon {
     transform: rotate(180deg);
 }
 
-.settings-advanced-grid {
-    margin-top: 0.75rem;
+.mask-brush-controls .settings-field {
+    border-top: none;
 }
 
-.settings-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    font-size: 0.9rem;
-    color: var(--text-primary);
+/* ===== Ripple (Android) ===== */
+.ripple {
+    position: absolute;
+    border-radius: 50%;
+    background-color: currentColor;
+    opacity: 0.12;
+    transform: scale(0);
+    pointer-events: none;
+    animation: ripple 450ms cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
-.settings-field label {
-    font-size: 0.85rem;
+.ripple.is-fading {
+    transition: opacity 250ms linear;
+    opacity: 0;
+}
+
+@keyframes ripple {
+    to {
+        transform: scale(1);
+    }
+}
+
+/* =====================================================================
+ * macOS — Human Interface Guidelines
+ * ===================================================================== */
+body.is-mac {
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-size: 13px;
+
+    --bg: #ececec;
+    --surface: rgba(0, 0, 0, 0.03);
+    --text: rgba(0, 0, 0, 0.85);
+    --text-secondary: rgba(0, 0, 0, 0.5);
+    --text-tertiary: rgba(0, 0, 0, 0.26);
+    --accent: #007aff;
+    --border: rgba(0, 0, 0, 0.1);
+    --separator: rgba(0, 0, 0, 0.1);
+    --group-border: rgba(0, 0, 0, 0.05);
+    --push-bg: #ffffff;
+    --push-bg-active: #e3e3e3;
+    --push-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.15);
+    --toolbar-hover: rgba(0, 0, 0, 0.06);
+
+    --header-height: 52px;
+    --header-bg-scrolled: var(--bg);
+    --radius-group: 10px;
+    --radius-button: 6px;
+    --radius-image: 8px;
+    --button-height: 24px;
+    --gap: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+    body.is-mac {
+        --bg: #282828;
+        --surface: rgba(255, 255, 255, 0.04);
+        --text: rgba(255, 255, 255, 0.85);
+        --text-secondary: rgba(255, 255, 255, 0.55);
+        --text-tertiary: rgba(255, 255, 255, 0.25);
+        --accent: #0a84ff;
+        --border: rgba(255, 255, 255, 0.12);
+        --separator: rgba(255, 255, 255, 0.1);
+        --group-border: rgba(255, 255, 255, 0.08);
+        --push-bg: rgba(255, 255, 255, 0.2);
+        --push-bg-active: rgba(255, 255, 255, 0.3);
+        --push-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35), inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+        --toolbar-hover: rgba(255, 255, 255, 0.08);
+    }
+}
+
+/* WebKit exposes the real AppKit colors, including the user's accent color */
+@supports (color: -apple-system-control-accent) {
+    body.is-mac {
+        --bg: -apple-system-window-background;
+        --text: -apple-system-label;
+        --text-secondary: -apple-system-secondary-label;
+        --text-tertiary: -apple-system-tertiary-label;
+        --accent: -apple-system-control-accent;
+        --separator: -apple-system-separator;
+    }
+}
+
+body.is-mac,
+body.is-mac button,
+body.is-mac summary,
+body.is-mac .toggle-label,
+body.is-mac .drag-drop-area {
+    cursor: default;
+}
+
+/* Unified toolbar under the traffic lights (titleBarStyle: Overlay) */
+body.is-mac .app-header {
+    padding-left: 86px;
+    padding-right: 12px;
+    gap: 6px;
+}
+
+body.is-mac.is-fullscreen-window .app-header {
+    padding-left: 12px;
+}
+
+body.is-mac.is-scrolled .app-header {
+    box-shadow: 0 0.5px 0 var(--separator);
+}
+
+body.is-mac h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+body.is-mac .icon-button {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
     color: var(--text-secondary);
 }
 
-.range-row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
+body.is-mac .icon-button:hover {
+    background-color: var(--toolbar-hover);
 }
 
-.range-row input[type="range"] {
-    flex: 1;
-    accent-color: var(--accent);
+body.is-mac .icon-button:active {
+    color: var(--text);
 }
 
-.range-value {
-    min-width: 3.5rem;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: var(--text-primary);
+body.is-mac .icon-button svg {
+    width: 16px;
+    height: 16px;
 }
 
-.settings-select {
-    border: 1px solid var(--border-default);
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
-    padding: 0.4rem 0.6rem;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    cursor: pointer;
+/* Native pop-up buttons */
+body.is-mac .lang-switch select,
+body.is-mac .settings-select {
+    -webkit-appearance: auto;
+    appearance: auto;
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 13px;
 }
 
-.toggle-field {
-    justify-content: center;
+body.is-mac .container {
+    max-width: 640px;
+    padding: 8px 20px 24px;
 }
 
-.toggle-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-    color: var(--text-primary);
+body.is-mac .drag-drop-area {
+    background: transparent;
+    border-color: var(--text-tertiary);
+    border-radius: 12px;
 }
 
-.toggle-label input[type="checkbox"] {
-    accent-color: var(--accent);
+body.is-mac .drag-drop-area.drag-over {
+    border-color: var(--accent);
+    background-color: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-/* ===== macOS Platform Styles ===== */
-body.is-mac {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", sans-serif;
-    --bg-primary: #ececec;
-    --bg-surface: #ffffff;
-    --bg-surface-hover: #f5f5f7;
-    --accent: #007aff;
-    --accent-hover: #0062cc;
-    --accent-active: #004999;
-    --border-default: #d1d1d6;
-    --shadow-sm: rgba(0, 0, 0, 0.08);
-    --shadow-accent: rgba(0, 122, 255, 0.2);
+body.is-mac .drag-text {
+    font-size: 15px;
+}
+
+/* Push buttons */
+body.is-mac .button-container,
+body.is-mac .process-actions {
+    gap: 10px;
 }
 
 body.is-mac .action-button {
-    border-radius: 6px;
-    font-weight: 500;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    flex: none;
+    min-width: 96px;
+    padding: 0 14px;
+    border: none;
+    font-weight: 400;
+    color: var(--text);
+    background-color: var(--push-bg);
+    box-shadow: var(--push-shadow);
 }
 
-body.is-mac .gallery-button {
-    color: var(--text-primary);
-    border: 1px solid var(--border-default);
-    background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
+body.is-mac .button-container .action-button {
+    height: 28px;
+    min-width: 140px;
+    font-size: 13px;
 }
 
-body.is-mac .gallery-button:hover {
-    background: linear-gradient(180deg, #ffffff 0%, #ebebed 100%);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    border-color: var(--border-default);
-    color: var(--text-primary);
+body.is-mac .action-button:active {
+    background-color: var(--push-bg-active);
 }
 
-/* macOS Dark Mode */
-@media (prefers-color-scheme: dark) {
-    body.is-mac {
-        --bg-primary: #1e1e1e;
-        --bg-surface: #2d2d2d;
-        --bg-surface-hover: #3d3d3d;
-        --text-primary: #ffffff;
-        --text-secondary: #98989d;
-        --accent: #0a84ff;
-        --accent-hover: #409cff;
-        --accent-active: #0066cc;
-        --border-default: #48484a;
-        --shadow-sm: rgba(0, 0, 0, 0.3);
-    }
-
-    body.is-mac .gallery-button {
-        background: linear-gradient(180deg, #3d3d3d 0%, #2d2d2d 100%);
-        border-color: var(--border-default);
-        color: var(--text-primary);
-    }
-
-    body.is-mac .gallery-button:hover {
-        background: linear-gradient(180deg, #4a4a4a 0%, #3a3a3a 100%);
-        color: var(--text-primary);
-    }
+body.is-mac .action-button.is-active,
+body.is-mac #galleryBtn {
+    color: #ffffff;
+    background-color: var(--accent);
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.2),
+        inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
 }
 
-/* ===== Android Platform Styles (Material 3) ===== */
+body.is-mac .btn-icon {
+    display: none;
+}
+
+/* "Open Image…" is the default button, on the trailing side as in macOS dialogs */
+body.is-mac #galleryBtn {
+    order: 2;
+}
+
+body.is-mac .action-button.is-active:active,
+body.is-mac #galleryBtn:active {
+    background-color: var(--accent);
+    filter: brightness(0.88);
+}
+
+body.is-mac .camera-button:active {
+    filter: none;
+}
+
+body.is-mac .image-preview {
+    box-shadow: 0 0 0 0.5px var(--separator), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+body.is-mac .count-label {
+    font-size: 15px;
+}
+
+/* Grouped form, as in System Settings */
+body.is-mac .settings-title {
+    padding: 0 2px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: none;
+    color: var(--text);
+}
+
+body.is-mac .group {
+    border: 0.5px solid var(--group-border);
+}
+
+body.is-mac .settings-field {
+    min-height: 36px;
+    padding: 5px 12px;
+}
+
+body.is-mac .range-row input[type="range"] {
+    accent-color: auto;
+}
+
+body.is-mac .toggle-label input[type="checkbox"] {
+    accent-color: auto;
+}
+
+body.is-mac .advanced-summary {
+    min-height: 36px;
+    padding: 0 12px;
+}
+
+body.is-mac .expand-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* =====================================================================
+ * Android — Material 3
+ * ===================================================================== */
 body.is-android {
-    font-family: Roboto, "Google Sans", sans-serif;
-    --bg-primary: #fef7ff;
-    --bg-surface: #ffffff;
-    --bg-surface-hover: #f3edf7;
-    --text-primary: #1d1b20;
-    --text-secondary: #49454f;
-    --accent: var(--system-accent, #6750a4);
-    --accent-hover: var(--system-accent-hover, #7965af);
-    --accent-active: var(--system-accent-active, #4f378b);
-    --border-default: #79747e;
-    --shadow-sm: rgba(0, 0, 0, 0.15);
+    --font: Roboto, "Google Sans", system-ui, sans-serif;
+    --font-size: 16px;
+
+    --bg: var(--md-surface);
+    --header-bg: var(--md-surface);
+    --header-bg-scrolled: var(--md-surface-container);
+    --header-height: 64px;
+    --surface: var(--md-surface-container);
+    --text: var(--md-on-surface);
+    --text-secondary: var(--md-on-surface-variant);
+    --text-tertiary: var(--md-outline);
+    --accent: var(--md-primary);
+    --on-accent: var(--md-on-primary);
+    --border: var(--md-outline);
+    --separator: var(--md-outline-variant);
+
+    --radius-group: 16px;
+    --radius-button: 9999px;
+    --radius-image: 16px;
+    --button-height: 40px;
+    --gap: 16px;
+    letter-spacing: 0.15px;
 }
 
-body.is-android .container {
-    /* Extra padding for Android notch */
-    padding-top: calc(2rem + env(safe-area-inset-top, 0px));
-    min-height: 100vh;
-}
-
-body.is-android .button-container {
-    margin-top: auto;
-    margin-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+/* Top app bar */
+body.is-android .app-header {
+    padding-left: calc(4px + var(--safe-left));
+    padding-right: calc(4px + var(--safe-right));
+    gap: 0;
 }
 
 body.is-android h1 {
+    padding-left: 12px;
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+body.is-android.has-back h1 {
+    padding-left: 4px;
+}
+
+body.is-android .icon-button {
+    width: 48px;
+    height: 48px;
+    color: var(--md-on-surface-variant);
+}
+
+body.is-android .icon-button svg {
+    width: 24px;
+    height: 24px;
+}
+
+body.is-android .back-button {
+    color: var(--md-on-surface);
+}
+
+body.is-android .back-button .icon-chevron {
+    display: none;
+}
+
+body.is-android .back-button .icon-arrow {
+    display: block;
+}
+
+/* Language action: an icon button over the native picker */
+body.is-android .lang-switch {
+    width: 48px;
+    height: 48px;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--md-on-surface-variant);
+    overflow: hidden;
+}
+
+body.is-android .lang-icon {
+    display: block;
+    width: 24px;
+    height: 24px;
+}
+
+body.is-android .lang-switch select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+body.is-android .container {
+    min-height: calc(100vh - var(--header-height) - var(--safe-top));
+    padding-top: 8px;
+}
+
+/* Start screen: empty state with the actions at the bottom */
+body.is-android .drag-drop-area {
+    flex: 1;
+    border: none;
+    background: transparent;
+    cursor: auto;
+    gap: 8px;
+}
+
+body.is-android .empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 112px;
+    height: 112px;
+    margin-bottom: 16px;
+    border-radius: 50%;
+    background-color: var(--md-primary-container);
+    color: var(--md-on-primary-container);
+}
+
+body.is-android .upload-icon {
+    width: 48px;
+    height: 48px;
+}
+
+body.is-android .drag-text {
+    font-size: 24px;
+    line-height: 32px;
     font-weight: 400;
 }
 
+body.is-android .drag-subtext {
+    max-width: 320px;
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.25px;
+}
+
+body.is-android .button-container {
+    flex-direction: column;
+    gap: 12px;
+}
+
+body.is-android .button-container .action-button {
+    flex: none;
+    height: 56px;
+    font-size: 16px;
+}
+
+/* Buttons: filled, tonal, outlined toggle, text */
 body.is-android .action-button {
-    border-radius: 100px;
-    text-transform: none;
-    font-size: 0.875rem;
+    padding: 0 24px;
+    border: none;
+    font-size: 14px;
+    line-height: 20px;
     font-weight: 500;
     letter-spacing: 0.1px;
-    height: 48px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    background-color: transparent;
+    color: var(--md-primary);
 }
 
-body.is-android .camera-button,
-body.is-android .process-button {
-    background-color: var(--accent);
-    border-color: var(--accent);
-    color: #ffffff;
+body.is-android .action-button::before,
+body.is-android .icon-button::before,
+body.is-android .lang-switch::before,
+body.is-android .advanced-summary::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s linear;
 }
 
+body.is-android .action-button:active::before,
+body.is-android .icon-button:active::before,
+body.is-android .lang-switch:active::before,
+body.is-android .advanced-summary:active::before {
+    opacity: 0.1;
+}
+
+body.is-android .action-button:active,
 body.is-android .camera-button:active,
-body.is-android .process-button:active {
-    background-color: var(--accent-active);
+body.is-android .action-button.is-active:active {
+    filter: none;
+}
+
+body.is-android .camera-button {
+    background-color: var(--md-primary);
+    color: var(--md-on-primary);
 }
 
 body.is-android .gallery-button {
-    color: var(--accent);
-    border: 1px solid var(--border-default);
-    background-color: var(--bg-surface);
+    background-color: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
+}
+
+body.is-android .crop-button,
+body.is-android .mask-button {
+    padding: 0 16px;
+    color: var(--md-on-surface);
+    box-shadow: inset 0 0 0 1px var(--md-outline);
+}
+
+body.is-android .action-button.is-active {
+    background-color: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
     box-shadow: none;
 }
 
-body.is-android .gallery-button:active {
-    background-color: var(--bg-surface-hover);
-    border-color: var(--accent);
+body.is-android .cancel-button {
+    flex: none;
+    padding: 0 12px;
+    color: var(--md-primary);
 }
 
-body.is-android .drag-drop-area {
-    display: none;
-    background-color: var(--bg-surface);
+body.is-android .count-label {
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 400;
+}
+
+body.is-android #countValue {
+    font-weight: 500;
+    color: var(--md-primary);
+}
+
+/* Settings: list in a filled card */
+body.is-android .settings-title {
+    padding: 8px 16px 4px;
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+    text-transform: none;
+    color: var(--md-primary);
+}
+
+body.is-android .group {
+    background-color: var(--md-surface-container-low);
+}
+
+body.is-android .settings-field {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 12px 16px 4px;
+}
+
+body.is-android .group .settings-field+.settings-field,
+body.is-android .settings-advanced-grid {
+    border-top: none;
+}
+
+body.is-android .settings-advanced {
+    border-top: 1px solid var(--md-outline-variant);
+    margin-top: 8px;
+}
+
+body.is-android .settings-field label {
+    font-size: 16px;
+    line-height: 24px;
+}
+
+body.is-android .range-value {
+    min-width: 2.75em;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--md-on-surface-variant);
+}
+
+/* Slider */
+body.is-android input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 44px;
+    background: transparent;
+    touch-action: pan-y;
+}
+
+body.is-android input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right,
+            var(--md-primary) 0 var(--fill, 50%),
+            var(--md-secondary-container) var(--fill, 50%) 100%);
+}
+
+body.is-android input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    margin-top: -8px;
+    border-radius: 50%;
+    background-color: var(--md-primary);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--md-primary) 12%, transparent);
+    transition: box-shadow 0.15s ease;
+}
+
+body.is-android input[type="range"]:active::-webkit-slider-thumb {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--md-primary) 12%, transparent);
+}
+
+/* Switch */
+body.is-android .toggle-field {
+    padding: 8px 16px;
+}
+
+body.is-android .toggle-label {
+    min-height: 40px;
+    font-size: 16px;
+}
+
+body.is-android .toggle-label input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    position: relative;
+    width: 52px;
+    height: 32px;
     border-radius: 16px;
-    border: 2px dashed var(--border-default);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    border: 2px solid var(--md-outline);
+    background-color: var(--md-surface-container-highest);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-body.is-android .drag-drop-area:hover,
-body.is-android .drag-drop-area:active {
-    border-color: var(--accent);
-    background-color: var(--bg-surface-hover);
+body.is-android .toggle-label input[type="checkbox"]::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: var(--md-outline);
+    transform: translateY(-50%);
+    transition: left 0.2s cubic-bezier(0.2, 0, 0, 1), width 0.2s ease, height 0.2s ease,
+        background-color 0.2s ease;
 }
 
-body.is-android .image-preview {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
-    background-color: var(--bg-surface);
-    border-radius: 16px;
+body.is-android .toggle-label input[type="checkbox"]:checked {
+    border-color: var(--md-primary);
+    background-color: var(--md-primary);
 }
 
-/* Android: Fixed height process button - CRITICAL FIX */
-body.is-android .process-button {
+body.is-android .toggle-label input[type="checkbox"]:checked::before {
+    left: 22px;
+    width: 24px;
+    height: 24px;
+    background-color: var(--md-on-primary);
+}
+
+/* Outlined select field */
+body.is-android .select-wrap {
+    justify-self: stretch;
+    margin: 8px 0;
+}
+
+body.is-android .select-wrap::after {
+    content: "";
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid var(--md-on-surface-variant);
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+body.is-android .settings-select {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
     height: 56px;
+    padding: 0 44px 0 16px;
+    border: 1px solid var(--md-outline);
+    border-radius: 4px;
+    background: transparent;
+    font-size: 16px;
+}
+
+body.is-android .advanced-summary {
     min-height: 56px;
-    max-height: 56px;
-    flex-shrink: 0;
-    flex-grow: 0;
-    border-radius: 100px;
+    font-size: 16px;
 }
 
-/* Android Dark Mode (Material 3 Dark) */
-@media (prefers-color-scheme: dark) {
-    body.is-android {
-        --bg-primary: #141218;
-        --bg-surface: #1d1b20;
-        --bg-surface-hover: #2b2930;
-        --text-primary: #e6e0e9;
-        --text-secondary: #cac4d0;
-        --accent: var(--system-accent, #d0bcff);
-        --accent-hover: var(--system-accent-hover, #e8def8);
-        --accent-active: var(--system-accent-active, #b69df8);
-        --border-default: #938f99;
-    }
-
-    body.is-android .camera-button,
-    body.is-android .process-button {
-        background-color: var(--accent);
-        color: #381e72;
-        border-color: var(--accent);
-    }
-
-    body.is-android .camera-button:active,
-    body.is-android .process-button:active {
-        background-color: var(--accent-active);
-    }
-
-    body.is-android .gallery-button {
-        color: var(--accent);
-        border-color: var(--border-default);
-        background-color: transparent;
-    }
-
-    body.is-android .gallery-button:active {
-        background-color: var(--bg-surface-hover);
-    }
+body.is-android .expand-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--md-on-surface-variant);
 }
 
-/* ===== Responsive Design ===== */
+body.is-android .image-preview img {
+    touch-action: manipulation;
+}
+
+body.is-android .fullscreen-close {
+    width: 48px;
+    height: 48px;
+}
+
+/* ===== Narrow windows ===== */
 @media (max-width: 600px) {
-    .container {
-        padding: 1.5rem;
-        gap: 1.5rem;
+    body:not(.is-mac):not(.is-android) .button-container {
+        flex-direction: column;
     }
 
-    h1 {
-        font-size: 1.5rem;
-        margin-top: 0.5rem;
+    body:not(.is-mac) .settings-field {
+        grid-template-columns: 1fr;
     }
 
     .drag-drop-area {
-        height: 250px;
-        padding: 1.5rem;
-    }
-
-    .upload-icon {
-        width: 48px;
-        height: 48px;
-    }
-
-    .drag-text {
-        font-size: 1rem;
-    }
-
-    .drag-subtext {
-        font-size: 0.85rem;
-    }
-
-    .button-container {
-        flex-direction: column;
-        max-width: 100%;
-    }
-
-    .action-button {
-        width: 100%;
-        min-width: unset;
-    }
-
-    .process-actions {
-        flex-direction: column;
-    }
-
-    .settings-grid {
-        grid-template-columns: 1fr;
+        min-height: 220px;
     }
 }

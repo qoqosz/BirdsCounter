@@ -128,7 +128,10 @@ function applyTranslations() {
   if (titleEl) titleEl.textContent = t(titleEl.dataset.i18n);
 
   document.querySelectorAll("[data-i18n]").forEach((el) => {
-    const key = el.dataset.i18n;
+    const key =
+      (isMac && el.dataset.i18nMac) ||
+      (isAndroid && el.dataset.i18nAndroid) ||
+      el.dataset.i18n;
     if (!key) return;
     el.textContent = t(key);
   });
@@ -260,10 +263,10 @@ function showPreview() {
   if (processActions) processActions.style.display = "flex";
   if (settingsPanel) settingsPanel.style.display = "flex";
   if (backBtn) backBtn.style.display = "flex";
-  if (dragDropArea && !isAndroid) {
-    dragDropArea.style.display = "none";
-  }
+  document.body.classList.add("has-back");
+  if (dragDropArea) dragDropArea.style.display = "none";
   document.querySelector(".button-container").style.display = "none";
+  setAndroidBackEnabled(true);
   resetCropUI();
   clearMaskData();
   resetMaskUI();
@@ -285,10 +288,10 @@ function resetApp() {
   if (processActions) processActions.style.display = "none";
   if (settingsPanel) settingsPanel.style.display = "none";
   if (backBtn) backBtn.style.display = "none";
-  if (dragDropArea && !isAndroid) {
-    dragDropArea.style.display = "flex";
-  }
+  document.body.classList.remove("has-back");
+  if (dragDropArea) dragDropArea.style.display = "flex";
   document.querySelector(".button-container").style.display = "flex";
+  setAndroidBackEnabled(false);
   currentImageBytes = null;
   originalImageBytes = null;
   originalImageMime = null;
@@ -375,10 +378,18 @@ function bindRangeValue(input, output, formatter) {
   const format = formatter ?? ((value) => String(value));
   const update = () => {
     output.textContent = format(input.value);
+    updateRangeFill(input);
   };
   input.addEventListener("input", update);
   update();
   return update;
+}
+
+function updateRangeFill(input) {
+  const min = Number(input.min) || 0;
+  const max = Number(input.max) || 100;
+  const pct = max > min ? ((Number(input.value) - min) / (max - min)) * 100 : 0;
+  input.style.setProperty("--fill", `${Math.min(100, Math.max(0, pct))}%`);
 }
 
 function clampRadiusValues() {
@@ -446,6 +457,7 @@ function syncSettingsOutputs() {
   if (morphCloseIterInput && morphCloseIterValue) {
     morphCloseIterValue.textContent = String(morphCloseIterInput.value);
   }
+  document.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
 }
 
 // Shows only the settings used by the selected threshold method.
@@ -471,8 +483,12 @@ function updateMaskButtonState(active) {
 }
 
 function updateCancelButtonState() {
+  const editing = isCropping || isMasking;
+  if (window.Android && typeof window.Android.setEditing === "function") {
+    window.Android.setEditing(editing);
+  }
   if (!cropCancelBtn) return;
-  cropCancelBtn.style.display = isCropping || isMasking ? "inline-flex" : "none";
+  cropCancelBtn.style.display = editing ? "inline-flex" : "none";
 }
 
 function updateMaskBrushControlsState() {
@@ -492,6 +508,7 @@ function updateMaskOverlayState() {
 function updateMaskBrushValue() {
   if (!maskBrushInput || !maskBrushValue) return;
   maskBrushValue.textContent = String(maskBrushInput.value);
+  updateRangeFill(maskBrushInput);
 }
 
 function clearMaskData() {
@@ -1247,6 +1264,116 @@ async function loadImageFromBytes(bytes, mime) {
   });
 }
 
+// Android: system back steps out of fullscreen/crop/mask, then returns to the start screen.
+window.onAndroidBack = function () {
+  if (isFullscreenPreview) {
+    setFullscreenPreview(false);
+  } else if (isCropping) {
+    exitCropMode();
+  } else if (isMasking) {
+    exitMaskMode();
+  } else if (isPreviewVisible) {
+    resetApp();
+  }
+};
+
+function setAndroidBackEnabled(enabled) {
+  if (window.Android && typeof window.Android.setBackEnabled === "function") {
+    window.Android.setBackEnabled(enabled);
+  }
+}
+
+window.onAndroidInsets = function (insets) {
+  const root = document.documentElement;
+  ["top", "right", "bottom", "left"].forEach((side) => {
+    root.style.setProperty(`--android-inset-${side}`, `${insets[side] || 0}px`);
+  });
+};
+
+function setupAndroid() {
+  const bridge = window.Android;
+  if (bridge && typeof bridge.getMaterialThemeCss === "function") {
+    try {
+      const style = document.createElement("style");
+      style.id = "materialTheme";
+      style.textContent = bridge.getMaterialThemeCss();
+      document.head.appendChild(style);
+    } catch (e) {
+      console.warn("Failed to apply Material dynamic colors:", e);
+    }
+  }
+  if (bridge && typeof bridge.getSystemInsets === "function") {
+    try {
+      window.onAndroidInsets(JSON.parse(bridge.getSystemInsets()));
+    } catch (e) {
+      console.warn("Failed to read system insets:", e);
+    }
+  }
+  document.addEventListener("pointerdown", startRipple);
+}
+
+const RIPPLE_TARGETS = ".action-button, .icon-button, .lang-switch, .advanced-summary";
+
+function startRipple(e) {
+  const target = e.target.closest(RIPPLE_TARGETS);
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const size = Math.hypot(rect.width, rect.height) * 2;
+  const ripple = document.createElement("span");
+  ripple.className = "ripple";
+  ripple.style.width = ripple.style.height = `${size}px`;
+  ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
+  ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
+  target.appendChild(ripple);
+  const release = () => {
+    window.removeEventListener("pointerup", release);
+    window.removeEventListener("pointercancel", release);
+    ripple.classList.add("is-fading");
+    setTimeout(() => ripple.remove(), 300);
+  };
+  window.addEventListener("pointerup", release);
+  window.addEventListener("pointercancel", release);
+}
+
+function setupMac() {
+  const { listen } = window.__TAURI__.event;
+  listen("menu-open-image", () => {
+    if (isPreviewVisible) resetApp();
+    openGallery();
+  });
+
+  // Without traffic lights in fullscreen the toolbar starts at the window edge
+  const appWindow = window.__TAURI__.window?.getCurrentWindow?.();
+  if (!appWindow) return;
+  const syncFullscreen = async () => {
+    try {
+      const fullscreen = await appWindow.isFullscreen();
+      document.body.classList.toggle("is-fullscreen-window", fullscreen);
+    } catch (e) {
+      console.warn("Failed to read fullscreen state:", e);
+    }
+  };
+  window.addEventListener("resize", syncFullscreen);
+  syncFullscreen();
+}
+
+// Toolbar / top app bar change their background once content scrolls under them
+function setupScrollState() {
+  const update = () => {
+    document.body.classList.toggle("is-scrolled", window.scrollY > 0);
+  };
+  window.addEventListener("scroll", update, { passive: true });
+  update();
+}
+
+// Native apps have no "Reload" / "Inspect" context menu
+function setupContextMenu() {
+  document.addEventListener("contextmenu", (e) => {
+    if (e.target.closest("input, textarea, select")) return;
+    e.preventDefault();
+  });
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   dragDropArea = document.querySelector("#dragDropArea");
   cameraBtn = document.querySelector("#cameraBtn");
@@ -1303,36 +1430,22 @@ window.addEventListener("DOMContentLoaded", () => {
   invertInput = document.querySelector("#invert");
   splitClustersInput = document.querySelector("#splitClusters");
 
-  const applySystemAccentFromAndroid = () => {
-    if (!window.Android || typeof window.Android.getSystemAccentPalette !== "function") {
-      return;
-    }
-    try {
-      const paletteJson = window.Android.getSystemAccentPalette();
-      if (!paletteJson) return;
-      const palette = JSON.parse(paletteJson);
-      const root = document.documentElement;
-      if (!root) return;
-      if (palette.accent) root.style.setProperty("--system-accent", palette.accent);
-      if (palette.hover) root.style.setProperty("--system-accent-hover", palette.hover);
-      if (palette.active) root.style.setProperty("--system-accent-active", palette.active);
-    } catch (e) {
-      console.warn("Failed to apply Android system accent:", e);
-    }
-  };
-
   isAndroid = /Android/i.test(navigator.userAgent);
-  isMac = /Mac/i.test(navigator.userAgent);
+  // iPhone/iPad user agents also mention "Mac OS X"
+  const isIOS =
+    /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  isMac = !isIOS && /Macintosh|Mac OS X/i.test(navigator.userAgent);
 
   if (isAndroid) {
     document.body.classList.add("is-android");
-    applySystemAccentFromAndroid();
-    if (dragDropArea) {
-      dragDropArea.style.display = "none";
-    }
+    setupAndroid();
   } else if (isMac) {
     document.body.classList.add("is-mac");
+    setupMac();
   }
+  setupScrollState();
+  setupContextMenu();
 
   if (dragDropArea && !isAndroid) {
     setupDragAndDrop();
@@ -1527,33 +1640,4 @@ window.addEventListener("DOMContentLoaded", () => {
     initialLang = normalizeLang(navigator.language);
   }
   setLanguage(initialLang);
-
-  // Swipe back gesture for Android
-  // Note: We use a swipe area starting at 50px to avoid conflict with system edge gestures
-  if (isAndroid) {
-    let touchStartX = 0;
-    let touchStartY = 0;
-    const swipeThreshold = 100;
-    const maxVerticalDeviation = 80;
-    const swipeStartZone = 100; // Start zone width (outside system edge gesture area)
-
-    document.addEventListener("touchstart", (e) => {
-      touchStartX = e.touches[0].clientX;
-      touchStartY = e.touches[0].clientY;
-    }, { passive: true });
-
-    document.addEventListener("touchend", (e) => {
-      if (!isPreviewVisible) return;
-
-      const touchEndX = e.changedTouches[0].clientX;
-      const touchEndY = e.changedTouches[0].clientY;
-      const deltaX = touchEndX - touchStartX;
-      const deltaY = Math.abs(touchEndY - touchStartY);
-
-      // Swipe from left side (within swipeStartZone) to right
-      if (touchStartX < swipeStartZone && deltaX > swipeThreshold && deltaY < maxVerticalDeviation) {
-        resetApp();
-      }
-    }, { passive: true });
-  }
 });

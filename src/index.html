@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title data-i18n="app_title">Birds Counter</title>
@@ -10,32 +11,44 @@
 </head>
 
 <body>
-    <main class="container">
-        <header class="app-header">
-            <button id="backBtn" class="back-button" style="display: none;" aria-label="Go back"
-                data-i18n-attr="aria-label:back_aria">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <polyline points="15 18 9 12 15 6"></polyline>
-                </svg>
-            </button>
-            <h1 data-i18n="app_title">Birds Counter</h1>
-            <div class="lang-switch">
-                <label class="sr-only" for="langSelect" data-i18n="lang_label">Language</label>
-                <select id="langSelect" aria-label="Language" data-i18n-attr="aria-label:lang_label">
-                    <option value="en">English</option>
-                    <option value="pl">Polski</option>
-                </select>
-            </div>
-        </header>
-
-        <div class="drag-drop-area" id="dragDropArea">
-            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
+    <header class="app-header" data-tauri-drag-region>
+        <button id="backBtn" class="icon-button back-button" style="display: none;" aria-label="Go back"
+            data-i18n-attr="aria-label:back_aria">
+            <!-- SF Symbols-style chevron (macOS / default) -->
+            <svg class="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6"></polyline>
             </svg>
-            <p class="drag-text" data-i18n="drag_text">Drag and drop an image here</p>
-            <p class="drag-subtext" data-i18n="drag_subtext">or use the buttons below</p>
+            <!-- Material "arrow_back" (Android) -->
+            <svg class="icon-arrow" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+            </svg>
+        </button>
+        <h1 data-tauri-drag-region data-i18n="app_title">Birds Counter</h1>
+        <div class="lang-switch">
+            <label class="sr-only" for="langSelect" data-i18n="lang_label">Language</label>
+            <svg class="lang-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                    d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z" />
+            </svg>
+            <select id="langSelect" aria-label="Language" data-i18n-attr="aria-label:lang_label">
+                <option value="en">English</option>
+                <option value="pl">Polski</option>
+            </select>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="drag-drop-area" id="dragDropArea">
+            <div class="empty-icon">
+                <svg class="upload-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z" />
+                </svg>
+            </div>
+            <p class="drag-text" data-i18n="drag_text" data-i18n-android="start_title">Drag and drop an image here</p>
+            <p class="drag-subtext" data-i18n="drag_subtext" data-i18n-android="start_subtext">or use the buttons below
+            </p>
             <input type="file" id="imageInput" accept="image/*"
                 style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;" />
             <input type="file" id="cameraInput" accept="image/*" capture="environment"
@@ -44,29 +57,28 @@
 
         <div class="button-container">
             <button id="cameraBtn" class="action-button camera-button">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                    <circle cx="12" cy="13" r="4"></circle>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3.2" />
+                    <path
+                        d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
                 </svg>
                 <span data-i18n="use_camera">Use Camera</span>
             </button>
             <button id="galleryBtn" class="action-button gallery-button">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                    <polyline points="21 15 16 10 5 21"></polyline>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z" />
                 </svg>
-                <span data-i18n="load_gallery">Load from Gallery</span>
+                <span data-i18n="load_gallery" data-i18n-mac="open_image">Load from Gallery</span>
             </button>
         </div>
 
         <div id="imagePreview" class="image-preview" style="display: none">
             <img id="previewImg" src="" alt="Preview" data-i18n-attr="alt:preview_alt" />
             <button id="fullscreenCloseBtn" class="fullscreen-close" type="button" aria-label="Close fullscreen">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
                 </svg>
             </button>
             <div id="maskOverlay" class="mask-overlay" aria-hidden="true">
@@ -101,24 +113,34 @@
                 <span data-i18n="cancel">Anuluj</span>
             </button>
             <button id="cropBtn" class="action-button crop-button" aria-pressed="false">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z" />
+                </svg>
                 <span data-i18n="crop">Kadruj</span>
             </button>
             <button id="maskBtn" class="action-button mask-button" aria-pressed="false">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37-1.34-1.34a.996.996 0 0 0-1.41 0L9 12.25 11.75 15l8.96-8.96a.996.996 0 0 0 0-1.41z" />
+                </svg>
                 <span data-i18n="mask">Maskuj</span>
             </button>
         </div>
 
-        <div id="maskBrushControls" class="mask-brush-controls" style="display: none;">
-            <label for="maskBrushSize" data-i18n="mask_brush_size">Rozmiar pędzla</label>
-            <div class="range-row">
-                <input type="range" id="maskBrushSize" min="6" max="120" step="1" value="24" />
-                <span id="maskBrushSizeValue" class="range-value">24</span>
+        <div id="maskBrushControls" class="mask-brush-controls group" style="display: none;">
+            <div class="settings-field">
+                <label for="maskBrushSize" data-i18n="mask_brush_size">Rozmiar pędzla</label>
+                <div class="range-row">
+                    <input type="range" id="maskBrushSize" min="6" max="120" step="1" value="24" />
+                    <span id="maskBrushSizeValue" class="range-value">24</span>
+                </div>
             </div>
         </div>
 
-        <div id="settingsPanel" class="settings-panel" style="display: none;">
+        <section id="settingsPanel" class="settings-panel" style="display: none;">
             <h2 class="settings-title" data-i18n="settings_title">Detection settings</h2>
-            <div class="settings-grid settings-basic">
+            <div class="group settings-basic">
                 <div class="settings-field">
                     <label for="minRadius" data-i18n="min_radius">Min radius</label>
                     <div class="range-row">
@@ -133,90 +155,96 @@
                         <span id="maxRadiusValue" class="range-value">20.0</span>
                     </div>
                 </div>
+                <details id="advancedSettings" class="settings-advanced">
+                    <summary class="advanced-summary">
+                        <span data-i18n="advanced_settings">Advanced</span>
+                        <svg class="expand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z" />
+                        </svg>
+                    </summary>
+                    <div class="settings-advanced-grid">
+                        <div class="settings-field">
+                            <label for="thresholdMethod" data-i18n="threshold_method">Threshold</label>
+                            <div class="select-wrap">
+                                <select id="thresholdMethod" class="settings-select">
+                                    <option value="background" data-i18n="threshold_background" selected>Sky
+                                        background</option>
+                                    <option value="adaptive" data-i18n="threshold_adaptive">Adaptive</option>
+                                    <option value="otsu" data-i18n="threshold_otsu">Otsu</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-field">
+                            <label for="blur" data-i18n="blur">Blur (odd)</label>
+                            <div class="range-row">
+                                <input type="range" id="blur" min="1" max="15" step="2" value="3" />
+                                <span id="blurValue" class="range-value">3</span>
+                            </div>
+                        </div>
+                        <div class="settings-field" data-methods="background adaptive">
+                            <label for="adaptiveBlock" data-i18n="adaptive_block">Local window</label>
+                            <div class="range-row">
+                                <input type="range" id="adaptiveBlock" min="3" max="61" step="2" value="31" />
+                                <span id="adaptiveBlockValue" class="range-value">31</span>
+                            </div>
+                        </div>
+                        <div class="settings-field" data-methods="adaptive">
+                            <label for="adaptiveC" data-i18n="adaptive_c">Adaptive C</label>
+                            <div class="range-row">
+                                <input type="range" id="adaptiveC" min="-10" max="10" step="0.5" value="4" />
+                                <span id="adaptiveCValue" class="range-value">4.0</span>
+                            </div>
+                        </div>
+                        <div class="settings-field" data-methods="background">
+                            <label for="sensitivity" data-i18n="sensitivity">Threshold (× sky texture)</label>
+                            <div class="range-row">
+                                <input type="range" id="sensitivity" min="2" max="15" step="0.5" value="6" />
+                                <span id="sensitivityValue" class="range-value">6.0</span>
+                            </div>
+                        </div>
+                        <div class="settings-field" data-methods="adaptive otsu">
+                            <label for="morphKernel" data-i18n="morph_kernel">Morph kernel</label>
+                            <div class="range-row">
+                                <input type="range" id="morphKernel" min="1" max="11" step="2" value="3" />
+                                <span id="morphKernelValue" class="range-value">3</span>
+                            </div>
+                        </div>
+                        <div class="settings-field" data-methods="adaptive otsu">
+                            <label for="morphOpenIter" data-i18n="morph_open_iter">Morph open</label>
+                            <div class="range-row">
+                                <input type="range" id="morphOpenIter" min="0" max="5" step="1" value="1" />
+                                <span id="morphOpenIterValue" class="range-value">1</span>
+                            </div>
+                        </div>
+                        <div class="settings-field" data-methods="adaptive otsu">
+                            <label for="morphCloseIter" data-i18n="morph_close_iter">Morph close</label>
+                            <div class="range-row">
+                                <input type="range" id="morphCloseIter" min="0" max="5" step="1" value="1" />
+                                <span id="morphCloseIterValue" class="range-value">1</span>
+                            </div>
+                        </div>
+                        <div class="settings-field toggle-field">
+                            <label class="toggle-label" for="splitClusters">
+                                <span data-i18n="split_clusters">Split merged birds</span>
+                                <input type="checkbox" id="splitClusters" switch checked />
+                            </label>
+                        </div>
+                        <div class="settings-field toggle-field" data-methods="adaptive otsu">
+                            <label class="toggle-label" for="autoInvert">
+                                <span data-i18n="auto_invert">Auto invert</span>
+                                <input type="checkbox" id="autoInvert" switch checked />
+                            </label>
+                        </div>
+                        <div class="settings-field toggle-field">
+                            <label class="toggle-label" for="invert">
+                                <span data-i18n="invert">Invert</span>
+                                <input type="checkbox" id="invert" switch />
+                            </label>
+                        </div>
+                    </div>
+                </details>
             </div>
-            <details id="advancedSettings" class="settings-advanced">
-                <summary class="advanced-summary">
-                    <span data-i18n="advanced_settings">Advanced</span>
-                </summary>
-                <div class="settings-grid settings-advanced-grid">
-                    <div class="settings-field">
-                        <label for="blur" data-i18n="blur">Blur (odd)</label>
-                        <div class="range-row">
-                            <input type="range" id="blur" min="1" max="15" step="2" value="3" />
-                            <span id="blurValue" class="range-value">3</span>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label for="thresholdMethod" data-i18n="threshold_method">Threshold</label>
-                        <select id="thresholdMethod" class="settings-select">
-                            <option value="background" data-i18n="threshold_background" selected>Sky background</option>
-                            <option value="adaptive" data-i18n="threshold_adaptive">Adaptive</option>
-                            <option value="otsu" data-i18n="threshold_otsu">Otsu</option>
-                        </select>
-                    </div>
-                    <div class="settings-field" data-methods="background adaptive">
-                        <label for="adaptiveBlock" data-i18n="adaptive_block">Local window</label>
-                        <div class="range-row">
-                            <input type="range" id="adaptiveBlock" min="3" max="61" step="2" value="31" />
-                            <span id="adaptiveBlockValue" class="range-value">31</span>
-                        </div>
-                    </div>
-                    <div class="settings-field" data-methods="adaptive">
-                        <label for="adaptiveC" data-i18n="adaptive_c">Adaptive C</label>
-                        <div class="range-row">
-                            <input type="range" id="adaptiveC" min="-10" max="10" step="0.5" value="4" />
-                            <span id="adaptiveCValue" class="range-value">4.0</span>
-                        </div>
-                    </div>
-                    <div class="settings-field" data-methods="background">
-                        <label for="sensitivity" data-i18n="sensitivity">Threshold (× sky texture)</label>
-                        <div class="range-row">
-                            <input type="range" id="sensitivity" min="2" max="15" step="0.5" value="6" />
-                            <span id="sensitivityValue" class="range-value">6.0</span>
-                        </div>
-                    </div>
-                    <div class="settings-field" data-methods="adaptive otsu">
-                        <label for="morphKernel" data-i18n="morph_kernel">Morph kernel</label>
-                        <div class="range-row">
-                            <input type="range" id="morphKernel" min="1" max="11" step="2" value="3" />
-                            <span id="morphKernelValue" class="range-value">3</span>
-                        </div>
-                    </div>
-                    <div class="settings-field" data-methods="adaptive otsu">
-                        <label for="morphOpenIter" data-i18n="morph_open_iter">Morph open</label>
-                        <div class="range-row">
-                            <input type="range" id="morphOpenIter" min="0" max="5" step="1" value="1" />
-                            <span id="morphOpenIterValue" class="range-value">1</span>
-                        </div>
-                    </div>
-                    <div class="settings-field" data-methods="adaptive otsu">
-                        <label for="morphCloseIter" data-i18n="morph_close_iter">Morph close</label>
-                        <div class="range-row">
-                            <input type="range" id="morphCloseIter" min="0" max="5" step="1" value="1" />
-                            <span id="morphCloseIterValue" class="range-value">1</span>
-                        </div>
-                    </div>
-                    <div class="settings-field toggle-field">
-                        <label class="toggle-label" for="splitClusters">
-                            <input type="checkbox" id="splitClusters" checked />
-                            <span data-i18n="split_clusters">Split merged birds</span>
-                        </label>
-                    </div>
-                    <div class="settings-field toggle-field" data-methods="adaptive otsu">
-                        <label class="toggle-label" for="autoInvert">
-                            <input type="checkbox" id="autoInvert" checked />
-                            <span data-i18n="auto_invert">Auto invert</span>
-                        </label>
-                    </div>
-                    <div class="settings-field toggle-field">
-                        <label class="toggle-label" for="invert">
-                            <input type="checkbox" id="invert" />
-                            <span data-i18n="invert">Invert</span>
-                        </label>
-                    </div>
-                </div>
-            </details>
-        </div>
+        </section>
     </main>
 </body>
 
