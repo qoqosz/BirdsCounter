@@ -17,6 +17,14 @@ export OPENCV_LINK_LIBS="opencv2.framework"
 export OPENCV_LINK_PATHS="$(dirname "$OPENCV_IOS_FRAMEWORK")"
 export OPENCV_INCLUDE_PATHS="$(dirname "$OPENCV_IOS_FRAMEWORK")"
 
+# The Rust code is compiled inside Xcode's "Build Rust Code" phase, and
+# `cargo tauri ios xcode-script` only forwards TAURI*/CARGO_*/RUST_* variables
+# to cargo. Pass the OpenCV settings as cargo config so they survive that.
+CARGO_OPENCV_ENV=()
+for var in OPENCV_DISABLE_PROBES OPENCV_VERSION OPENCV_LINK_LIBS OPENCV_LINK_PATHS OPENCV_INCLUDE_PATHS; do
+    CARGO_OPENCV_ENV+=(--config "env.$var=\"${!var}\"")
+done
+
 # Check if a specific target was requested
 if [ "$1" == "--target" ] && [ -n "$2" ]; then
     TARGET=$2
@@ -49,7 +57,8 @@ echo "Building for iOS with target: $TAURI_TARGET"
 echo "  OPENCV_DISABLE_PROBES=$OPENCV_DISABLE_PROBES"
 
 # Run the actual build command
-cargo tauri ios build --target "$TAURI_TARGET" "$@"
+# Arguments after `--` are passed to cargo by the Xcode build phase
+cargo tauri ios build --target "$TAURI_TARGET" "$@" -- "${CARGO_OPENCV_ENV[@]}"
 
 echo ""
 echo "iOS build complete!"

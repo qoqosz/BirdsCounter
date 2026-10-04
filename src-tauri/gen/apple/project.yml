@@ -2,7 +2,7 @@ name: birdscounter
 options:
   bundleIdPrefix: com.birdscounter.app
   deploymentTarget:
-    iOS: 14.0
+    iOS: 15.0
 fileGroups: [../../src]
 configs:
   debug: debug
@@ -68,6 +68,10 @@ targets:
         LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        # opencv2.framework lives in src-tauri/; libapp.a needs it, and Tauri's Swift
+        # code (built for iOS 15) needs the Swift 5.6 compatibility library.
+        FRAMEWORK_SEARCH_PATHS: $(inherited) $(PROJECT_DIR)/../..
+        OTHER_LDFLAGS: $(inherited) -framework opencv2 -L$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) -lswiftCompatibility56
       groups: [app]
     dependencies:
       - framework: libapp.a

@@ -201,7 +201,7 @@ function setupDragAndDrop() {
     imageInput.value = "";
   });
 
-  // Handle file selection from the camera input (Android)
+  // Handle file selection from the camera input (Android fallback, iOS)
   cameraInput.addEventListener("change", (e) => {
     if (e.target.files.length > 0) {
       const file = e.target.files[0];
@@ -1052,6 +1052,15 @@ async function openCamera() {
       return;
     }
     // Fallback to HTML capture input if interface not available
+    cameraInput.click();
+    return;
+  }
+
+  // On iOS, WKWebView shows the system camera for the capture input
+  const isIOS =
+    /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  if (isIOS) {
     cameraInput.click();
     return;
   }

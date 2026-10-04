@@ -1,4 +1,5 @@
 [toolchain]
 channel = "1.92.0"
 profile = "minimal"
-components = ["clippy", "rustfmt"]
+# llvm-tools: swift-rs uses llvm-objcopy to export Tauri's Swift symbols on Xcode 27 iOS builds
+components = ["clippy", "rustfmt", "llvm-tools"]
