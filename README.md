@@ -1,8 +1,28 @@
 # BirdsCounter
 
-![birds](images/birds.png)
+Count the birds in a photo of a flock. BirdsCounter finds the sky, detects the birds against it, circles each one
+and tells you how many there are. It runs on macOS, Android and iOS, and each platform gets its own native look.
 
-Cross-platform bird counting app built with Tauri:
+<p align="center"><img src="images/screenshots/macos.png" width="600" alt="BirdsCounter on macOS"></p>
+
+| Android | | iOS | |
+|:---:|:---:|:---:|:---:|
+| <img src="images/screenshots/android_start.png" width="200" alt="Android start screen"> | <img src="images/screenshots/android_result.png" width="200" alt="Android result"> | <img src="images/screenshots/ios_start.png" width="200" alt="iOS start screen"> | <img src="images/screenshots/ios_result.png" width="200" alt="iOS result"> |
+
+The sample photo is [`images/flock.jpg`](images/flock.jpg). With *Only sky* on, the tree, the fields and the fence
+are ignored and 53 birds are counted. Without the sky mask the landscape adds over 250 false detections.
+
+## Download
+
+Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCounter/releases):
+
+- **Android:** `BirdsCounter_<version>_android_universal.apk`, a signed release APK.
+- **macOS (Apple silicon):** `BirdsCounter_<version>_macos_aarch64.dmg`. It uses OpenCV 5 from Homebrew
+  (`brew install opencv`) and is not notarized, so open it with right-click → *Open* the first time.
+- **iOS:** build and install from source, see [Build iOS](#build-ios).
+
+## How it works
+
 - Rust backend (`src-tauri/`) for image processing with OpenCV
 - Vanilla HTML/CSS/JS frontend (`src/`) for interaction, preview, and controls
 
@@ -10,7 +30,7 @@ The app loads an image, detects bird-like blobs, annotates them with circles, an
 
 ## Tech Stack
 
-- Tauri 2 (`tauri`, `tauri-build`)
+- Tauri 2.12 (`tauri`, `tauri-build`)
 - Rust 2024 edition
 - OpenCV 5 via `opencv` crate (`0.101`, modules `core`, `imgproc`, `imgcodecs`, `geometry`)
 - Frontend: static HTML/CSS/JS (no Node bundler required)
@@ -91,8 +111,9 @@ cargo install tauri-cli --version "^2"
 
 ### iOS (macOS only)
 
-- Xcode + iOS toolchain + signing setup
+- Xcode 27 with the iOS SDK, and an Apple ID signed in under Xcode → Settings → Accounts
 - OpenCV iOS framework at `src-tauri/opencv2.framework` (download with `./setup_opencv_ios.sh`)
+- rustup's `llvm-tools` component (listed in `rust-toolchain.toml`, installed automatically)
 
 ## Run in Development (Desktop)
 
@@ -140,6 +161,52 @@ Shortcut:
 ```bash
 make android
 ```
+
+## Build iOS
+
+1. Download the OpenCV iOS framework:
+
+```bash
+./setup_opencv_ios.sh
+```
+
+2. Build for a device, passing your Apple team ID (shown in Xcode → Settings → Accounts):
+
+```bash
+env APPLE_DEVELOPMENT_TEAM=<team-id> ./build_ios.sh --target device
+```
+
+3. On the iPhone, turn on **Settings → Privacy & Security → Developer Mode**. If the switch is missing, run any app
+   on the phone from Xcode once. Then install:
+
+```bash
+xcrun devicectl list devices
+xcrun devicectl device install app --device <device-id> src-tauri/gen/apple/build/arm64/birdscounter.ipa
+```
+
+4. The first launch needs **Settings → General → VPN & Device Management → Apple Development: … → Trust**, which
+   requires an internet connection. With a free Apple ID the app has to be rebuilt and reinstalled every 7 days.
+
+`build_ios.sh` passes the OpenCV settings to cargo as `--config env.*`, because Tauri's Xcode build phase drops
+`OPENCV_*` environment variables. The Xcode project links `opencv2.framework` and the Swift 5.6 compatibility library.
+The app runs only on physical devices, since the OpenCV framework has no arm64 simulator slice.
+
+## App icons
+
+`src-tauri/icons/icon.png` is the source. After regenerating the icons with `cargo tauri icon`, run:
+
+```bash
+./app_icons.sh
+```
+
+It fixes what `cargo tauri icon` leaves out. It pads the Android adaptive icon into the launcher's safe zone, and it
+copies the iOS icons into the Xcode asset catalog.
+
+## Releases
+
+Publishing a GitHub release runs [`.github/workflows/macos-dmg.yml`](.github/workflows/macos-dmg.yml), which builds the
+Apple silicon DMG and attaches it to the release. It can also be run by hand for an existing tag. The Android APK is
+built locally with `./build_android.sh` and attached by hand, because the signing keys stay on the developer's machine.
 
 ## Troubleshooting
 

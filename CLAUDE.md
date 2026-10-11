@@ -19,7 +19,7 @@ cd src-tauri && cargo run --release --example count -- --out annotated/ photo1.j
 cd src-tauri && cargo clippy && cargo fmt
 ./build_android.sh --target aarch64  # release APK (also: make android); targets aarch64|armv7|x86_64|x86
 ./build_ios.sh --target sim          # iOS (sim | x86_64 | device)
-./android_adaptive_icon.sh           # re-pad the Android adaptive icon foreground (run after `cargo tauri icon`)
+./app_icons.sh                       # copy the icon into the Android/iOS projects (run after `cargo tauri icon`)
 ```
 
 Publishing a GitHub release runs `.github/workflows/macos-dmg.yml`, which builds the Apple silicon DMG against
