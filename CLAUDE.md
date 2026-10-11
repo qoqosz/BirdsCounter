@@ -23,8 +23,8 @@ cd src-tauri && cargo clippy && cargo fmt
 ```
 
 Publishing a GitHub release runs `.github/workflows/macos-dmg.yml`, which builds the Apple silicon DMG against
-Homebrew's OpenCV and attaches it to the release. The Android APK is built and attached locally, since the signing
-keys live on the developer's machine.
+Homebrew's OpenCV, and `.github/workflows/android-apk.yml`, which builds the signed arm64 APK from the `ANDROID_*`
+repository secrets. Both attach their output to the release. Don't commit APKs or other build outputs.
 
 The `count` example is the quickest way to tune the detector on real photos. It prints the count per file and
 accepts `--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split` and

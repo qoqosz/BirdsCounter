@@ -16,7 +16,7 @@ are ignored and 53 birds are counted. Without the sky mask the landscape adds ov
 
 Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCounter/releases):
 
-- **Android:** `BirdsCounter_<version>_android_universal.apk`, a signed release APK.
+- **Android:** `BirdsCounter_<version>_android_arm64.apk`, a signed release APK for 64-bit ARM phones.
 - **macOS (Apple silicon):** `BirdsCounter_<version>_macos_aarch64.dmg`. It uses OpenCV 5 from Homebrew
   (`brew install opencv`) and is not notarized, so open it with right-click → *Open* the first time.
 - **iOS:** build and install from source, see [Build iOS](#build-ios).
@@ -204,9 +204,15 @@ copies the iOS icons into the Xcode asset catalog.
 
 ## Releases
 
-Publishing a GitHub release runs [`.github/workflows/macos-dmg.yml`](.github/workflows/macos-dmg.yml), which builds the
-Apple silicon DMG and attaches it to the release. It can also be run by hand for an existing tag. The Android APK is
-built locally with `./build_android.sh` and attached by hand, because the signing keys stay on the developer's machine.
+Publishing a GitHub release runs two workflows, which build the artifacts and attach them to the release. Both
+can also be run by hand for an existing tag.
+
+- [`macos-dmg.yml`](.github/workflows/macos-dmg.yml) builds the Apple silicon DMG.
+- [`android-apk.yml`](.github/workflows/android-apk.yml) builds and signs the arm64 APK with `./build_android.sh`. It
+  needs the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore, base64-encoded), `ANDROID_KEY_ALIAS`,
+  `ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD`.
+
+Build outputs such as APKs are not committed.
 
 ## Troubleshooting
 
