@@ -99,7 +99,19 @@ jobs:
         run: |
           apk=src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$apksigner" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256)"
+          echo "Using $apksigner"
+          # Fails the step if the APK doesn't verify. The line prefix differs between
+          # build-tools versions ("Signer #1 certificate" vs "V2 Signer: certificate").
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "$certs"
+          if ! grep -q "certificate SHA-256 digest" <<< "$certs"; then
+            echo "::error::apksigner printed no signer certificate"
+            exit 1
+          fi
+          if grep -q "CN=Android Debug" <<< "$certs"; then
+            echo "::error::APK is signed with the debug key"
+            exit 1
+          fi
 
       - name: Attach APK to the release
         env:
