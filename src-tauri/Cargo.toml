@@ -27,7 +27,7 @@ tauri-plugin-fs = "2.4.5"
 opencv = { version = "0.101", features = ["clang-runtime", "geometry", "imgcodecs", "imgproc"] }
 
 
-# swift-rs 1.0.8 with a fix for Xcode 27 iOS builds: it leaves the SwiftRs runtime
+# swift-rs 1.0.9 (same code as 1.0.8) with a fix for Xcode 27 iOS builds: it leaves the SwiftRs runtime
 # symbols internal, so linking fails with "_retain_object" undefined. Drop this once
 # an upstream release exports them.
 [patch.crates-io]
