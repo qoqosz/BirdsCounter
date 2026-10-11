@@ -19,7 +19,12 @@ cd src-tauri && cargo run --release --example count -- --out annotated/ photo1.j
 cd src-tauri && cargo clippy && cargo fmt
 ./build_android.sh --target aarch64  # release APK (also: make android); targets aarch64|armv7|x86_64|x86
 ./build_ios.sh --target sim          # iOS (sim | x86_64 | device)
+./android_adaptive_icon.sh           # re-pad the Android adaptive icon foreground (run after `cargo tauri icon`)
 ```
+
+Publishing a GitHub release runs `.github/workflows/macos-dmg.yml`, which builds the Apple silicon DMG against
+Homebrew's OpenCV and attaches it to the release. The Android APK is built and attached locally, since the signing
+keys live on the developer's machine.
 
 The `count` example is the quickest way to tune the detector on real photos. It prints the count per file and
 accepts `--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split` and

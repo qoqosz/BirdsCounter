@@ -1,0 +1,61 @@
+# Builds the macOS DMG (Apple silicon) and attaches it to a GitHub release.
+# Runs when a release is published, or by hand for an existing release tag.
+name: macOS DMG
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach the DMG to (e.g. v0.6.1)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-dmg-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      # OpenCV 5 from Homebrew, found by the opencv crate through pkg-config (opencv5.pc).
+      # libclang for the binding generator comes from Xcode.
+      - name: Install OpenCV
+        run: |
+          brew install opencv pkgconf
+          pkg-config --modversion opencv5
+
+      # Installs the toolchain and components pinned in rust-toolchain.toml.
+      - name: Set up Rust
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-all-crates: true
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2.12" --locked
+
+      - name: Build DMG
+        run: cargo tauri build --bundles dmg
+
+      - name: Attach DMG to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          dmg="src-tauri/target/release/bundle/dmg/birdscounter_${version}_aarch64.dmg"
+          asset="BirdsCounter_${version}_macos_aarch64.dmg"
+          cp "$dmg" "$asset"
+          gh release upload "$TAG" "$asset" --clobber
