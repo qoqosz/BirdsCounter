@@ -7,6 +7,32 @@ OPENCV_SDK="$SCRIPT_DIR/src-tauri/opencv-android-sdk/sdk/native"
 ANDROID_PROJECT_DIR="$SCRIPT_DIR/src-tauri/gen/android"
 KEYSTORE_PROPS_FILE="$ANDROID_PROJECT_DIR/keystore.properties"
 
+# Gradle needs a JDK 17+. Keep JAVA_HOME if it points at a real JDK, otherwise use
+# Android Studio's bundled one or the newest installed JDK 17+.
+if [ -z "$JAVA_HOME" ] || [ ! -x "$JAVA_HOME/bin/java" ]; then
+    if [ -n "$JAVA_HOME" ]; then
+        echo "Warning: JAVA_HOME is set to an invalid directory: $JAVA_HOME"
+    fi
+    JAVA_HOME=""
+    for candidate in \
+        "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+        "$HOME/Applications/Android Studio.app/Contents/jbr/Contents/Home"; do
+        if [ -x "$candidate/bin/java" ]; then
+            JAVA_HOME="$candidate"
+            break
+        fi
+    done
+    if [ -z "$JAVA_HOME" ] && [ -x /usr/libexec/java_home ]; then
+        JAVA_HOME="$(/usr/libexec/java_home -v 17+ 2>/dev/null || true)"
+    fi
+    if [ -z "$JAVA_HOME" ]; then
+        echo "Error: no JDK 17+ found. Install one (e.g. brew install --cask temurin@17) or set JAVA_HOME."
+        exit 1
+    fi
+    export JAVA_HOME
+    echo "Using JAVA_HOME=$JAVA_HOME"
+fi
+
 # Export OpenCV environment variables for the opencv-rust crate
 export OPENCV_VERSION="5.0.0"
 export OPENCV_STATIC="1"
@@ -73,4 +99,4 @@ echo "  OPENCV_LINK_PATHS=$OPENCV_LINK_PATHS"
 echo "  OPENCV_INCLUDE_PATHS=$OPENCV_INCLUDE_PATHS"
 
 # Run the actual build command (same as your Makefile)
-cargo tauri android build --apk true --target "$TAURI_TARGET" "$@"
+cargo tauri android build --apk --target "$TAURI_TARGET" "$@"

@@ -42,6 +42,7 @@
   "morph_close_iter": "Morf. zamknięcie",
   "auto_invert": "Auto odwracanie",
   "invert": "Odwróć (jasne ptaki)",
+  "sky_only": "Tylko niebo (pomijaj krajobraz)",
   "split_clusters": "Rozdzielaj zlepione ptaki",
   "counting_in_progress": "Zliczanie"
 }

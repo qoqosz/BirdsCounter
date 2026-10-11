@@ -22,17 +22,25 @@ The app loads an image, detects bird-like blobs, annotates them with circles, an
 
 **Sky background** (`background`, default):
 1. Decode image bytes, convert to grayscale (*Invert* looks for light birds on a dark background)
-2. Estimate the sky: morphological closing with a *local window* larger than a bird's thickness, then box blur
+2. Estimate the sky: a 3×3 opening removes bright specks (sharpening halos around birds, noise peaks), then a
+   morphological closing with a *local window* larger than a bird's thickness erases the birds, then box blur
 3. Relative darkness (Weber contrast) `(sky − pixel) / sky` after a light Gaussian blur (*Blur*):
    birds are silhouettes, so they stand out against bright and dark clouds alike
-4. Local sky texture: RMS of the contrast (capped at 7%) over a window 3× the local window
+4. Local sky texture: median absolute contrast × 1.4826 (a robust standard deviation, capped at 5%) over a window
+   3× the local window; birds covering less than half of it do not raise it, so dense flocks stay detectable
 5. Threshold per pixel = max(8%, *threshold* × local texture); hysteresis grows detections down to 60% of it,
    so cloud texture needs more contrast than a smooth sky
 6. Connected components, radius filtering from pixel area
 
 **Adaptive / Otsu** (classic): blur → threshold → optional inversion → morphological open/close → exclusion mask → external contours → radius filtering.
 
-For all methods, blobs over 25× the median detection, or over 3× when touching the image edge
+For all methods, *Only sky* (on by default) first finds the sky: the image is scaled so the local
+window spans 5 px, birds are erased by a closing, and areas whose relative gradient (averaged over
+~2 windows) exceeds 0.3 count as rough. The sky is the smooth area connected to the top edge plus rough
+islands far from the rest (dense flocks); detections touching the rest (trees, roofs, the horizon,
+fields) are dropped as a whole. If under 5% of the image is sky, the mask is skipped.
+
+Then blobs over 25× the median detection, or over 3× when touching the image edge
 (trees, roofs, lamps), are dropped. *Split merged birds* then compares every blob with the median
 area of up to 12 detections of the same flock (within 12 of their own sizes) and counts it as
 `round(area / reference)` birds. Single birds are circled in red, merged ones in orange with their count.
@@ -46,8 +54,8 @@ cargo run --release --example count -- --out annotated/ photo1.jpg photo2.jpg
 ```
 
 The unit tests count birds on synthetic cloudy-sky scenes (faint, touching and light birds,
-masks, large dark clutter). The `count` example prints the count per file and accepts
-`--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split`.
+masks, large dark clutter, landscape below the sky). The `count` example prints the count per file and accepts
+`--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split`, `--whole-image`.
 
 
 ## Prerequisites

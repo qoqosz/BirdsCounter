@@ -2,7 +2,7 @@
 //! on your own photos:
 //!
 //!     cargo run --release --example count -- [--method background|adaptive|otsu]
-//!         [--sensitivity 6] [--window 31] [--min-radius 1] [--no-split]
+//!         [--sensitivity 6] [--window 31] [--min-radius 1] [--no-split] [--whole-image]
 //!         [--out annotated_dir] photo1.jpg photo2.jpg ...
 
 use birdscounter_lib::blob_filter::{BlobFilter, BlobParams};
@@ -25,6 +25,7 @@ fn main() -> Result<(), String> {
             "--blur" => params.blur = parse(&value(&arg)?)?,
             "--invert" => params.invert = true,
             "--no-split" => params.split_clusters = false,
+            "--whole-image" => params.sky_only = false,
             "--out" => out_dir = Some(PathBuf::from(value(&arg)?)),
             _ => images.push(PathBuf::from(arg)),
         }

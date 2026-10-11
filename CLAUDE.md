@@ -22,7 +22,8 @@ cd src-tauri && cargo clippy && cargo fmt
 ```
 
 The `count` example is the quickest way to tune the detector on real photos. It prints the count per file and
-accepts `--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert` and `--no-split`.
+accepts `--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split` and
+`--whole-image` (disables the sky mask).
 
 The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 
@@ -53,6 +54,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   `readParamsFromUI()` in `main.js`, so field names must stay in sync on both sides. Threshold methods:
   - `background` (default): sky estimation and Weber contrast with texture-adaptive hysteresis.
   - `adaptive` and `otsu`: the classic pipeline.
+- With `sky_only` (default), `landscape_mask` runs before both methods. Candidate components that touch
+  non-sky areas are dropped whole by `drop_touching`, while the user's painted mask only cuts them. Its
+  thresholds are the `SKY_*` constants, in units of a downscaled copy where the local window is 5 px.
 - Post-processing is shared by all methods. `drop_clutter` removes oversized and edge-touching blobs, and
   `split_merged` counts merged birds as `round(area / flock median)`. The README's "Detection Pipeline" section has
   the details.

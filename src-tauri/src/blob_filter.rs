@@ -4,9 +4,17 @@ use opencv::{core, geometry, imgcodecs, imgproc};
 /// Birds are silhouettes: at least this much darker than the sky (as a fraction of
 /// its brightness), whatever the sky texture.
 const MIN_CONTRAST: f64 = 0.08;
-/// Contrast is capped at this value when measuring sky texture, so birds themselves
-/// barely raise the local threshold.
-const TEXTURE_CLIP: f32 = 0.07;
+/// Sky texture is the median absolute contrast around a pixel scaled to a standard
+/// deviation (exact for Gaussian noise). Unlike an RMS it ignores the birds as long as
+/// they cover less than half of the window, so dense flocks do not hide themselves.
+const MAD_TO_SIGMA: f32 = 1.4826;
+/// Sky texture is capped at this value, so strongly contrasting birds stay visible
+/// against heavy texture.
+const MAX_TEXTURE: f32 = 0.05;
+/// Bright specks up to this size (sharpening halos around birds, noise peaks) are
+/// removed before the sky is estimated; a closing would spread them and overestimate
+/// the sky inside dense flocks.
+const SKY_SPECK_SIZE: i32 = 3;
 /// Hysteresis: a detection seeded above the threshold grows into neighbouring
 /// pixels that exceed this fraction of it (keeps faint wing tips attached).
 const LOW_THRESHOLD_RATIO: f32 = 0.6;
@@ -25,6 +33,18 @@ const SPLIT_MAX_DETECTIONS: usize = 4000;
 const BORDER_CLUTTER_RATIO: f64 = 3.0;
 /// Blobs larger than this many median blobs are clutter wherever they are.
 const MAX_CLUTTER_RATIO: f64 = 25.0;
+/// The sky mask is computed on a copy scaled so that the local window spans this
+/// many pixels: birds vanish after a closing of that size, landscape does not.
+const SKY_MASK_WINDOW: i32 = 5;
+/// Relative gradient of the bird-free image (Sobel, averaged over ~2 windows) above
+/// which a region counts as landscape. Skies stay below ~0.15 even with clouds,
+/// trees, grass and fences reach 0.5 and more.
+const SKY_MAX_TEXTURE: f32 = 0.3;
+/// Rough islands within this many mask pixels of the landscape belong to it.
+const SKY_REACH: i32 = 15;
+/// When the detected sky covers less than this fraction of the image, the photo is
+/// not a sky shot (e.g. birds on water) and the sky mask is not applied.
+const SKY_MIN_FRACTION: f64 = 0.05;
 
 #[derive(Clone, serde::Deserialize)]
 #[serde(default)]
@@ -45,6 +65,9 @@ pub struct BlobParams {
     pub sensitivity: f64,
     /// Count blobs larger than a typical bird as several birds.
     pub split_clusters: bool,
+    /// Detect birds only in the sky: smooth area connected to the top of the image,
+    /// which excludes trees, buildings and the landscape below the horizon.
+    pub sky_only: bool,
 }
 
 impl Default for BlobParams {
@@ -61,8 +84,9 @@ impl Default for BlobParams {
             morph_close_iter: 1,
             auto_invert: true,
             invert: false,
-            sensitivity: 6.0,
+            sensitivity: 9.0,
             split_clusters: true,
+            sky_only: true,
         }
     }
 }
@@ -79,6 +103,28 @@ struct Blob {
 impl Blob {
     fn radius(&self) -> f64 {
         (self.area / std::f64::consts::PI).sqrt()
+    }
+}
+
+/// Regions where birds are not looked for.
+struct Masks<'a> {
+    /// Painted by the user (255 = excluded); detections are cut along it.
+    exclusion: Option<&'a core::Mat>,
+    /// Everything but the sky (255). Detections touching it are trees, roofs or the
+    /// horizon reaching into the sky, so they are dropped as a whole.
+    landscape: Option<&'a core::Mat>,
+}
+
+impl Masks<'_> {
+    fn apply(&self, binary: core::Mat) -> Result<core::Mat, String> {
+        let mut out = binary;
+        if let Some(landscape) = self.landscape {
+            out = drop_touching(&out, landscape)?;
+        }
+        if let Some(exclusion) = self.exclusion {
+            out = apply_exclusion_mask(&out, exclusion)?;
+        }
+        Ok(out)
     }
 }
 
@@ -120,11 +166,24 @@ impl BlobFilter {
             Some(mask_bytes) => Some(decode_mask(mask_bytes, gray.cols(), gray.rows())?),
             None => None,
         };
-
-        let mut blobs = if params.threshold_method.trim().eq_ignore_ascii_case("background") {
-            self.detect_background(&gray, exclusion_mask.as_ref())?
+        let landscape = if params.sky_only {
+            landscape_mask(&gray, odd_kernel(params.adaptive_block, 3), params.invert)?
         } else {
-            self.detect_threshold(&gray, exclusion_mask.as_ref())?
+            None
+        };
+        let masks = Masks {
+            exclusion: exclusion_mask.as_ref(),
+            landscape: landscape.as_ref(),
+        };
+
+        let mut blobs = if params
+            .threshold_method
+            .trim()
+            .eq_ignore_ascii_case("background")
+        {
+            self.detect_background(&gray, &masks)?
+        } else {
+            self.detect_threshold(&gray, &masks)?
         };
 
         let min_radius = params.min_radius.max(0.0);
@@ -153,11 +212,7 @@ impl BlobFilter {
     /// Contrast is relative to the sky brightness (birds are silhouettes against both
     /// bright and dark clouds), and the threshold rises with the local cloud texture.
     /// Birds are assumed darker than the sky unless `invert` is set.
-    fn detect_background(
-        &self,
-        gray: &core::Mat,
-        exclusion_mask: Option<&core::Mat>,
-    ) -> Result<Vec<Blob>, String> {
+    fn detect_background(&self, gray: &core::Mat, masks: &Masks) -> Result<Vec<Blob>, String> {
         let params = &self.params;
         let subject = if params.invert {
             invert_image(gray)?
@@ -167,7 +222,28 @@ impl BlobFilter {
         };
 
         // Closing with a window larger than a bird's thickness erases the birds and
-        // leaves the sky; the box blur smooths its blocky edges.
+        // leaves the sky; the box blur smooths its blocky edges. The opening before it
+        // removes bright specks the closing would otherwise spread.
+        let border_value = imgproc::morphology_default_border_value()
+            .map_err(|e| format!("Border value error: {}", e))?;
+        let speck_kernel = imgproc::get_structuring_element(
+            imgproc::MORPH_RECT,
+            core::Size::new(SKY_SPECK_SIZE, SKY_SPECK_SIZE),
+            core::Point::new(-1, -1),
+        )
+        .map_err(|e| format!("Kernel error: {}", e))?;
+        let mut despeckled = core::Mat::default();
+        imgproc::morphology_ex(
+            &subject,
+            &mut despeckled,
+            imgproc::MORPH_OPEN,
+            &speck_kernel,
+            core::Point::new(-1, -1),
+            1,
+            core::BORDER_REPLICATE,
+            border_value,
+        )
+        .map_err(|e| format!("Speck removal error: {}", e))?;
         let window = odd_kernel(params.adaptive_block, 3);
         let kernel = imgproc::get_structuring_element(
             imgproc::MORPH_RECT,
@@ -175,11 +251,9 @@ impl BlobFilter {
             core::Point::new(-1, -1),
         )
         .map_err(|e| format!("Kernel error: {}", e))?;
-        let border_value = imgproc::morphology_default_border_value()
-            .map_err(|e| format!("Border value error: {}", e))?;
         let mut background = core::Mat::default();
         imgproc::morphology_ex(
-            &subject,
+            &despeckled,
             &mut background,
             imgproc::MORPH_CLOSE,
             &kernel,
@@ -219,15 +293,17 @@ impl BlobFilter {
             subject_f = smoothed;
         }
 
-        // Relative darkness (Weber contrast) and its square capped for the texture estimate.
+        // Relative darkness (Weber contrast), and its absolute value quantized to 8 bits
+        // (up to the texture cap) for the median filter.
         let rows = gray.rows();
         let cols = gray.cols();
         let mut contrast =
             core::Mat::new_rows_cols_with_default(rows, cols, core::CV_32F, core::Scalar::all(0.0))
                 .map_err(|e| format!("Alloc error: {}", e))?;
-        let mut texture_sq =
-            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_32F, core::Scalar::all(0.0))
+        let mut deviation =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_8U, core::Scalar::all(0.0))
                 .map_err(|e| format!("Alloc error: {}", e))?;
+        let deviation_cap = MAX_TEXTURE / MAD_TO_SIGMA;
         {
             let background_data = smooth_background
                 .data_bytes()
@@ -238,29 +314,26 @@ impl BlobFilter {
             let contrast_data = contrast
                 .data_typed_mut::<f32>()
                 .map_err(|e| format!("Contrast access error: {}", e))?;
-            for ((out, &sky), &value) in contrast_data.iter_mut().zip(background_data).zip(subject_data) {
-                let sky = sky as f32;
-                *out = ((sky - value) / sky.max(1.0)).clamp(0.0, 1.0);
-            }
-            let texture_data = texture_sq
-                .data_typed_mut::<f32>()
+            let deviation_data = deviation
+                .data_bytes_mut()
                 .map_err(|e| format!("Texture access error: {}", e))?;
-            for (out, &c) in texture_data.iter_mut().zip(contrast_data.iter()) {
-                let capped = c.min(TEXTURE_CLIP);
-                *out = capped * capped;
+            for (((out, dev), &sky), &value) in contrast_data
+                .iter_mut()
+                .zip(deviation_data.iter_mut())
+                .zip(background_data)
+                .zip(subject_data)
+            {
+                let sky = sky as f32;
+                let signed = (sky - value) / sky.max(1.0);
+                *out = signed.clamp(0.0, 1.0);
+                *dev = (signed.abs().min(deviation_cap) / deviation_cap * 255.0).round() as u8;
             }
         }
 
         let texture_window = odd_kernel(3 * window, 3);
         let mut texture = core::Mat::default();
-        imgproc::blur(
-            &texture_sq,
-            &mut texture,
-            core::Size::new(texture_window, texture_window),
-            core::Point::new(-1, -1),
-            core::BORDER_REPLICATE,
-        )
-        .map_err(|e| format!("Texture blur error: {}", e))?;
+        imgproc::median_blur(&deviation, &mut texture, texture_window)
+            .map_err(|e| format!("Texture median error: {}", e))?;
 
         // Significance: contrast divided by the local threshold (> 1 means a detection).
         let sensitivity = params.sensitivity.max(0.0) as f32;
@@ -275,13 +348,18 @@ impl BlobFilter {
                 .data_typed::<f32>()
                 .map_err(|e| format!("Contrast access error: {}", e))?;
             let texture_data = texture
-                .data_typed::<f32>()
+                .data_bytes()
                 .map_err(|e| format!("Texture access error: {}", e))?;
             let significance_data = significance
                 .data_typed_mut::<f32>()
                 .map_err(|e| format!("Significance access error: {}", e))?;
-            for ((out, &c), &t) in significance_data.iter_mut().zip(contrast_data).zip(texture_data) {
-                let threshold = (sensitivity * t.max(0.0).sqrt()).max(MIN_CONTRAST as f32);
+            let texture_scale = MAX_TEXTURE / 255.0;
+            for ((out, &c), &t) in significance_data
+                .iter_mut()
+                .zip(contrast_data)
+                .zip(texture_data)
+            {
+                let threshold = (sensitivity * texture_scale * t as f32).max(MIN_CONTRAST as f32);
                 *out = c / threshold;
             }
             let candidate_data = candidates
@@ -291,9 +369,7 @@ impl BlobFilter {
                 *out = if q > LOW_THRESHOLD_RATIO { 255 } else { 0 };
             }
         }
-        if let Some(mask) = exclusion_mask {
-            candidates = apply_exclusion_mask(&candidates, mask)?;
-        }
+        candidates = masks.apply(candidates)?;
 
         let mut labels = core::Mat::default();
         let mut stats = core::Mat::default();
@@ -356,11 +432,7 @@ impl BlobFilter {
     }
 
     /// Classic pipeline: global/adaptive threshold, morphology and external contours.
-    fn detect_threshold(
-        &self,
-        gray: &core::Mat,
-        exclusion_mask: Option<&core::Mat>,
-    ) -> Result<Vec<Blob>, String> {
+    fn detect_threshold(&self, gray: &core::Mat, masks: &Masks) -> Result<Vec<Blob>, String> {
         let params = &self.params;
 
         let blur_k = odd_kernel(params.blur, 1);
@@ -445,9 +517,7 @@ impl BlobFilter {
                 .map_err(|e| format!("Morph close clone error: {}", e))?;
         }
 
-        if let Some(mask) = exclusion_mask {
-            cleaned = apply_exclusion_mask(&cleaned, mask)?;
-        }
+        cleaned = masks.apply(cleaned)?;
 
         let mut contours: core::Vector<core::Vector<core::Point>> = core::Vector::new();
         imgproc::find_contours(
@@ -486,6 +556,221 @@ impl BlobFilter {
     }
 }
 
+/// Finds everything that is not sky (255). The sky is the smooth part of the image
+/// connected to its top edge, plus rough islands far from the rest (dense flocks,
+/// sharp cloud edges). Smoothness is the relative gradient of a downscaled copy from
+/// which birds were removed by a closing (an opening for `bright_birds`) one window
+/// wide. Returns `None` when there is (almost) no sky.
+fn landscape_mask(
+    gray: &core::Mat,
+    window: i32,
+    bright_birds: bool,
+) -> Result<Option<core::Mat>, String> {
+    let scale = (window as f64 / SKY_MASK_WINDOW as f64).max(1.0);
+    let size = core::Size::new(
+        ((gray.cols() as f64 / scale).round() as i32).max(1),
+        ((gray.rows() as f64 / scale).round() as i32).max(1),
+    );
+    let mut small = core::Mat::default();
+    imgproc::resize(gray, &mut small, size, 0.0, 0.0, imgproc::INTER_AREA)
+        .map_err(|e| format!("Sky resize error: {}", e))?;
+    let mut small_f = core::Mat::default();
+    small
+        .convert_to(&mut small_f, core::CV_32F, 1.0, 0.0)
+        .map_err(|e| format!("Convert error: {}", e))?;
+
+    let kernel = imgproc::get_structuring_element(
+        imgproc::MORPH_RECT,
+        core::Size::new(SKY_MASK_WINDOW, SKY_MASK_WINDOW),
+        core::Point::new(-1, -1),
+    )
+    .map_err(|e| format!("Kernel error: {}", e))?;
+    let border_value = imgproc::morphology_default_border_value()
+        .map_err(|e| format!("Border value error: {}", e))?;
+    let mut closed = core::Mat::default();
+    imgproc::morphology_ex(
+        &small_f,
+        &mut closed,
+        if bright_birds {
+            imgproc::MORPH_OPEN
+        } else {
+            imgproc::MORPH_CLOSE
+        },
+        &kernel,
+        core::Point::new(-1, -1),
+        1,
+        core::BORDER_REPLICATE,
+        border_value,
+    )
+    .map_err(|e| format!("Sky closing error: {}", e))?;
+
+    let mut gx = core::Mat::default();
+    let mut gy = core::Mat::default();
+    for (out, dx, dy) in [(&mut gx, 1, 0), (&mut gy, 0, 1)] {
+        imgproc::sobel(
+            &closed,
+            out,
+            core::CV_32F,
+            dx,
+            dy,
+            3,
+            1.0,
+            0.0,
+            core::BORDER_REPLICATE,
+        )
+        .map_err(|e| format!("Sobel error: {}", e))?;
+    }
+    let mut gradient = core::Mat::default();
+    core::magnitude(&gx, &gy, &mut gradient).map_err(|e| format!("Magnitude error: {}", e))?;
+    {
+        let closed_data = closed
+            .data_typed::<f32>()
+            .map_err(|e| format!("Sky access error: {}", e))?;
+        let gradient_data = gradient
+            .data_typed_mut::<f32>()
+            .map_err(|e| format!("Gradient access error: {}", e))?;
+        for (g, &value) in gradient_data.iter_mut().zip(closed_data) {
+            *g /= value.max(1.0);
+        }
+    }
+    let texture_window = 2 * SKY_MASK_WINDOW - 1;
+    let mut texture = core::Mat::default();
+    imgproc::blur(
+        &gradient,
+        &mut texture,
+        core::Size::new(texture_window, texture_window),
+        core::Point::new(-1, -1),
+        core::BORDER_REPLICATE,
+    )
+    .map_err(|e| format!("Texture blur error: {}", e))?;
+
+    let mut smooth = core::Mat::new_size_with_default(size, core::CV_8U, core::Scalar::all(0.0))
+        .map_err(|e| format!("Alloc error: {}", e))?;
+    {
+        let texture_data = texture
+            .data_typed::<f32>()
+            .map_err(|e| format!("Texture access error: {}", e))?;
+        let smooth_data = smooth
+            .data_bytes_mut()
+            .map_err(|e| format!("Sky access error: {}", e))?;
+        for (out, &t) in smooth_data.iter_mut().zip(texture_data) {
+            *out = if t <= SKY_MAX_TEXTURE { 255 } else { 0 };
+        }
+    }
+
+    // Candidate sky: smooth components reaching the top edge.
+    let top_smooth = components_where(&smooth, 4, |_, top, _, _| top == 0)?;
+    // Landscape: the rest of the image connected to its edges, together with rough
+    // islands near it (leaves sticking out of a tree). Islands farther away are
+    // dense flocks or sharp cloud edges and stay sky.
+    let not_sky = invert_image(&top_smooth)?;
+    let reach = 2 * SKY_REACH + 1;
+    let reach_kernel = imgproc::get_structuring_element(
+        imgproc::MORPH_ELLIPSE,
+        core::Size::new(reach, reach),
+        core::Point::new(-1, -1),
+    )
+    .map_err(|e| format!("Kernel error: {}", e))?;
+    let mut grown = core::Mat::default();
+    imgproc::dilate(
+        &not_sky,
+        &mut grown,
+        &reach_kernel,
+        core::Point::new(-1, -1),
+        1,
+        core::BORDER_CONSTANT,
+        border_value,
+    )
+    .map_err(|e| format!("Sky dilate error: {}", e))?;
+    let (cols, rows) = (size.width, size.height);
+    let landscape_zone = components_where(&grown, 8, |left, top, width, height| {
+        left == 0 || top == 0 || left + width >= cols || top + height >= rows
+    })?;
+    let mut landscape = core::Mat::default();
+    core::bitwise_and(&not_sky, &landscape_zone, &mut landscape, &core::no_array())
+        .map_err(|e| format!("Mask combine error: {}", e))?;
+
+    let landscape_pixels =
+        core::count_non_zero(&landscape).map_err(|e| format!("Sky count error: {}", e))? as f64;
+    let total = (cols as f64) * (rows as f64);
+    if total - landscape_pixels < SKY_MIN_FRACTION * total {
+        return Ok(None);
+    }
+
+    let mut upscaled = core::Mat::default();
+    let full_size = gray.size().map_err(|e| format!("Size error: {}", e))?;
+    imgproc::resize(
+        &landscape,
+        &mut upscaled,
+        full_size,
+        0.0,
+        0.0,
+        imgproc::INTER_LINEAR,
+    )
+    .map_err(|e| format!("Sky resize error: {}", e))?;
+    let mut full = core::Mat::default();
+    imgproc::threshold(&upscaled, &mut full, 127.0, 255.0, imgproc::THRESH_BINARY)
+        .map_err(|e| format!("Sky threshold error: {}", e))?;
+    Ok(Some(full))
+}
+
+/// Mask (255) of the connected components of a binary image whose bounding box
+/// (left, top, width, height) satisfies `keep`.
+fn components_where(
+    binary: &core::Mat,
+    connectivity: i32,
+    keep: impl Fn(i32, i32, i32, i32) -> bool,
+) -> Result<core::Mat, String> {
+    let mut labels = core::Mat::default();
+    let mut stats = core::Mat::default();
+    let mut centroids = core::Mat::default();
+    let label_count = imgproc::connected_components_with_stats(
+        binary,
+        &mut labels,
+        &mut stats,
+        &mut centroids,
+        connectivity,
+        core::CV_32S,
+    )
+    .map_err(|e| format!("Connected components error: {}", e))? as usize;
+
+    let mut selected = vec![false; label_count];
+    for (label, keep_label) in selected.iter_mut().enumerate().skip(1) {
+        let stat = |field: i32| -> Result<i32, String> {
+            stats
+                .at_2d::<i32>(label as i32, field)
+                .copied()
+                .map_err(|e| format!("Stats access error: {}", e))
+        };
+        *keep_label = keep(
+            stat(imgproc::CC_STAT_LEFT)?,
+            stat(imgproc::CC_STAT_TOP)?,
+            stat(imgproc::CC_STAT_WIDTH)?,
+            stat(imgproc::CC_STAT_HEIGHT)?,
+        );
+    }
+
+    let mut mask = core::Mat::new_rows_cols_with_default(
+        binary.rows(),
+        binary.cols(),
+        core::CV_8U,
+        core::Scalar::all(0.0),
+    )
+    .map_err(|e| format!("Alloc error: {}", e))?;
+    let label_data = labels
+        .data_typed::<i32>()
+        .map_err(|e| format!("Label access error: {}", e))?;
+    let mask_data = mask
+        .data_bytes_mut()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    for (out, &label) in mask_data.iter_mut().zip(label_data) {
+        if selected[label as usize] {
+            *out = 255;
+        }
+    }
+    Ok(mask)
+}
+
 /// Removes blobs much larger than a typical detection: anything touching the image
 /// edge (trees, roofs, lamps) above `BORDER_CLUTTER_RATIO` and anything at all above
 /// `MAX_CLUTTER_RATIO` median blobs.
@@ -518,8 +803,8 @@ fn split_merged(mut blobs: Vec<Blob>) -> Vec<Blob> {
             let mut neighbours: Vec<(f64, f64)> = blobs
                 .iter()
                 .filter_map(|other| {
-                    let distance = (other.center.x - blob.center.x)
-                        .hypot(other.center.y - blob.center.y);
+                    let distance =
+                        (other.center.x - blob.center.x).hypot(other.center.y - blob.center.y);
                     (distance <= SPLIT_NEIGHBOUR_DISTANCE * other.area.sqrt())
                         .then_some((distance, other.area))
                 })
@@ -686,6 +971,41 @@ fn decode_mask(mask_bytes: Vec<u8>, width: i32, height: i32) -> Result<core::Mat
     Ok(binary_mask)
 }
 
+/// Removes the connected components of `binary` that overlap `forbidden`.
+fn drop_touching(binary: &core::Mat, forbidden: &core::Mat) -> Result<core::Mat, String> {
+    let mut labels = core::Mat::default();
+    let label_count = imgproc::connected_components(binary, &mut labels, 8, core::CV_32S)
+        .map_err(|e| format!("Connected components error: {}", e))? as usize;
+    let label_data = labels
+        .data_typed::<i32>()
+        .map_err(|e| format!("Label access error: {}", e))?;
+    let forbidden_data = forbidden
+        .data_bytes()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    let mut touching = vec![false; label_count];
+    for (&label, &excluded) in label_data.iter().zip(forbidden_data) {
+        if excluded > 0 {
+            touching[label as usize] = true;
+        }
+    }
+    let mut out = core::Mat::new_rows_cols_with_default(
+        binary.rows(),
+        binary.cols(),
+        core::CV_8U,
+        core::Scalar::all(0.0),
+    )
+    .map_err(|e| format!("Alloc error: {}", e))?;
+    let out_data = out
+        .data_bytes_mut()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    for (value, &label) in out_data.iter_mut().zip(label_data) {
+        if label > 0 && !touching[label as usize] {
+            *value = 255;
+        }
+    }
+    Ok(out)
+}
+
 fn apply_exclusion_mask(src: &core::Mat, exclusion_mask: &core::Mat) -> Result<core::Mat, String> {
     let keep_mask = invert_image(exclusion_mask)?;
     let mut masked = core::Mat::default();
@@ -714,10 +1034,18 @@ mod tests {
 
     /// Overcast sky: horizontal brightness gradient, a few soft clouds and sensor noise.
     fn sky(base: f64) -> core::Mat {
-        let mut img =
-            core::Mat::new_rows_cols_with_default(HEIGHT, WIDTH, core::CV_8UC3, core::Scalar::all(base))
-                .unwrap();
-        for (x, y, r, delta) in [(150, 120, 110, -25.0), (600, 350, 140, -20.0), (420, 60, 90, 15.0)] {
+        let mut img = core::Mat::new_rows_cols_with_default(
+            HEIGHT,
+            WIDTH,
+            core::CV_8UC3,
+            core::Scalar::all(base),
+        )
+        .unwrap();
+        for (x, y, r, delta) in [
+            (150, 120, 110, -25.0),
+            (600, 350, 140, -20.0),
+            (420, 60, 90, 15.0),
+        ] {
             imgproc::circle(
                 &mut img,
                 core::Point::new(x, y),
@@ -823,6 +1151,42 @@ mod tests {
         assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
     }
 
+    /// Distant birds in a dense flock: one pixel thin V shapes with the bright sharpening
+    /// halo phone cameras add. Neither the halos nor the birds themselves may raise the
+    /// sky estimate or the texture enough to hide the flock.
+    #[test]
+    fn counts_dense_flock_of_thin_birds() {
+        let mut img = sky(200.0);
+        let mut expected = 0;
+        for row in 0..6 {
+            for col in 0..12 {
+                let x = 60 + col * 20 + (row % 2) * 10;
+                let y = 60 + row * 14;
+                let sky = img.at_2d::<core::Vec3b>(y, x).unwrap()[0] as f64;
+                let wings: core::Vector<core::Vector<core::Point>> =
+                    core::Vector::from_iter([core::Vector::from_iter([
+                        core::Point::new(x - 6, y - 3),
+                        core::Point::new(x, y + 2),
+                        core::Point::new(x + 6, y - 3),
+                    ])]);
+                for (thickness, color) in [(3, sky + 8.0), (1, sky - 70.0)] {
+                    imgproc::polylines(
+                        &mut img,
+                        &wings,
+                        false,
+                        core::Scalar::all(color),
+                        thickness,
+                        imgproc::LINE_8,
+                        0,
+                    )
+                    .unwrap();
+                }
+                expected += 1;
+            }
+        }
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
     #[test]
     fn splits_touching_birds() {
         let mut img = sky(200.0);
@@ -858,9 +1222,13 @@ mod tests {
         let mut img = sky(200.0);
         draw_flock(&mut img, 8, 90.0, &[]);
         // Exclude the top half: rows 0..=4 (y <= 220) of the flock.
-        let mut mask =
-            core::Mat::new_rows_cols_with_default(HEIGHT, WIDTH, core::CV_8UC1, core::Scalar::all(0.0))
-                .unwrap();
+        let mut mask = core::Mat::new_rows_cols_with_default(
+            HEIGHT,
+            WIDTH,
+            core::CV_8UC1,
+            core::Scalar::all(0.0),
+        )
+        .unwrap();
         imgproc::rectangle(
             &mut mask,
             core::Rect::new(0, 0, WIDTH, 240),
@@ -876,6 +1244,45 @@ mod tests {
             count(encode(&img), BlobParams::default(), Some(mask_png.to_vec())),
             30
         );
+    }
+
+    /// Fills the image below `horizon` with grass-like texture and grows a tree with
+    /// ragged edges from the right border into the sky.
+    fn draw_landscape(img: &mut core::Mat, horizon: i32) {
+        core::set_rng_seed(11).unwrap();
+        let rect = core::Rect::new(0, horizon, WIDTH, HEIGHT - horizon);
+        let mut grass =
+            core::Mat::new_size_with_default(rect.size(), core::CV_8UC3, core::Scalar::all(0.0))
+                .unwrap();
+        core::randu(
+            &mut grass,
+            &core::Scalar::all(30.0),
+            &core::Scalar::all(150.0),
+        )
+        .unwrap();
+        grass.copy_to(&mut img.roi_mut(rect).unwrap()).unwrap();
+        for i in 0..40 {
+            let center = core::Point::new(WIDTH - 60 - (i % 5) * 9, horizon - 10 - i * 4);
+            let crown = core::Scalar::all(50.0);
+            imgproc::circle(img, center, 14, crown, -1, imgproc::LINE_8, 0).unwrap();
+            // Leaves sticking out of the crown.
+            let leaf = center - core::Point::new(22, 3);
+            imgproc::circle(img, leaf, 3, crown, -1, imgproc::LINE_8, 0).unwrap();
+        }
+    }
+
+    #[test]
+    fn ignores_landscape_below_the_sky() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 5, 90.0, &[]);
+        draw_landscape(&mut img, 320);
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+
+        let everywhere = BlobParams {
+            sky_only: false,
+            ..BlobParams::default()
+        };
+        assert!(count(encode(&img), everywhere, None) > expected);
     }
 
     #[test]

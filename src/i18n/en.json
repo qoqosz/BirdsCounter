@@ -39,6 +39,7 @@
   "morph_close_iter": "Morph close",
   "auto_invert": "Auto invert",
   "invert": "Invert (light birds)",
+  "sky_only": "Only sky (ignore landscape)",
   "split_clusters": "Split merged birds",
   "counting_in_progress": "Counting"
 }

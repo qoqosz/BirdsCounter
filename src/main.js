@@ -76,6 +76,7 @@ let morphCloseIterValue;
 let autoInvertInput;
 let invertInput;
 let splitClustersInput;
+let skyOnlyInput;
 let isProcessing = false;
 let pendingProcess = false;
 let pendingProcessOptions = null;
@@ -1166,8 +1167,9 @@ function readParamsFromUI() {
     morph_close_iter: readInt(morphCloseIterInput, 1),
     auto_invert: autoInvertInput ? autoInvertInput.checked : true,
     invert: invertInput ? invertInput.checked : false,
-    sensitivity: readFloat(sensitivityInput, 6.0),
+    sensitivity: readFloat(sensitivityInput, 9.0),
     split_clusters: splitClustersInput ? splitClustersInput.checked : true,
+    sky_only: skyOnlyInput ? skyOnlyInput.checked : true,
   };
 }
 
@@ -1438,6 +1440,7 @@ window.addEventListener("DOMContentLoaded", () => {
   autoInvertInput = document.querySelector("#autoInvert");
   invertInput = document.querySelector("#invert");
   splitClustersInput = document.querySelector("#splitClusters");
+  skyOnlyInput = document.querySelector("#skyOnly");
 
   isAndroid = /Android/i.test(navigator.userAgent);
   // iPhone/iPad user agents also mention "Mac OS X"
@@ -1620,6 +1623,7 @@ window.addEventListener("DOMContentLoaded", () => {
     autoInvertInput,
     invertInput,
     splitClustersInput,
+    skyOnlyInput,
   ];
 
   settingsControls.forEach((control) => {
