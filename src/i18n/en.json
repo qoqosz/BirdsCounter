@@ -6,6 +6,8 @@
   "start_subtext": "Take a photo of the flock or choose one from your gallery",
   "use_camera": "Use Camera",
   "load_gallery": "Load from Gallery",
+  "take_photo": "Take Photo",
+  "choose_photo": "Choose Photo",
   "open_image": "Open Image…",
   "count_prefix": "Counted",
   "count_suffix": "birds",

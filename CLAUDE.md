@@ -39,7 +39,11 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   `src-tauri/build.rs` adds link paths and only the third-party archives the SDK actually ships, plus the NDK system
   libs. Release builds fail fast unless signing is configured, through `gen/android/keystore.properties` or the
   `ANDROID_*` environment variables.
-- **iOS:** `src-tauri/opencv2.framework`, downloaded by `./setup_opencv_ios.sh`.
+- **iOS:** `src-tauri/opencv2.framework`, downloaded by `./setup_opencv_ios.sh`. The Rust code is compiled inside
+  Xcode's "Build Rust Code" phase, and `tauri ios xcode-script` forwards only `TAURI*`/`CARGO_*`/`RUST_*` variables,
+  so `build_ios.sh` passes the `OPENCV_*` settings as `cargo --config env.*`. The Xcode project links
+  `opencv2.framework` and `libswiftCompatibility56` itself. `src-tauri/vendor/swift-rs` is patched so Tauri's
+  Swift runtime symbols link under Xcode 27; it needs rustup's `llvm-tools` component.
 
 ## Architecture
 
@@ -69,13 +73,17 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   and sent as a PNG.
 - Any settings change calls `scheduleProcess`, which debounces by 100 ms. Calls arriving while processing is
   running are coalesced.
-- `main.js` detects the platform from the user agent and sets `body.is-mac` or `body.is-android`. iOS is excluded
-  from `is-mac`. `styles.css` has shared layout and components driven by tokens, plus two overrides:
+- `main.js` detects the platform from the user agent and sets `body.is-mac`, `body.is-android` or `body.is-ios`
+  (iPhone/iPad user agents also mention "Mac OS X", so iOS is checked first). `styles.css` has shared layout and
+  components driven by tokens, plus three overrides:
   - `body.is-mac` follows the macOS HIG: WebKit `-apple-system-*` colors, native controls and a unified toolbar
     under the traffic lights (`titleBarStyle: Overlay` in `tauri.conf.json`).
   - `body.is-android` follows Material 3: `--md-*` color tokens, plus a ripple effect, slider and switch built in CSS.
-- i18n: `src/i18n/{en,pl}.json` with `data-i18n` and `data-i18n-attr` attributes. `data-i18n-mac` and
-  `data-i18n-android` give per-platform keys. Polish plural forms for the count are handled in `updateCount`.
+  - `body.is-ios` follows the iOS HIG: 44 pt targets, capsule buttons, inset grouped settings and native WebKit
+    switches. Avoid nested `backdrop-filter` (it hides the sticky header's content in WebKit). Preview it in
+    Simulator Safari, which uses the same WebKit as the app's WKWebView.
+- i18n: `src/i18n/{en,pl}.json` with `data-i18n` and `data-i18n-attr` attributes. `data-i18n-mac`,
+  `data-i18n-android` and `data-i18n-ios` give per-platform keys. Polish plural forms for the count are handled in `updateCount`.
   Add new keys to both files.
 
 **Android native bridge**

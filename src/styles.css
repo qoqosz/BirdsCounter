@@ -1,7 +1,8 @@
 /*
  * Layout and components are shared; the look comes from tokens.
  * body.is-mac follows the macOS Human Interface Guidelines (system colors, native controls),
- * body.is-android follows Material 3 (dynamic color injected by MainActivity.kt).
+ * body.is-android follows Material 3 (dynamic color injected by MainActivity.kt),
+ * body.is-ios follows the iOS Human Interface Guidelines (44 pt touch targets, capsule buttons, inset groups).
  */
 
 /* ===== Tokens: default (iOS / Windows / Linux / browser) ===== */
@@ -1305,6 +1306,333 @@ body.is-android .image-preview img {
 body.is-android .fullscreen-close {
     width: 48px;
     height: 48px;
+}
+
+/* =====================================================================
+ * iOS — Human Interface Guidelines
+ * ===================================================================== */
+body.is-ios {
+    --font: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    --font-size: 17px;
+
+    --header-height: 54px;
+    --header-bg-scrolled: color-mix(in srgb, var(--bg) 72%, transparent);
+    --fill: rgba(120, 120, 128, 0.16);
+    --fill-active: rgba(120, 120, 128, 0.28);
+    --glass: rgba(255, 255, 255, 0.72);
+    --glass-shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+    --switch-on: #34c759;
+
+    --radius-group: 24px;
+    --radius-button: 999px;
+    --radius-image: 20px;
+    --button-height: 52px;
+    --gap: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+    body.is-ios {
+        --fill: rgba(120, 120, 128, 0.32);
+        --fill-active: rgba(120, 120, 128, 0.44);
+        --glass: rgba(44, 44, 46, 0.72);
+        --glass-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+        --switch-on: #30d158;
+    }
+}
+
+/* No double-tap-to-zoom: taps register at once, as in a native app */
+body.is-ios {
+    touch-action: manipulation;
+}
+
+/* Navigation bar: centered title, round glass back button, language menu on the right */
+body.is-ios .app-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px;
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+}
+
+body.is-ios .back-button {
+    grid-column: 1;
+    justify-self: start;
+}
+
+body.is-ios h1 {
+    grid-column: 2;
+    text-align: center;
+}
+
+body.is-ios .lang-switch {
+    grid-column: 3;
+    justify-self: end;
+}
+
+body.is-ios .icon-button,
+body.is-ios .lang-switch select {
+    height: 44px;
+    border: none;
+    border-radius: var(--radius-button);
+    background: var(--glass);
+    box-shadow: var(--glass-shadow);
+    color: var(--text);
+}
+
+body.is-ios .icon-button {
+    width: 44px;
+}
+
+body.is-ios .icon-button svg {
+    width: 20px;
+    height: 20px;
+}
+
+body.is-ios .lang-switch .lang-icon {
+    display: block;
+    position: absolute;
+    left: 13px;
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    z-index: 1;
+}
+
+body.is-ios .lang-switch select {
+    -webkit-appearance: none;
+    appearance: none;
+    padding: 0 16px 0 38px;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+body.is-ios .icon-button:active,
+body.is-ios .lang-switch select:active {
+    background: var(--fill-active);
+}
+
+/* Start screen: empty state with the actions at the bottom, like a native empty view */
+body.is-ios .container {
+    min-height: calc(100vh - var(--header-height) - var(--safe-top));
+}
+
+body.is-ios .drag-drop-area {
+    flex: 1;
+    gap: 8px;
+    border: none;
+    background: transparent;
+    cursor: auto;
+}
+
+body.is-ios .empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 104px;
+    height: 104px;
+    margin-bottom: 16px;
+    border-radius: 50%;
+    background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+}
+
+body.is-ios .upload-icon {
+    width: 46px;
+    height: 46px;
+}
+
+body.is-ios .drag-text {
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 700;
+}
+
+body.is-ios .drag-subtext {
+    max-width: 300px;
+    font-size: 15px;
+    line-height: 20px;
+}
+
+body.is-ios .button-container {
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Buttons: capsules, filled for the main action and gray for the rest */
+body.is-ios .action-button {
+    flex: none;
+    min-height: var(--button-height);
+    height: auto;
+    padding: 0 24px;
+    border: none;
+    font-size: 17px;
+    background-color: var(--fill);
+    color: var(--accent);
+}
+
+body.is-ios .process-actions .action-button {
+    flex: 1;
+}
+
+body.is-ios .btn-icon {
+    width: 20px;
+    height: 20px;
+}
+
+body.is-ios .action-button:active {
+    background-color: var(--fill-active);
+}
+
+body.is-ios .camera-button,
+body.is-ios .action-button.is-active {
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+body.is-ios .camera-button:active,
+body.is-ios .action-button.is-active:active {
+    background-color: var(--accent);
+    filter: brightness(0.85);
+}
+
+/* Result */
+body.is-ios .count-label {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+body.is-ios .fullscreen-close {
+    width: 44px;
+    height: 44px;
+}
+
+/* Crop handles: larger knobs with a 44 pt hit area */
+body.is-ios .crop-handle {
+    width: 24px;
+    height: 24px;
+}
+
+body.is-ios .crop-handle::before {
+    content: "";
+    position: absolute;
+    inset: -10px;
+}
+
+body.is-ios .handle-nw {
+    left: -12px;
+    top: -12px;
+}
+
+body.is-ios .handle-ne {
+    right: -12px;
+    top: -12px;
+}
+
+body.is-ios .handle-sw {
+    left: -12px;
+    bottom: -12px;
+}
+
+body.is-ios .handle-se {
+    right: -12px;
+    bottom: -12px;
+}
+
+body.is-ios .resize-icon {
+    width: 12px;
+    height: 12px;
+}
+
+/* Settings: inset grouped list */
+body.is-ios .settings-title {
+    padding: 0 20px;
+    font-size: 13px;
+}
+
+body.is-ios .settings-field {
+    min-height: 52px;
+    padding: 10px 20px;
+    gap: 6px 12px;
+}
+
+body.is-ios .range-row {
+    gap: 14px;
+}
+
+body.is-ios .range-value {
+    min-width: 2.6em;
+}
+
+/* Pop-up menu row: label on the left, value with an up/down chevron on the right */
+body.is-ios .settings-field:has(.select-wrap) {
+    grid-template-columns: auto minmax(0, 1fr);
+}
+
+body.is-ios .select-wrap {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    color: var(--text-secondary);
+}
+
+body.is-ios .select-wrap::after {
+    content: "";
+    flex: none;
+    width: 9px;
+    height: 15px;
+    margin-left: 6px;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 15'%3E%3Cpath d='M1 5.5 4.5 2 8 5.5M1 9.5 4.5 13 8 9.5' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 15'%3E%3Cpath d='M1 5.5 4.5 2 8 5.5M1 9.5 4.5 13 8 9.5' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    pointer-events: none;
+}
+
+body.is-ios .settings-select {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 8px 0;
+    font-size: 17px;
+    color: inherit;
+    text-align: right;
+    text-align-last: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.is-ios .toggle-label {
+    min-height: 32px;
+}
+
+body.is-ios .toggle-label input[type="checkbox"] {
+    accent-color: var(--switch-on);
+}
+
+body.is-ios .advanced-summary {
+    min-height: 52px;
+    padding: 0 20px;
+}
+
+/* iOS WebKit ignores taps on the summary's own empty area, so let the label fill the row */
+body.is-ios .advanced-summary > span {
+    flex: 1;
+}
+
+body.is-ios .advanced-summary:active {
+    background-color: var(--fill);
+}
+
+body.is-ios .expand-icon {
+    color: var(--text-tertiary);
+    transform: rotate(-90deg);
+}
+
+body.is-ios .settings-advanced[open] .expand-icon {
+    transform: rotate(0deg);
 }
 
 /* ===== Narrow windows ===== */

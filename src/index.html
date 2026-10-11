@@ -46,8 +46,9 @@
                         d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z" />
                 </svg>
             </div>
-            <p class="drag-text" data-i18n="drag_text" data-i18n-android="start_title">Drag and drop an image here</p>
-            <p class="drag-subtext" data-i18n="drag_subtext" data-i18n-android="start_subtext">or use the buttons below
+            <p class="drag-text" data-i18n="drag_text" data-i18n-android="start_title" data-i18n-ios="start_title">Drag and drop an image here</p>
+            <p class="drag-subtext" data-i18n="drag_subtext" data-i18n-android="start_subtext"
+                data-i18n-ios="start_subtext">or use the buttons below
             </p>
             <input type="file" id="imageInput" accept="image/*"
                 style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;" />
@@ -62,14 +63,14 @@
                     <path
                         d="M9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
                 </svg>
-                <span data-i18n="use_camera">Use Camera</span>
+                <span data-i18n="use_camera" data-i18n-ios="take_photo">Use Camera</span>
             </button>
             <button id="galleryBtn" class="action-button gallery-button">
                 <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path
                         d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z" />
                 </svg>
-                <span data-i18n="load_gallery" data-i18n-mac="open_image">Load from Gallery</span>
+                <span data-i18n="load_gallery" data-i18n-mac="open_image" data-i18n-ios="choose_photo">Load from Gallery</span>
             </button>
         </div>
 

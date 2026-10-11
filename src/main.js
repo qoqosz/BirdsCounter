@@ -90,6 +90,7 @@ let tapStartX = 0;
 let tapStartY = 0;
 let isAndroid = false;
 let isMac = false;
+let isIOS = false;
 let countingAnimationTimer = null;
 let countingDotCount = 1;
 
@@ -132,6 +133,7 @@ function applyTranslations() {
     const key =
       (isMac && el.dataset.i18nMac) ||
       (isAndroid && el.dataset.i18nAndroid) ||
+      (isIOS && el.dataset.i18nIos) ||
       el.dataset.i18n;
     if (!key) return;
     el.textContent = t(key);
@@ -1444,7 +1446,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   isAndroid = /Android/i.test(navigator.userAgent);
   // iPhone/iPad user agents also mention "Mac OS X"
-  const isIOS =
+  isIOS =
     /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
     (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   isMac = !isIOS && /Macintosh|Mac OS X/i.test(navigator.userAgent);
@@ -1452,6 +1454,8 @@ window.addEventListener("DOMContentLoaded", () => {
   if (isAndroid) {
     document.body.classList.add("is-android");
     setupAndroid();
+  } else if (isIOS) {
+    document.body.classList.add("is-ios");
   } else if (isMac) {
     document.body.classList.add("is-mac");
     setupMac();
