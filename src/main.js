@@ -4,6 +4,9 @@ const { readFile } = window.__TAURI__.fs;
 
 const MIN_CROP_SIZE = 40;
 const DEFAULT_MASK_BRUSH_SIZE = 24;
+// Min radius filters out specks, which are a few pixels across whatever the photo size,
+// so its slider has a fixed range with fine steps instead of following the photo.
+const MIN_RADIUS_LIMIT = 30;
 const MASK_TINT_COLOR = "#e24d5c";
 const MASK_BRUSH_OUTLINE = "rgba(226, 77, 92, 0.95)";
 const MASK_BRUSH_FILL = "rgba(226, 77, 92, 0.2)";
@@ -554,7 +557,7 @@ function updateRadiusLimits() {
   if (!size || !size.width || !size.height) return;
 
   const maxAllowed = Math.max(1, Math.min(size.width, size.height) / 2);
-  minRadiusInput.max = maxAllowed.toString();
+  minRadiusInput.max = Math.min(MIN_RADIUS_LIMIT, maxAllowed).toString();
   maxRadiusInput.max = maxAllowed.toString();
 
   if (!radiusInitialized) {
