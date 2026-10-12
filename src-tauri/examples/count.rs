@@ -39,7 +39,7 @@ fn main() -> Result<(), String> {
 
     for path in images {
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
-        let (annotated, count) = BlobFilter::new(params.clone()).apply(bytes, None)?;
+        let (annotated, count) = BlobFilter::new(params.clone()).apply(bytes, None, None)?;
         println!("{}\t{}", path.display(), count);
         if let Some(dir) = &out_dir {
             let name = path.file_stem().unwrap_or_default().to_string_lossy();

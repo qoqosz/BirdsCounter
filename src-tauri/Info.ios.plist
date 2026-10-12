@@ -4,5 +4,11 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>BirdsCounter uses the camera to take a photo of birds to count.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BirdsCounter opens photos from your counting history again without keeping copies of them.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

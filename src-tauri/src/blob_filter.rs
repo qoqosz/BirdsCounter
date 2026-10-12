@@ -91,6 +91,37 @@ impl Default for BlobParams {
     }
 }
 
+/// Part of the image to count birds in, in pixels of the decoded (EXIF-rotated) image.
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+pub struct Crop {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl Crop {
+    /// The crop clamped to an image of `cols` x `rows`; `None` when nothing is left.
+    fn rect_within(&self, cols: i32, rows: i32) -> Option<core::Rect> {
+        let x = self.x.clamp(0, cols);
+        let y = self.y.clamp(0, rows);
+        let right = self.x.saturating_add(self.width).clamp(x, cols);
+        let bottom = self.y.saturating_add(self.height).clamp(y, rows);
+        (right > x && bottom > y).then(|| core::Rect::new(x, y, right - x, bottom - y))
+    }
+}
+
+fn crop_mat(mat: core::Mat, rect: Option<core::Rect>) -> Result<core::Mat, String> {
+    match rect {
+        Some(rect) if rect.width < mat.cols() || rect.height < mat.rows() => {
+            core::Mat::roi(&mat, rect)
+                .and_then(|roi| roi.try_clone())
+                .map_err(|e| format!("Crop error: {}", e))
+        }
+        _ => Ok(mat),
+    }
+}
+
 /// A detected blob; `count` is the estimated number of birds it contains.
 #[derive(Clone, Debug)]
 struct Blob {
@@ -138,19 +169,31 @@ impl BlobFilter {
         Self { params }
     }
 
+    /// Counts the birds in `payload`, or in its `crop` region. The exclusion mask covers
+    /// the whole image, not just the crop. Returns the annotated (cropped) image as PNG.
     pub fn apply(
         &self,
         payload: Vec<u8>,
         mask_payload: Option<Vec<u8>>,
+        crop: Option<Crop>,
     ) -> Result<(Vec<u8>, usize), String> {
         let params = &self.params;
 
         let vec: core::Vector<u8> = core::Vector::from_iter(payload);
-        let image = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_COLOR)
+        let full = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_COLOR)
             .map_err(|e| format!("Failed to read image: {}", e))?;
-        if image.empty() {
+        if full.empty() {
             return Err("Failed to decode image".to_string());
         }
+        let (full_cols, full_rows) = (full.cols(), full.rows());
+        let crop_rect = match crop {
+            Some(crop) => Some(
+                crop.rect_within(full_cols, full_rows)
+                    .ok_or("Crop is outside the image")?,
+            ),
+            None => None,
+        };
+        let image = crop_mat(full, crop_rect)?;
 
         let mut gray = core::Mat::default();
         imgproc::cvt_color(
@@ -163,7 +206,10 @@ impl BlobFilter {
         .map_err(|e| format!("Color conversion error: {}", e))?;
 
         let exclusion_mask = match mask_payload {
-            Some(mask_bytes) => Some(decode_mask(mask_bytes, gray.cols(), gray.rows())?),
+            Some(mask_bytes) => Some(crop_mat(
+                decode_mask(mask_bytes, full_cols, full_rows)?,
+                crop_rect,
+            )?),
             None => None,
         };
         let landscape = if params.sky_only {
@@ -1132,7 +1178,7 @@ mod tests {
     }
 
     fn count(image: Vec<u8>, params: BlobParams, mask: Option<Vec<u8>>) -> usize {
-        BlobFilter::new(params).apply(image, mask).unwrap().1
+        BlobFilter::new(params).apply(image, mask, None).unwrap().1
     }
 
     #[test]
@@ -1244,6 +1290,54 @@ mod tests {
             count(encode(&img), BlobParams::default(), Some(mask_png.to_vec())),
             30
         );
+    }
+
+    /// Only birds inside the crop are counted, and the full-image mask is cropped with it.
+    #[test]
+    fn counts_birds_in_crop() {
+        let mut img = sky(200.0);
+        draw_flock(&mut img, 8, 90.0, &[]);
+        // Columns 0..=4 (x <= 260) of rows 2..=7 (y >= 130).
+        let crop = Crop {
+            x: 0,
+            y: 110,
+            width: 290,
+            height: HEIGHT - 110,
+        };
+        let (annotated, birds) = BlobFilter::new(BlobParams::default())
+            .apply(encode(&img), None, Some(crop))
+            .unwrap();
+        assert_eq!(birds, 30);
+        let decoded = imgcodecs::imdecode(
+            &core::Vector::<u8>::from_iter(annotated),
+            imgcodecs::IMREAD_COLOR,
+        )
+        .unwrap();
+        assert_eq!((decoded.cols(), decoded.rows()), (crop.width, crop.height));
+
+        // Excluding rows 2..=4 (y <= 220) leaves rows 5..=7.
+        let mut mask = core::Mat::new_rows_cols_with_default(
+            HEIGHT,
+            WIDTH,
+            core::CV_8UC1,
+            core::Scalar::all(0.0),
+        )
+        .unwrap();
+        imgproc::rectangle(
+            &mut mask,
+            core::Rect::new(0, 0, WIDTH, 240),
+            core::Scalar::all(255.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        let mut mask_png = core::Vector::new();
+        imgcodecs::imencode(".png", &mask, &mut mask_png, &core::Vector::new()).unwrap();
+        let (_, birds) = BlobFilter::new(BlobParams::default())
+            .apply(encode(&img), Some(mask_png.to_vec()), Some(crop))
+            .unwrap();
+        assert_eq!(birds, 15);
     }
 
     /// Fills the image below `horizon` with grass-like texture and grows a tree with

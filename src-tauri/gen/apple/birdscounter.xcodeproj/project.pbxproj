@@ -17,6 +17,7 @@
 		8C0C3AA4F1D0A99A6AA9CA61 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4356A02DD9A1AC93571A4F29 /* Security.framework */; };
 		8FA279F2362494405D3B7485 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FC7A6C7A9556F17429D55389 /* MetalKit.framework */; };
 		92C2994DEC743412F73681A2 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 812D5960C401968C44475B72 /* main.mm */; };
+		A7E3C1F04B2D4E6F8A9B0C11 /* BCNativeBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A7E3C1F04B2D4E6F8A9B0C10 /* BCNativeBridge.m */; };
 		945CEC47460CF1D37DFD0201 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = D20954048B8F61862FF42F79 /* assets */; };
 		F2632B56FE2F0DAB305E5C3F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E9860A2263FC4BDD687CA3C4 /* LaunchScreen.storyboard */; };
 /* End PBXBuildFile section */
@@ -34,6 +35,7 @@
 		59A9B24D4DE9C71902698570 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		5E6E1CDB0E3772C799F443E0 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		812D5960C401968C44475B72 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		A7E3C1F04B2D4E6F8A9B0C10 /* BCNativeBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BCNativeBridge.m; sourceTree = "<group>"; };
 		89A9C937E5732C565F92DB96 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		93F0AFA12B2ED1C2B5FBC8C5 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		CBD62B1B9BD9D524F91A1F14 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 		8D32CC62CF4ECB99E97EC3AC /* birdscounter */ = {
 			isa = PBXGroup;
 			children = (
+				A7E3C1F04B2D4E6F8A9B0C10 /* BCNativeBridge.m */,
 				812D5960C401968C44475B72 /* main.mm */,
 				2F20DCBE023E5A69D8CBAAAA /* bindings */,
 			);
@@ -246,6 +249,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A7E3C1F04B2D4E6F8A9B0C11 /* BCNativeBridge.m in Sources */,
 				92C2994DEC743412F73681A2 /* main.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

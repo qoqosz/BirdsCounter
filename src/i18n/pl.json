@@ -46,5 +46,20 @@
   "invert": "Odwróć (jasne ptaki)",
   "sky_only": "Tylko niebo (pomijaj krajobraz)",
   "split_clusters": "Rozdzielaj zlepione ptaki",
-  "counting_in_progress": "Zliczanie"
+  "counting_in_progress": "Zliczanie",
+  "crop_done": "Gotowe",
+  "crop_reset": "Przywróć",
+  "crop_hint": "Przeciągnij narożniki lub krawędzie, aby wykadrować, albo przeciągnij wnętrze ramki, aby ją przesunąć.",
+  "history_title": "Historia",
+  "history_clear": "Wyczyść",
+  "history_clear_confirm": "Usunąć wszystkie wpisy z historii? Zdjęcia zrobione w aplikacji też zostaną usunięte.",
+  "history_delete": "Usuń",
+  "history_delete_owned_confirm": "Usunąć ten wpis i zdjęcie zrobione w aplikacji?",
+  "history_missing": "Oryginalne zdjęcie nie jest już dostępne. Usunąć je z historii?",
+  "history_unlinked": "Tylko wynik",
+  "history_unlinked_detail": "To zdjęcie otwarto bez stałej lokalizacji, więc zachowano tylko jego wynik.",
+  "error_camera_unavailable": "Aparat nie jest dostępny na tym urządzeniu.",
+  "error_camera_denied": "Zezwól aplikacji Licznik Ptaków na dostęp do aparatu w Ustawieniach.",
+  "error_photos_denied": "Zezwól na dostęp do zdjęć w Ustawieniach, aby otwierać zdjęcia z historii.",
+  "error_photo_unreadable": "Nie udało się odczytać zdjęcia."
 }

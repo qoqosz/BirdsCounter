@@ -50,8 +50,6 @@
             <p class="drag-subtext" data-i18n="drag_subtext" data-i18n-android="start_subtext"
                 data-i18n-ios="start_subtext">or use the buttons below
             </p>
-            <input type="file" id="imageInput" accept="image/*"
-                style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;" />
             <input type="file" id="cameraInput" accept="image/*" capture="environment"
                 style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;" />
         </div>
@@ -74,6 +72,14 @@
             </button>
         </div>
 
+        <section id="historySection" class="history-section" hidden>
+            <div class="history-header">
+                <h2 class="settings-title" data-i18n="history_title">History</h2>
+                <button id="historyClearBtn" class="text-button" type="button" data-i18n="history_clear">Clear</button>
+            </div>
+            <ul id="historyList" class="history-list group"></ul>
+        </section>
+
         <div id="imagePreview" class="image-preview" style="display: none">
             <img id="previewImg" src="" alt="Preview" data-i18n-attr="alt:preview_alt" />
             <button id="fullscreenCloseBtn" class="fullscreen-close" type="button" aria-label="Close fullscreen">
@@ -85,20 +91,19 @@
             <div id="maskOverlay" class="mask-overlay" aria-hidden="true">
                 <canvas id="maskCanvas"></canvas>
             </div>
+            <!-- Crop frame over the whole photo: drag inside to move it, a corner or an edge to
+                 resize it, or outside it to draw a new one -->
             <div id="cropOverlay" class="crop-overlay" aria-hidden="true">
-                <div class="crop-mask crop-mask-top"></div>
-                <div class="crop-mask crop-mask-right"></div>
-                <div class="crop-mask crop-mask-bottom"></div>
-                <div class="crop-mask crop-mask-left"></div>
                 <div id="cropBox" class="crop-box" role="presentation">
-                    <div class="crop-handle handle-nw" data-mode="move"></div>
-                    <div class="crop-handle handle-ne is-inactive" aria-hidden="true"></div>
-                    <div class="crop-handle handle-sw is-inactive" aria-hidden="true"></div>
-                    <div class="crop-handle handle-se" data-mode="resize" data-handle="se">
-                        <svg class="resize-icon" viewBox="0 0 12 12" aria-hidden="true">
-                            <path d="M3 9L9 3M6 3H9V6" />
-                        </svg>
-                    </div>
+                    <div class="crop-grid"></div>
+                    <div class="crop-handle crop-edge" data-handle="n"></div>
+                    <div class="crop-handle crop-edge" data-handle="e"></div>
+                    <div class="crop-handle crop-edge" data-handle="s"></div>
+                    <div class="crop-handle crop-edge" data-handle="w"></div>
+                    <div class="crop-handle crop-corner" data-handle="nw"></div>
+                    <div class="crop-handle crop-corner" data-handle="ne"></div>
+                    <div class="crop-handle crop-corner" data-handle="se"></div>
+                    <div class="crop-handle crop-corner" data-handle="sw"></div>
                 </div>
             </div>
         </div>
@@ -109,8 +114,26 @@
             <span id="countSuffix" data-i18n="count_suffix">ptaków</span>
         </p>
 
-        <div id="processActions" class="process-actions" style="display: none;">
+        <p id="cropHint" class="edit-hint" style="display: none;" data-i18n="crop_hint">Drag the corners or
+            edges to crop, or drag inside the frame to move it.</p>
+
+        <div id="cropActions" class="process-actions crop-actions" style="display: none;">
+            <button id="cropResetBtn" class="action-button reset-button" type="button">
+                <span data-i18n="crop_reset">Reset</span>
+            </button>
             <button id="cropCancelBtn" class="action-button cancel-button" type="button">
+                <span data-i18n="cancel">Cancel</span>
+            </button>
+            <button id="cropDoneBtn" class="action-button done-button" type="button">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                </svg>
+                <span data-i18n="crop_done">Done</span>
+            </button>
+        </div>
+
+        <div id="processActions" class="process-actions" style="display: none;">
+            <button id="maskCancelBtn" class="action-button cancel-button" type="button">
                 <span data-i18n="cancel">Anuluj</span>
             </button>
             <button id="cropBtn" class="action-button crop-button" aria-pressed="false">

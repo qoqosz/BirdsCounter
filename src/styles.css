@@ -310,8 +310,39 @@ h1 {
     filter: brightness(0.88);
 }
 
-.cancel-button {
+#maskCancelBtn {
     display: none;
+}
+
+.action-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.done-button {
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.done-button:active {
+    background-color: var(--accent);
+    filter: brightness(0.88);
+}
+
+.text-button {
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 0.9375em;
+    padding: 4px 0;
+    cursor: pointer;
+}
+
+.edit-hint {
+    margin-top: calc(var(--gap) / -2);
+    text-align: center;
+    font-size: 0.875em;
+    color: var(--text-secondary);
 }
 
 /* ===== Image preview ===== */
@@ -406,89 +437,198 @@ body.fullscreen-preview {
     font-variant-numeric: tabular-nums;
 }
 
-/* ===== Crop overlay ===== */
+/* ===== Crop =====
+ * The photo sits on a dark mat so the handles have room at its edges. The frame dims the
+ * photo around it with a shadow that .image-preview clips. Each handle is a 44 px hit area
+ * centred on the frame line, drawn inside the frame so it stays visible at the photo's edge. */
+body.is-cropping .image-preview {
+    padding: 16px;
+    background-color: #000000;
+}
+
 .crop-overlay {
     position: absolute;
     inset: 0;
     display: none;
-    pointer-events: none;
     z-index: 20;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+body.is-cropping .crop-overlay {
+    inset: 16px;
 }
 
 .crop-overlay.is-active {
     display: block;
 }
 
-.crop-mask {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.45);
-}
-
 .crop-box {
     position: absolute;
-    border: 2px solid #ffffff;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-    cursor: default;
-    touch-action: none;
-    pointer-events: auto;
+    outline: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6);
+    cursor: move;
 }
 
-.crop-box::after {
-    content: "";
+/* Rule of thirds while dragging */
+.crop-grid {
+    --line: rgba(255, 255, 255, 0.55);
     position: absolute;
     inset: 0;
-    border: 1px dashed rgba(255, 255, 255, 0.6);
     pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    background:
+        linear-gradient(var(--line), var(--line)) 33.333% 0 / 1px 100% no-repeat,
+        linear-gradient(var(--line), var(--line)) 66.667% 0 / 1px 100% no-repeat,
+        linear-gradient(var(--line), var(--line)) 0 33.333% / 100% 1px no-repeat,
+        linear-gradient(var(--line), var(--line)) 0 66.667% / 100% 1px no-repeat;
+}
+
+.crop-overlay.is-dragging .crop-grid {
+    opacity: 1;
 }
 
 .crop-handle {
     position: absolute;
-    width: 16px;
-    height: 16px;
-    background: #ffffff;
-    border: 2px solid var(--accent);
-    border-radius: 50%;
-    pointer-events: auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
-.handle-nw {
-    left: -8px;
-    top: -8px;
-    cursor: move;
+.crop-handle::before {
+    content: "";
+    position: absolute;
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6));
 }
 
-.handle-ne {
-    right: -8px;
-    top: -8px;
+.crop-corner {
+    width: 44px;
+    height: 44px;
 }
 
-.handle-sw {
-    left: -8px;
-    bottom: -8px;
+.crop-corner::before {
+    width: 22px;
+    height: 22px;
+    border: 0 solid #ffffff;
 }
 
-.handle-se {
-    right: -8px;
-    bottom: -8px;
+.crop-corner[data-handle="nw"] {
+    left: -22px;
+    top: -22px;
     cursor: nwse-resize;
 }
 
-.crop-handle.is-inactive {
-    opacity: 0.45;
-    pointer-events: none;
+.crop-corner[data-handle="nw"]::before {
+    left: 22px;
+    top: 22px;
+    border-top-width: 3px;
+    border-left-width: 3px;
 }
 
-.resize-icon {
-    width: 10px;
-    height: 10px;
-    stroke: var(--accent);
-    stroke-width: 1.7;
-    fill: none;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+.crop-corner[data-handle="ne"] {
+    right: -22px;
+    top: -22px;
+    cursor: nesw-resize;
+}
+
+.crop-corner[data-handle="ne"]::before {
+    right: 22px;
+    top: 22px;
+    border-top-width: 3px;
+    border-right-width: 3px;
+}
+
+.crop-corner[data-handle="se"] {
+    right: -22px;
+    bottom: -22px;
+    cursor: nwse-resize;
+}
+
+.crop-corner[data-handle="se"]::before {
+    right: 22px;
+    bottom: 22px;
+    border-bottom-width: 3px;
+    border-right-width: 3px;
+}
+
+.crop-corner[data-handle="sw"] {
+    left: -22px;
+    bottom: -22px;
+    cursor: nesw-resize;
+}
+
+.crop-corner[data-handle="sw"]::before {
+    left: 22px;
+    bottom: 22px;
+    border-bottom-width: 3px;
+    border-left-width: 3px;
+}
+
+.crop-edge::before {
+    background-color: #ffffff;
+    border-radius: 2px;
+}
+
+.crop-edge[data-handle="n"],
+.crop-edge[data-handle="s"] {
+    left: 22px;
+    right: 22px;
+    height: 32px;
+    cursor: ns-resize;
+}
+
+.crop-edge[data-handle="n"] {
+    top: -16px;
+}
+
+.crop-edge[data-handle="s"] {
+    bottom: -16px;
+}
+
+.crop-edge[data-handle="n"]::before,
+.crop-edge[data-handle="s"]::before {
+    left: 50%;
+    width: 22px;
+    height: 3px;
+    margin-left: -11px;
+}
+
+.crop-edge[data-handle="n"]::before {
+    top: 16px;
+}
+
+.crop-edge[data-handle="s"]::before {
+    bottom: 16px;
+}
+
+.crop-edge[data-handle="e"],
+.crop-edge[data-handle="w"] {
+    top: 22px;
+    bottom: 22px;
+    width: 32px;
+    cursor: ew-resize;
+}
+
+.crop-edge[data-handle="e"] {
+    right: -16px;
+}
+
+.crop-edge[data-handle="w"] {
+    left: -16px;
+}
+
+.crop-edge[data-handle="e"]::before,
+.crop-edge[data-handle="w"]::before {
+    top: 50%;
+    width: 3px;
+    height: 22px;
+    margin-top: -11px;
+}
+
+.crop-edge[data-handle="e"]::before {
+    right: 16px;
+}
+
+.crop-edge[data-handle="w"]::before {
+    left: 16px;
 }
 
 /* ===== Mask overlay ===== */
@@ -515,6 +655,94 @@ body.fullscreen-preview {
     width: 100%;
     height: 100%;
     display: block;
+}
+
+/* ===== History ===== */
+.history-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.history-section[hidden] {
+    display: none;
+}
+
+.history-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-right: 16px;
+}
+
+.history-list {
+    list-style: none;
+}
+
+.history-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.history-item + .history-item {
+    border-top: 0.5px solid var(--separator);
+}
+
+.history-item.is-loading {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.history-open {
+    position: relative;
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0 10px 16px;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.history-open:active {
+    background-color: var(--surface-active);
+}
+
+.history-thumb {
+    flex: none;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    object-fit: cover;
+    background-color: var(--surface-active);
+}
+
+.history-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.history-count {
+    font-weight: 600;
+}
+
+.history-meta {
+    font-size: 0.8125em;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-delete {
+    margin-right: 8px;
+    color: var(--text-secondary);
 }
 
 /* ===== Settings (grouped form) ===== */
@@ -836,6 +1064,7 @@ body.is-mac .action-button:active {
 }
 
 body.is-mac .action-button.is-active,
+body.is-mac .done-button,
 body.is-mac #galleryBtn {
     color: #ffffff;
     background-color: var(--accent);
@@ -853,6 +1082,7 @@ body.is-mac #galleryBtn {
 }
 
 body.is-mac .action-button.is-active:active,
+body.is-mac .done-button:active,
 body.is-mac #galleryBtn:active {
     background-color: var(--accent);
     filter: brightness(0.88);
@@ -868,6 +1098,28 @@ body.is-mac .image-preview {
 
 body.is-mac .count-label {
     font-size: 15px;
+}
+
+body.is-mac .history-open {
+    padding: 8px 0 8px 12px;
+}
+
+body.is-mac .history-open:active {
+    background-color: var(--toolbar-hover);
+}
+
+body.is-mac .history-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 6px;
+}
+
+body.is-mac .history-header {
+    padding-right: 2px;
+}
+
+body.is-mac .text-button {
+    font-size: 13px;
 }
 
 /* Grouped form, as in System Settings */
@@ -1070,6 +1322,7 @@ body.is-android .action-button {
 }
 
 body.is-android .action-button::before,
+body.is-android .history-open::before,
 body.is-android .icon-button::before,
 body.is-android .lang-switch::before,
 body.is-android .advanced-summary::before {
@@ -1083,6 +1336,7 @@ body.is-android .advanced-summary::before {
 }
 
 body.is-android .action-button:active::before,
+body.is-android .history-open:active::before,
 body.is-android .icon-button:active::before,
 body.is-android .lang-switch:active::before,
 body.is-android .advanced-summary:active::before {
@@ -1095,9 +1349,16 @@ body.is-android .action-button.is-active:active {
     filter: none;
 }
 
-body.is-android .camera-button {
+body.is-android .camera-button,
+body.is-android .done-button {
     background-color: var(--md-primary);
     color: var(--md-on-primary);
+}
+
+body.is-android .reset-button {
+    flex: none;
+    padding: 0 12px;
+    color: var(--md-primary);
 }
 
 body.is-android .gallery-button {
@@ -1303,6 +1564,57 @@ body.is-android .image-preview img {
     touch-action: manipulation;
 }
 
+/* History: list items with a leading thumbnail */
+body.is-android.has-history .drag-drop-area {
+    flex: none;
+    padding: 16px 24px 8px;
+}
+
+body.is-android .history-header {
+    padding-right: 4px;
+}
+
+body.is-android .text-button {
+    position: relative;
+    overflow: hidden;
+    min-height: 40px;
+    padding: 0 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+    color: var(--md-primary);
+}
+
+body.is-android .history-item + .history-item {
+    border-top: none;
+}
+
+body.is-android .history-open {
+    padding: 8px 0 8px 16px;
+    gap: 16px;
+}
+
+body.is-android .history-open:active {
+    background-color: transparent;
+}
+
+body.is-android .history-thumb {
+    border-radius: 12px;
+}
+
+body.is-android .history-count {
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
+}
+
+body.is-android .history-meta {
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.25px;
+}
+
 body.is-android .fullscreen-close {
     width: 48px;
     height: 48px;
@@ -1484,12 +1796,14 @@ body.is-ios .action-button:active {
 }
 
 body.is-ios .camera-button,
+body.is-ios .done-button,
 body.is-ios .action-button.is-active {
     background-color: var(--accent);
     color: var(--on-accent);
 }
 
 body.is-ios .camera-button:active,
+body.is-ios .done-button:active,
 body.is-ios .action-button.is-active:active {
     background-color: var(--accent);
     filter: brightness(0.85);
@@ -1506,41 +1820,73 @@ body.is-ios .fullscreen-close {
     height: 44px;
 }
 
-/* Crop handles: larger knobs with a 44 pt hit area */
-body.is-ios .crop-handle {
-    width: 24px;
-    height: 24px;
+/* Crop: Cancel and Reset are plain text actions, as in Photos */
+body.is-ios .crop-actions .cancel-button,
+body.is-ios .crop-actions .reset-button {
+    flex: none;
+    padding: 0 12px;
+    background: transparent;
 }
 
-body.is-ios .crop-handle::before {
+/* History: inset grouped list with thumbnails */
+body.is-ios.has-history .drag-drop-area {
+    flex: none;
+    padding: 24px 24px 8px;
+}
+
+body.is-ios .history-header {
+    padding-right: 20px;
+}
+
+body.is-ios .history-header .settings-title {
+    padding-left: 20px;
+}
+
+body.is-ios .text-button {
+    font-size: 15px;
+}
+
+body.is-ios .history-open {
+    padding: 10px 0 10px 20px;
+}
+
+body.is-ios .history-open:active {
+    background-color: var(--fill);
+}
+
+body.is-ios .history-item + .history-item {
+    border-top: none;
+}
+
+body.is-ios .history-item + .history-item::before {
     content: "";
     position: absolute;
-    inset: -10px;
+    top: 0;
+    left: 88px;
+    right: 0;
+    border-top: 0.5px solid var(--separator);
 }
 
-body.is-ios .handle-nw {
-    left: -12px;
-    top: -12px;
+body.is-ios .history-thumb {
+    border-radius: 10px;
 }
 
-body.is-ios .handle-ne {
-    right: -12px;
-    top: -12px;
+body.is-ios .history-count {
+    font-size: 17px;
 }
 
-body.is-ios .handle-sw {
-    left: -12px;
-    bottom: -12px;
+body.is-ios .history-meta {
+    font-size: 15px;
 }
 
-body.is-ios .handle-se {
-    right: -12px;
-    bottom: -12px;
+body.is-ios .history-delete {
+    background: transparent;
+    box-shadow: none;
+    color: var(--text-tertiary);
 }
 
-body.is-ios .resize-icon {
-    width: 12px;
-    height: 12px;
+body.is-ios .history-delete:active {
+    background: var(--fill);
 }
 
 /* Settings: inset grouped list */

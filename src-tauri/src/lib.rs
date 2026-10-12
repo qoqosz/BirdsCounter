@@ -1,6 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 pub mod blob_filter;
-use blob_filter::{BlobFilter, BlobParams};
+mod history;
+mod native;
+use blob_filter::{BlobFilter, BlobParams, Crop};
+use tauri::Manager;
 
 #[derive(serde::Serialize)]
 struct ProcessResult {
@@ -78,14 +81,17 @@ async fn open_camera() -> Result<String, String> {
     }
 }
 
-#[tauri::command]
+/// Counts the birds in the image, or in its `crop`; the mask covers the whole image.
+/// Runs off the main thread so the UI stays responsive.
+#[tauri::command(async)]
 fn process_image(
     payload: Vec<u8>,
     params: BlobParams,
     mask_payload: Option<Vec<u8>>,
+    crop: Option<Crop>,
 ) -> Result<ProcessResult, String> {
     let filter = BlobFilter::new(params);
-    let (bytes, count) = filter.apply(payload, mask_payload)?;
+    let (bytes, count) = filter.apply(payload, mask_payload, crop)?;
     Ok(ProcessResult {
         bytes,
         count: count as u32,
@@ -145,16 +151,41 @@ fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .setup(|_app| {
+    let app = tauri::Builder::default()
+        .setup(|app| {
             #[cfg(target_os = "macos")]
-            setup_macos_menu(_app)?;
+            setup_macos_menu(app)?;
+            let history_dir = app.path().app_data_dir()?.join("history");
+            app.manage(history::History::new(history_dir));
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![greet, open_camera, process_image])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            open_camera,
+            process_image,
+            history::read_image,
+            history::history_list,
+            history::history_save,
+            history::history_thumb,
+            history::history_mask,
+            history::history_delete,
+            history::history_clear,
+            native::native_take_photo,
+            native::native_pick_photo,
+            native::native_load_photo,
+            native::take_staged_image,
+            native::take_quick_action,
+            native::set_quick_actions,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Between build (which declares the iOS app delegate) and run (which launches the app).
+    #[cfg(target_os = "ios")]
+    native::install(app.handle());
+
+    app.run(|_, _| {});
 }

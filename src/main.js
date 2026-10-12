@@ -1,5 +1,5 @@
-const { invoke, convertFileSrc } = window.__TAURI__.core;
-const { open } = window.__TAURI__.dialog;
+const { invoke } = window.__TAURI__.core;
+const { open, ask, message } = window.__TAURI__.dialog;
 const { readFile } = window.__TAURI__.fs;
 
 const MIN_CROP_SIZE = 40;
@@ -9,22 +9,36 @@ const MASK_BRUSH_OUTLINE = "rgba(226, 77, 92, 0.95)";
 const MASK_BRUSH_FILL = "rgba(226, 77, 92, 0.2)";
 const SUPPORTED_LANGS = ["en", "pl"];
 const DEFAULT_LANG = "en";
+// Longest side of the history thumbnails and of the quick cropped preview.
+const THUMB_SIZE = 320;
+const PREVIEW_SIZE = 1600;
+const HISTORY_SAVE_DELAY = 400;
+// Error codes from the native photo code (BCNativeBridge.m, MainActivity.kt).
+const NATIVE_ERRORS = {
+  "camera-unavailable": "error_camera_unavailable",
+  "camera-denied": "error_camera_denied",
+  "photos-denied": "error_photos_denied",
+  "photo-unreadable": "error_photo_unreadable",
+};
 
 let dragDropArea;
 let cameraBtn;
 let galleryBtn;
-let imageInput;
 let cameraInput;
 let previewImg;
 let imagePreview;
 let cropBtn;
 let maskBtn;
-let cropCancelBtn;
+let maskCancelBtn;
 let processActions;
+let cropActions;
+let cropResetBtn;
+let cropCancelBtn;
+let cropDoneBtn;
+let cropHint;
 let settingsPanel;
 let cropOverlay;
 let cropBox;
-let cropMasks = {};
 let maskOverlay;
 let maskCanvas;
 let maskBrushControls;
@@ -36,20 +50,36 @@ let countValue;
 let countSuffix;
 let backBtn;
 let fullscreenCloseBtn;
-let currentImageBytes = null;
-let originalImageBytes = null;
-let originalImageMime = null;
+let historySection;
+let historyList;
+let historyClearBtn;
+
+// The photo being edited, as loaded, and where it came from (see history.rs for sources).
+let sourceBytes = null;
+let sourceImage = null;
+let sourceUrl = null;
+let sourceInfo = { source: null, name: null, owned: false };
+// Region to count in, in pixels of the photo; null for the whole photo.
+let cropRect = null;
+let resultUrl = null;
+let workingPreviewUrl = null;
+// Bumped whenever another photo is opened or the editor closes, so late results are dropped.
+let editSession = 0;
+
 let isPreviewVisible = false;
 let isCropping = false;
 let isMasking = false;
-let cropState = null;
-let cropBounds = { width: 0, height: 0 };
+// Crop being edited, in photo pixels, and the drag that changes it.
+let cropDraft = null;
 let cropDragState = null;
 let maskDragState = null;
+// The mask covers the whole photo, at its full resolution, so it survives crop changes.
 let maskBitmap = null;
 let maskContext = null;
 let maskHasPaint = false;
 let maskHoverPoint = null;
+let maskPngCache = null;
+let maskSnapshot = null;
 let langSelect;
 let translations = {};
 let currentLang = DEFAULT_LANG;
@@ -79,7 +109,6 @@ let splitClustersInput;
 let skyOnlyInput;
 let isProcessing = false;
 let pendingProcess = false;
-let pendingProcessOptions = null;
 let processTimer = null;
 let isFullscreenPreview = false;
 let lastTapTime = 0;
@@ -93,6 +122,17 @@ let isMac = false;
 let isIOS = false;
 let countingAnimationTimer = null;
 let countingDotCount = 1;
+
+// History entry id of each editing session once saved, what was saved last (to skip
+// saves that change nothing), and the last result to save.
+let historyIds = new Map();
+let historySavedKeys = new Map();
+let lastResult = null;
+let maskChangedSinceSave = false;
+let historySaveTimer = null;
+let historySaveChain = Promise.resolve();
+let historyEntries = [];
+let historyThumbUrls = new Map();
 
 function normalizeLang(lang) {
   if (!lang) return DEFAULT_LANG;
@@ -168,99 +208,157 @@ async function setLanguage(lang) {
   } catch (e) {
     console.warn("Failed to persist language selection:", e);
   }
+  renderHistory();
+  updateQuickActions();
 }
 
+async function tellUser(text) {
+  try {
+    await message(text, { title: t("app_title") });
+  } catch (e) {
+    alert(text);
+  }
+}
+
+async function askUser(text) {
+  try {
+    return await ask(text, { title: t("app_title"), kind: "warning" });
+  } catch (e) {
+    return confirm(text);
+  }
+}
+
+function showNativeError(error) {
+  const code = String(error);
+  console.error("Photo error:", code);
+  tellUser(NATIVE_ERRORS[code] ? t(NATIVE_ERRORS[code]) : t("alert_process_fail", { error: code }));
+}
+
+// ===== Opening photos =====
+
+function fileName(path) {
+  return path ? path.split(/[\\/]/).pop() : null;
+}
+
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+// Desktop: Tauri reports dropped files with their paths, so the history can link to them.
 function setupDragAndDrop() {
-  // Prevent default drag behaviors
-  ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
-    dragDropArea.addEventListener(eventName, preventDefaults, false);
-    document.body.addEventListener(eventName, preventDefaults, false);
-  });
-
-  // Highlight drop area when item is dragged over it
-  ["dragenter", "dragover"].forEach((eventName) => {
-    dragDropArea.addEventListener(eventName, highlight, false);
-  });
-
-  ["dragleave", "drop"].forEach((eventName) => {
-    dragDropArea.addEventListener(eventName, unhighlight, false);
-  });
-
-  // Handle dropped files
-  dragDropArea.addEventListener("drop", handleDrop, false);
-
-  // Click on drag area triggers the file selection (gallery compatible)
-  dragDropArea.addEventListener("click", () => {
-    imageInput.click();
-  });
-
-  // Handle file selection from the standard input
-  imageInput.addEventListener("change", (e) => {
-    if (e.target.files.length > 0) {
-      const file = e.target.files[0];
-      handleFileObject(file);
+  const webview = window.__TAURI__.webview?.getCurrentWebview?.();
+  if (!webview) return;
+  webview.onDragDropEvent(async (event) => {
+    const { type, paths } = event.payload;
+    const accepting = !isCropping && !isMasking;
+    if (type === "enter" || type === "over") {
+      dragDropArea.classList.toggle("drag-over", accepting && !isPreviewVisible);
+      return;
     }
-    // clear value to allow re-selection
-    imageInput.value = "";
+    dragDropArea.classList.remove("drag-over");
+    if (type !== "drop" || !accepting || !paths?.length) return;
+    const path = paths.find((p) => guessMimeFromPath(p));
+    if (!path) {
+      alert(t("alert_drop_image"));
+      return;
+    }
+    await openFilePath(path);
   });
+}
 
-  // Handle file selection from the camera input (Android fallback, iOS)
+// Fallback for an Android build without the native bridge: a plain file input.
+function setupFileInputs() {
   cameraInput.addEventListener("change", (e) => {
     if (e.target.files.length > 0) {
-      const file = e.target.files[0];
-      handleFileObject(file);
+      handleFileObject(e.target.files[0]);
     }
-    // clear value
     cameraInput.value = "";
   });
 }
 
-function preventDefaults(e) {
-  e.preventDefault();
-  e.stopPropagation();
+async function handleFileObject(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  await openImage(bytes, file.type || null, { source: null, name: file.name, owned: false });
 }
 
-function highlight(e) {
-  dragDropArea.classList.add("drag-over");
-}
-
-function unhighlight(e) {
-  dragDropArea.classList.remove("drag-over");
-}
-
-function handleDrop(e) {
-  const dt = e.dataTransfer;
-  const files = dt.files;
-  if (files.length > 0) {
-    const file = files[0];
-    if (file.type.startsWith("image/")) {
-      handleFileObject(file);
-    } else {
-      alert(t("alert_drop_image"));
+async function openFilePath(path) {
+  const source = `file:${path}`;
+  let bytes;
+  try {
+    bytes = new Uint8Array(await invoke("read_image", { source }));
+  } catch (e) {
+    // Not a plain path (e.g. an Android content URI from the dialog)
+    try {
+      bytes = new Uint8Array(await readFile(path));
+    } catch (readError) {
+      console.error("Error reading file:", e, readError);
+      showNativeError("photo-unreadable");
+      return;
     }
+    await openImage(bytes, guessMimeFromPath(path), { source: null, name: fileName(path), owned: false });
+    return;
   }
+  await openImage(bytes, guessMimeFromPath(path), { source, name: fileName(path), owned: false });
 }
 
-// Handle standard HTML File object (from Drag&Drop or Input)
-function handleFileObject(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    // Store raw bytes for processing
-    originalImageBytes = new Uint8Array(e.target.result);
-    currentImageBytes = new Uint8Array(originalImageBytes);
-    originalImageMime = file.type || null;
-    // Create blob for display
-    const blob = new Blob([originalImageBytes], { type: file.type || undefined });
-    previewImg.src = URL.createObjectURL(blob);
-    showPreview();
+// Shows a photo in the editor and counts it at once. `entry` restores a history entry
+// (settings, crop and mask) instead of starting fresh.
+async function openImage(bytes, mime, info, entry = null, maskBytes = null) {
+  let image;
+  const url = URL.createObjectURL(new Blob([bytes], { type: mime || undefined }));
+  try {
+    image = await loadImage(url);
+  } catch (e) {
+    URL.revokeObjectURL(url);
+    showNativeError("photo-unreadable");
+    return;
+  }
+
+  await flushHistorySave();
+  editSession++;
+  if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+  setResultUrl(null);
+  sourceBytes = bytes;
+  sourceImage = image;
+  sourceUrl = url;
+  sourceInfo = {
+    source: info?.source ?? null,
+    name: info?.name ?? null,
+    owned: Boolean(info?.owned),
   };
-  // Read as ArrayBuffer to get raw bytes
-  reader.readAsArrayBuffer(file);
+  if (entry) {
+    historyIds.set(editSession, entry.id);
+    historySavedKeys.set(editSession, historyKey(entry));
+  }
+  lastResult = null;
+  maskChangedSinceSave = false;
+  cropRect = entry?.crop ? clampCrop(entry.crop) : null;
+
+  resetCropUI();
+  clearMaskData();
+  resetMaskUI();
+  if (maskBytes) {
+    await restoreMask(maskBytes);
+  }
+
+  // New photos start with the largest bird size the photo allows; history entries
+  // get their own settings back.
+  radiusInitialized = Boolean(entry);
+  updateRadiusLimits();
+  if (entry) {
+    applyParamsToUI(entry.params);
+  }
+
+  showPreview();
+  await showWorkingPreview();
+  scheduleProcess();
 }
 
 function showPreview() {
   isPreviewVisible = true;
-  radiusInitialized = false;
   imagePreview.style.display = "block";
   if (countLabel) countLabel.style.display = "block";
   if (processActions) processActions.style.display = "flex";
@@ -269,22 +367,21 @@ function showPreview() {
   document.body.classList.add("has-back");
   if (dragDropArea) dragDropArea.style.display = "none";
   document.querySelector(".button-container").style.display = "none";
+  if (historySection) historySection.hidden = true;
   setAndroidBackEnabled(true);
-  resetCropUI();
-  clearMaskData();
-  resetMaskUI();
   updateCount(0);
-  scheduleProcess({ applyCrop: false });
+  window.scrollTo(0, 0);
 }
 
 function resetApp() {
+  flushHistorySave().then(refreshHistory);
+  editSession++;
   isPreviewVisible = false;
   if (processTimer) {
     clearTimeout(processTimer);
     processTimer = null;
   }
   pendingProcess = false;
-  pendingProcessOptions = null;
   imagePreview.style.display = "none";
   setFullscreenPreview(false);
   if (countLabel) countLabel.style.display = "none";
@@ -295,14 +392,52 @@ function resetApp() {
   if (dragDropArea) dragDropArea.style.display = "flex";
   document.querySelector(".button-container").style.display = "flex";
   setAndroidBackEnabled(false);
-  currentImageBytes = null;
-  originalImageBytes = null;
-  originalImageMime = null;
-  if (previewImg) previewImg.src = "";
+  sourceBytes = null;
+  sourceImage = null;
+  if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+  sourceUrl = null;
+  sourceInfo = { source: null, name: null, owned: false };
+  cropRect = null;
+  lastResult = null;
+  if (previewImg) previewImg.removeAttribute("src");
+  setResultUrl(null);
   resetCropUI();
   clearMaskData();
   resetMaskUI();
   updateCount(0);
+  renderHistory();
+}
+
+function setResultUrl(url) {
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = url;
+}
+
+// The photo, cropped, until the counted result replaces it.
+async function showWorkingPreview() {
+  if (!sourceImage || !previewImg) return;
+  if (workingPreviewUrl) {
+    URL.revokeObjectURL(workingPreviewUrl);
+    workingPreviewUrl = null;
+  }
+  if (!cropRect) {
+    previewImg.src = sourceUrl;
+    return;
+  }
+  const session = editSession;
+  const scale = Math.min(1, PREVIEW_SIZE / Math.max(cropRect.width, cropRect.height));
+  const blob = await drawToBlob(
+    sourceImage,
+    cropRect,
+    Math.round(cropRect.width * scale),
+    Math.round(cropRect.height * scale),
+    "image/jpeg",
+  );
+  // Too late when the result for this crop is already shown.
+  const counted = lastResult && JSON.stringify(lastResult.crop) === JSON.stringify(cropRect);
+  if (!blob || session !== editSession || isCropping || counted) return;
+  workingPreviewUrl = URL.createObjectURL(blob);
+  previewImg.src = workingPreviewUrl;
 }
 
 function setFullscreenPreview(active) {
@@ -322,26 +457,25 @@ function toggleFullscreenPreview() {
   setFullscreenPreview(!isFullscreenPreview);
 }
 
+function birdsSuffix(value) {
+  if (currentLang === "pl") {
+    const n = Math.abs(Math.trunc(value));
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (n === 1) return t("count_suffix_one");
+    if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
+      return t("count_suffix_few");
+    }
+    return t("count_suffix_many");
+  }
+  return t("count_suffix");
+}
 
 function updateCount(value) {
   stopCountingAnimation();
   if (!countValue) return;
   countValue.textContent = String(value);
-  if (!countSuffix) return;
-  if (currentLang === "pl") {
-    const n = Math.abs(Math.trunc(value));
-    const mod10 = n % 10;
-    const mod100 = n % 100;
-    let suffixKey = "count_suffix_many";
-    if (n === 1) {
-      suffixKey = "count_suffix_one";
-    } else if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
-      suffixKey = "count_suffix_few";
-    }
-    countSuffix.textContent = t(suffixKey);
-    return;
-  }
-  countSuffix.textContent = t("count_suffix");
+  if (countSuffix) countSuffix.textContent = birdsSuffix(value);
 }
 
 function stopCountingAnimation() {
@@ -407,14 +541,19 @@ function clampRadiusValues() {
   syncSettingsOutputs();
 }
 
-function updateRadiusLimits() {
-  if (!previewImg || !minRadiusInput || !maxRadiusInput) return;
-  if (!previewImg.naturalWidth || !previewImg.naturalHeight) return;
+// Size of the part of the photo that is counted.
+function workingSize() {
+  if (cropRect) return { width: cropRect.width, height: cropRect.height };
+  if (sourceImage) return { width: sourceImage.naturalWidth, height: sourceImage.naturalHeight };
+  return null;
+}
 
-  const maxAllowed = Math.max(
-    1,
-    Math.min(previewImg.naturalWidth, previewImg.naturalHeight) / 2,
-  );
+function updateRadiusLimits() {
+  if (!minRadiusInput || !maxRadiusInput) return;
+  const size = workingSize();
+  if (!size || !size.width || !size.height) return;
+
+  const maxAllowed = Math.max(1, Math.min(size.width, size.height) / 2);
   minRadiusInput.max = maxAllowed.toString();
   maxRadiusInput.max = maxAllowed.toString();
 
@@ -473,26 +612,27 @@ function updateMethodSettingsVisibility() {
   });
 }
 
-function updateCropButtonState(active) {
-  if (!cropBtn) return;
-  cropBtn.classList.toggle("is-active", active);
-  cropBtn.setAttribute("aria-pressed", active ? "true" : "false");
-}
-
 function updateMaskButtonState(active) {
   if (!maskBtn) return;
   maskBtn.classList.toggle("is-active", active);
   maskBtn.setAttribute("aria-pressed", active ? "true" : "false");
 }
 
-function updateCancelButtonState() {
+function updateEditingState() {
   const editing = isCropping || isMasking;
   if (window.Android && typeof window.Android.setEditing === "function") {
     window.Android.setEditing(editing);
   }
-  if (!cropCancelBtn) return;
-  cropCancelBtn.style.display = editing ? "inline-flex" : "none";
+  document.body.classList.toggle("is-cropping", isCropping);
+  if (maskCancelBtn) maskCancelBtn.style.display = isMasking ? "inline-flex" : "none";
+  if (isPreviewVisible && processActions) {
+    processActions.style.display = isCropping ? "none" : "flex";
+  }
+  if (cropActions) cropActions.style.display = isCropping ? "flex" : "none";
+  if (cropHint) cropHint.style.display = isCropping ? "block" : "none";
 }
+
+// ===== Mask =====
 
 function updateMaskBrushControlsState() {
   if (!maskBrushControls) return;
@@ -520,6 +660,8 @@ function clearMaskData() {
   maskHoverPoint = null;
   maskBitmap = null;
   maskContext = null;
+  maskPngCache = null;
+  maskSnapshot = null;
   if (maskCanvas) {
     const ctx = maskCanvas.getContext("2d");
     if (ctx) {
@@ -533,18 +675,18 @@ function resetMaskUI() {
   isMasking = false;
   maskDragState = null;
   maskHoverPoint = null;
+  maskSnapshot = null;
   updateMaskButtonState(false);
-  updateCancelButtonState();
+  updateEditingState();
   updateMaskBrushControlsState();
   updateMaskOverlayState();
 }
 
 function ensureMaskBitmap() {
-  if (!previewImg) return false;
-  if (!previewImg.naturalWidth || !previewImg.naturalHeight) return false;
-
-  const width = previewImg.naturalWidth;
-  const height = previewImg.naturalHeight;
+  if (!sourceImage) return false;
+  const width = sourceImage.naturalWidth;
+  const height = sourceImage.naturalHeight;
+  if (!width || !height) return false;
   if (maskBitmap && maskBitmap.width === width && maskBitmap.height === height && maskContext) {
     return true;
   }
@@ -558,6 +700,29 @@ function ensureMaskBitmap() {
     return false;
   }
   return true;
+}
+
+async function restoreMask(bytes) {
+  if (!ensureMaskBitmap()) return;
+  const url = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+  try {
+    const image = await loadImage(url);
+    maskContext.drawImage(image, 0, 0, maskBitmap.width, maskBitmap.height);
+    maskHasPaint = true;
+    maskPngCache = bytes;
+  } catch (e) {
+    console.warn("Failed to restore the mask:", e);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  updateMaskOverlayState();
+}
+
+// Part of the photo shown in the preview: the crop, or all of it.
+function viewRect() {
+  if (cropRect) return cropRect;
+  if (!sourceImage) return null;
+  return { x: 0, y: 0, width: sourceImage.naturalWidth, height: sourceImage.naturalHeight };
 }
 
 function syncMaskCanvasSize() {
@@ -576,10 +741,21 @@ function renderMaskPreview() {
   const overlayCtx = maskCanvas.getContext("2d");
   if (!overlayCtx) return;
   overlayCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-  if (maskHasPaint && maskBitmap) {
+  const view = viewRect();
+  if (maskHasPaint && maskBitmap && view) {
     overlayCtx.save();
     overlayCtx.globalAlpha = isMasking ? 1.0 : 0.9;
-    overlayCtx.drawImage(maskBitmap, 0, 0, maskCanvas.width, maskCanvas.height);
+    overlayCtx.drawImage(
+      maskBitmap,
+      view.x,
+      view.y,
+      view.width,
+      view.height,
+      0,
+      0,
+      maskCanvas.width,
+      maskCanvas.height,
+    );
     overlayCtx.globalCompositeOperation = "source-in";
     overlayCtx.fillStyle = MASK_TINT_COLOR;
     overlayCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
@@ -606,8 +782,10 @@ function getMaskBrushRadiusPixels() {
   return Math.max(1, parsed);
 }
 
+// Pointer position in photo pixels.
 function toMaskImagePoint(clientX, clientY) {
-  if (!maskCanvas || !maskBitmap) return null;
+  const view = viewRect();
+  if (!maskCanvas || !maskBitmap || !view) return null;
   const rect = maskCanvas.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
 
@@ -615,8 +793,8 @@ function toMaskImagePoint(clientX, clientY) {
   const y = Math.min(Math.max(clientY - rect.top, 0), rect.height);
 
   return {
-    x: (x / rect.width) * maskBitmap.width,
-    y: (y / rect.height) * maskBitmap.height,
+    x: view.x + (x / rect.width) * view.width,
+    y: view.y + (y / rect.height) * view.height,
   };
 }
 
@@ -640,22 +818,22 @@ function toMaskCanvasPoint(clientX, clientY) {
 }
 
 function toMaskCanvasPointFromImagePoint(point) {
-  if (!maskCanvas || !maskBitmap || !point) return null;
-  if (!maskBitmap.width || !maskBitmap.height) return null;
+  const view = viewRect();
+  if (!maskCanvas || !view || !point) return null;
   return {
-    x: (point.x / maskBitmap.width) * maskCanvas.width,
-    y: (point.y / maskBitmap.height) * maskCanvas.height,
+    x: ((point.x - view.x) / view.width) * maskCanvas.width,
+    y: ((point.y - view.y) / view.height) * maskCanvas.height,
   };
 }
 
 function drawMaskStroke(from, to) {
-  if (!ensureMaskBitmap() || !maskContext || !maskCanvas || !maskBitmap) return;
+  const view = viewRect();
+  if (!ensureMaskBitmap() || !maskContext || !maskCanvas || !view) return;
   const rect = maskCanvas.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return;
 
-  const scaleX = maskBitmap.width / rect.width;
-  const scaleY = maskBitmap.height / rect.height;
-  const radius = getMaskBrushRadiusPixels() * Math.max(scaleX, scaleY);
+  const scale = Math.max(view.width / rect.width, view.height / rect.height);
+  const radius = getMaskBrushRadiusPixels() * scale;
 
   maskContext.save();
   maskContext.strokeStyle = "#ffffff";
@@ -673,27 +851,24 @@ function drawMaskStroke(from, to) {
   maskContext.restore();
 
   maskHasPaint = true;
+  maskPngCache = null;
+  maskChangedSinceSave = true;
   updateMaskOverlayState();
   renderMaskPreview();
 }
 
+// The mask as PNG at the photo's resolution; Rust crops it with the photo.
 async function buildMaskPayload() {
   if (!maskHasPaint || !maskBitmap) return null;
-  const blob = await new Promise((resolve) =>
-    maskBitmap.toBlob(resolve, "image/png"),
-  );
+  if (maskPngCache) return maskPngCache;
+  const blob = await new Promise((resolve) => maskBitmap.toBlob(resolve, "image/png"));
   if (!blob) return null;
-  const buf = await blob.arrayBuffer();
-  return new Uint8Array(buf);
+  maskPngCache = new Uint8Array(await blob.arrayBuffer());
+  return maskPngCache;
 }
 
 function enterMaskMode() {
-  if (!previewImg || !maskOverlay || !maskCanvas) return;
-  if (!previewImg.complete || previewImg.naturalWidth === 0) {
-    previewImg.addEventListener("load", enterMaskMode, { once: true });
-    return;
-  }
-
+  if (!sourceImage || !maskOverlay || !maskCanvas) return;
   if (isFullscreenPreview) {
     setFullscreenPreview(false);
   }
@@ -702,9 +877,16 @@ function enterMaskMode() {
   }
 
   if (!ensureMaskBitmap()) return;
+  // Cancel brings this back.
+  maskSnapshot = document.createElement("canvas");
+  maskSnapshot.width = maskBitmap.width;
+  maskSnapshot.height = maskBitmap.height;
+  maskSnapshot.getContext("2d")?.drawImage(maskBitmap, 0, 0);
+  maskSnapshot.hadPaint = maskHasPaint;
+
   isMasking = true;
   updateMaskButtonState(true);
-  updateCancelButtonState();
+  updateEditingState();
   updateMaskBrushControlsState();
   updateMaskOverlayState();
   syncMaskCanvasSize();
@@ -716,14 +898,28 @@ function exitMaskMode(options = {}) {
   isMasking = false;
   maskDragState = null;
   maskHoverPoint = null;
+  maskSnapshot = null;
   updateMaskButtonState(false);
-  updateCancelButtonState();
+  updateEditingState();
   updateMaskBrushControlsState();
   updateMaskOverlayState();
   renderMaskPreview();
   if (process) {
-    scheduleProcess({ applyCrop: false });
+    scheduleProcess();
   }
+}
+
+function cancelMaskMode() {
+  if (maskSnapshot && maskContext && maskBitmap) {
+    maskContext.clearRect(0, 0, maskBitmap.width, maskBitmap.height);
+    maskContext.drawImage(maskSnapshot, 0, 0);
+    if (maskHasPaint !== maskSnapshot.hadPaint || maskPngCache === null) {
+      maskChangedSinceSave = true;
+    }
+    maskHasPaint = maskSnapshot.hadPaint;
+    maskPngCache = null;
+  }
+  exitMaskMode();
 }
 
 function toggleMask() {
@@ -734,243 +930,225 @@ function toggleMask() {
   exitMaskMode({ process: true });
 }
 
+// ===== Crop =====
+// The whole photo is shown with the crop frame on it, so a crop can always be changed or
+// undone. Corners and edges resize the frame, dragging inside moves it and dragging
+// outside draws a new one.
+
+function clampCrop(crop) {
+  if (!sourceImage || !crop) return null;
+  const width = sourceImage.naturalWidth;
+  const height = sourceImage.naturalHeight;
+  const x = Math.min(Math.max(0, Math.round(crop.x)), width - 1);
+  const y = Math.min(Math.max(0, Math.round(crop.y)), height - 1);
+  const w = Math.min(Math.max(1, Math.round(crop.width)), width - x);
+  const h = Math.min(Math.max(1, Math.round(crop.height)), height - y);
+  // A crop that keeps (nearly) everything is no crop.
+  if (w >= width - 1 && h >= height - 1) return null;
+  return { x, y, width: w, height: h };
+}
+
 function resetCropUI() {
   isCropping = false;
-  cropState = null;
+  cropDraft = null;
   cropDragState = null;
   if (cropOverlay) {
-    cropOverlay.classList.remove("is-active");
+    cropOverlay.classList.remove("is-active", "is-dragging");
   }
   updateCropButtonState(false);
-  updateCancelButtonState();
+  updateEditingState();
   updateMaskOverlayState();
 }
 
-function syncCropBounds() {
-  if (!previewImg) return;
+function updateCropButtonState(active) {
+  if (!cropBtn) return;
+  cropBtn.classList.toggle("is-active", active);
+  cropBtn.setAttribute("aria-pressed", active ? "true" : "false");
+}
+
+// Photo pixels per displayed pixel, and the displayed size.
+function cropDisplayScale() {
   const rect = previewImg.getBoundingClientRect();
-  cropBounds = {
+  if (!sourceImage || rect.width === 0 || rect.height === 0) return null;
+  return {
+    sx: sourceImage.naturalWidth / rect.width,
+    sy: sourceImage.naturalHeight / rect.height,
     width: rect.width,
     height: rect.height,
   };
 }
 
-function setCropToDefault() {
-  syncCropBounds();
-  const minDimension = Math.min(cropBounds.width, cropBounds.height);
-  const margin = Math.max(12, Math.min(40, Math.round(minDimension * 0.05)));
-  const width = Math.max(MIN_CROP_SIZE, cropBounds.width - margin * 2);
-  const height = Math.max(MIN_CROP_SIZE, cropBounds.height - margin * 2);
-  const x = Math.max(0, Math.round((cropBounds.width - width) / 2));
-  const y = Math.max(0, Math.round((cropBounds.height - height) / 2));
-  cropState = clampCropState({ x, y, width, height });
-  updateCropUI();
-}
-
 function updateCropUI() {
-  if (!cropState || !cropBox) return;
-  cropBox.style.left = `${cropState.x}px`;
-  cropBox.style.top = `${cropState.y}px`;
-  cropBox.style.width = `${cropState.width}px`;
-  cropBox.style.height = `${cropState.height}px`;
-  updateCropMasks();
+  if (!cropDraft || !cropBox) return;
+  const scale = cropDisplayScale();
+  if (!scale) return;
+  cropBox.style.left = `${cropDraft.x / scale.sx}px`;
+  cropBox.style.top = `${cropDraft.y / scale.sy}px`;
+  cropBox.style.width = `${cropDraft.width / scale.sx}px`;
+  cropBox.style.height = `${cropDraft.height / scale.sy}px`;
+  if (cropResetBtn) {
+    cropResetBtn.disabled = clampCrop(cropDraft) === null;
+  }
 }
 
-function updateCropMasks() {
-  if (!cropState || !cropMasks.top) return;
-  const { x, y, width, height } = cropState;
-  const boundsWidth = cropBounds.width;
-  const boundsHeight = cropBounds.height;
-
-  cropMasks.top.style.left = "0px";
-  cropMasks.top.style.top = "0px";
-  cropMasks.top.style.width = `${boundsWidth}px`;
-  cropMasks.top.style.height = `${Math.max(0, y)}px`;
-
-  cropMasks.left.style.left = "0px";
-  cropMasks.left.style.top = `${y}px`;
-  cropMasks.left.style.width = `${Math.max(0, x)}px`;
-  cropMasks.left.style.height = `${Math.max(0, height)}px`;
-
-  cropMasks.right.style.left = `${x + width}px`;
-  cropMasks.right.style.top = `${y}px`;
-  cropMasks.right.style.width = `${Math.max(0, boundsWidth - (x + width))}px`;
-  cropMasks.right.style.height = `${Math.max(0, height)}px`;
-
-  cropMasks.bottom.style.left = "0px";
-  cropMasks.bottom.style.top = `${y + height}px`;
-  cropMasks.bottom.style.width = `${boundsWidth}px`;
-  cropMasks.bottom.style.height = `${Math.max(0, boundsHeight - (y + height))}px`;
+function fullCrop() {
+  return { x: 0, y: 0, width: sourceImage.naturalWidth, height: sourceImage.naturalHeight };
 }
 
-function clampCropState(state) {
-  let { x, y, width, height } = state;
-  const boundsWidth = cropBounds.width;
-  const boundsHeight = cropBounds.height;
-
-  width = Math.max(MIN_CROP_SIZE, width);
-  height = Math.max(MIN_CROP_SIZE, height);
-
-  if (x < 0) {
-    width += x;
-    x = 0;
-  }
-  if (y < 0) {
-    height += y;
-    y = 0;
-  }
-
-  if (x + width > boundsWidth) {
-    width = boundsWidth - x;
-  }
-  if (y + height > boundsHeight) {
-    height = boundsHeight - y;
-  }
-
-  width = Math.max(MIN_CROP_SIZE, width);
-  height = Math.max(MIN_CROP_SIZE, height);
-
-  if (x + width > boundsWidth) {
-    x = Math.max(0, boundsWidth - width);
-  }
-  if (y + height > boundsHeight) {
-    y = Math.max(0, boundsHeight - height);
-  }
-
-  return { x, y, width, height };
-}
-
-function enterCropMode() {
-  if (!previewImg || !cropOverlay) return;
-  if (!previewImg.complete || previewImg.naturalWidth === 0) {
-    previewImg.addEventListener("load", enterCropMode, { once: true });
-    return;
-  }
-
+async function enterCropMode() {
+  if (!sourceImage || !cropOverlay) return;
   if (isFullscreenPreview) {
     setFullscreenPreview(false);
   }
   if (isMasking) {
     exitMaskMode();
   }
-  cropOverlay.classList.add("is-active");
   isCropping = true;
+  cropDraft = cropRect ? { ...cropRect } : fullCrop();
   updateCropButtonState(true);
-  updateCancelButtonState();
+  updateEditingState();
   updateMaskOverlayState();
-  requestAnimationFrame(() => {
-    if (isCropping) {
-      setCropToDefault();
-    }
-  });
+
+  previewImg.src = sourceUrl;
+  try {
+    await previewImg.decode();
+  } catch (e) {
+    // Shown once loaded; the frame follows on resize.
+  }
+  if (!isCropping) return;
+  cropOverlay.classList.add("is-active");
+  updateCropUI();
 }
 
 function exitCropMode() {
   isCropping = false;
-  cropState = null;
+  cropDraft = null;
+  cropDragState = null;
   if (cropOverlay) {
-    cropOverlay.classList.remove("is-active");
+    cropOverlay.classList.remove("is-active", "is-dragging");
   }
   updateCropButtonState(false);
-  updateCancelButtonState();
+  updateEditingState();
   updateMaskOverlayState();
 }
 
-async function applyCrop() {
-  if (!cropState || !previewImg) return;
-  const sourceBytes = originalImageBytes ?? currentImageBytes;
-  if (!sourceBytes) return;
-  const imageRect = previewImg.getBoundingClientRect();
-  if (imageRect.width === 0 || imageRect.height === 0) return;
-
-  const sourceImage = await loadImageFromBytes(
-    sourceBytes,
-    originalImageMime,
-  );
-  const scaleX = sourceImage.naturalWidth / imageRect.width;
-  const scaleY = sourceImage.naturalHeight / imageRect.height;
-
-  const sx = Math.max(0, Math.round(cropState.x * scaleX));
-  const sy = Math.max(0, Math.round(cropState.y * scaleY));
-  const sWidth = Math.max(1, Math.round(cropState.width * scaleX));
-  const sHeight = Math.max(1, Math.round(cropState.height * scaleY));
-
-  const canvas = document.createElement("canvas");
-  canvas.width = sWidth;
-  canvas.height = sHeight;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.drawImage(sourceImage, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
-
-  const blob = await new Promise((resolve) =>
-    canvas.toBlob(resolve, "image/png"),
-  );
-  if (!blob) return;
-
-  const buf = await blob.arrayBuffer();
-  originalImageBytes = new Uint8Array(buf);
-  currentImageBytes = new Uint8Array(originalImageBytes);
-  originalImageMime = "image/png";
-  previewImg.src = URL.createObjectURL(blob);
-  clearMaskData();
-  resetMaskUI();
-  updateCount(0);
+function cancelCrop() {
+  exitCropMode();
+  if (resultUrl) {
+    previewImg.src = resultUrl;
+  } else {
+    showWorkingPreview();
+  }
 }
 
-async function toggleCrop() {
-  if (!isCropping) {
-    enterCropMode();
+function applyCrop() {
+  if (!isCropping || !cropDraft) return;
+  const next = clampCrop(cropDraft);
+  const changed = JSON.stringify(next) !== JSON.stringify(cropRect);
+  exitCropMode();
+  if (!changed) {
+    cancelCrop();
     return;
   }
-
-  await applyCrop();
-  exitCropMode();
-  scheduleProcess({ applyCrop: false });
+  cropRect = next;
+  updateRadiusLimits();
+  showWorkingPreview();
+  scheduleProcess();
 }
 
 function onCropPointerDown(e) {
-  if (!isCropping || !cropState || !cropBox) return;
-  const handle = e.target.closest(".crop-handle");
-  if (!handle) return;
-  const mode = handle.dataset.mode;
-  if (!mode) return;
+  if (!isCropping || !cropDraft || cropDragState) return;
+  const scale = cropDisplayScale();
+  if (!scale) return;
+  const overlayRect = cropOverlay.getBoundingClientRect();
+  const handle = e.target.closest("[data-handle]");
+  let mode = "draw";
+  if (handle) {
+    mode = handle.dataset.handle;
+  } else if (e.target.closest(".crop-box")) {
+    mode = "move";
+  }
   cropDragState = {
     pointerId: e.pointerId,
     mode,
-    handle: mode === "resize" ? handle.dataset.handle || null : null,
     startX: e.clientX,
     startY: e.clientY,
-    startCrop: { ...cropState },
+    originX: e.clientX - overlayRect.left,
+    originY: e.clientY - overlayRect.top,
+    // In displayed pixels
+    start: {
+      left: cropDraft.x / scale.sx,
+      top: cropDraft.y / scale.sy,
+      right: (cropDraft.x + cropDraft.width) / scale.sx,
+      bottom: (cropDraft.y + cropDraft.height) / scale.sy,
+    },
+    scale,
   };
-  cropBox.setPointerCapture(e.pointerId);
+  cropOverlay.setPointerCapture(e.pointerId);
+  cropOverlay.classList.add("is-dragging");
   e.preventDefault();
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function onCropPointerMove(e) {
   if (!cropDragState || e.pointerId !== cropDragState.pointerId) return;
+  const { mode, start, scale } = cropDragState;
   const dx = e.clientX - cropDragState.startX;
   const dy = e.clientY - cropDragState.startY;
-  let { x, y, width, height } = cropDragState.startCrop;
+  const W = scale.width;
+  const H = scale.height;
+  const min = Math.min(MIN_CROP_SIZE, W, H);
+  let { left, top, right, bottom } = start;
 
-  if (cropDragState.mode === "move") {
-    x += dx;
-    y += dy;
-  } else if (cropDragState.handle === "se") {
-    if (cropDragState.handle.includes("e")) {
-      width += dx;
+  if (mode === "move") {
+    const width = right - left;
+    const height = bottom - top;
+    left = clamp(left + dx, 0, W - width);
+    top = clamp(top + dy, 0, H - height);
+    right = left + width;
+    bottom = top + height;
+  } else if (mode === "draw") {
+    const ax = clamp(cropDragState.originX, 0, W);
+    const ay = clamp(cropDragState.originY, 0, H);
+    const bx = clamp(ax + dx, 0, W);
+    const by = clamp(ay + dy, 0, H);
+    left = Math.min(ax, bx);
+    right = Math.max(ax, bx);
+    top = Math.min(ay, by);
+    bottom = Math.max(ay, by);
+    if (right - left < min) {
+      if (bx < ax) left = Math.max(0, right - min);
+      else right = Math.min(W, left + min);
+      if (right - left < min) left = right - min;
     }
-    if (cropDragState.handle.includes("s")) {
-      height += dy;
+    if (bottom - top < min) {
+      if (by < ay) top = Math.max(0, bottom - min);
+      else bottom = Math.min(H, top + min);
+      if (bottom - top < min) top = bottom - min;
     }
+  } else {
+    if (mode.includes("w")) left = clamp(left + dx, 0, right - min);
+    if (mode.includes("e")) right = clamp(right + dx, left + min, W);
+    if (mode.includes("n")) top = clamp(top + dy, 0, bottom - min);
+    if (mode.includes("s")) bottom = clamp(bottom + dy, top + min, H);
   }
 
-  cropState = clampCropState({ x, y, width, height });
+  cropDraft = {
+    x: left * scale.sx,
+    y: top * scale.sy,
+    width: (right - left) * scale.sx,
+    height: (bottom - top) * scale.sy,
+  };
   updateCropUI();
 }
 
 function onCropPointerUp(e) {
   if (!cropDragState || e.pointerId !== cropDragState.pointerId) return;
   cropDragState = null;
+  cropOverlay.classList.remove("is-dragging");
 }
 
 function onMaskPointerDown(e) {
@@ -1044,27 +1222,22 @@ function clearMaskHover() {
   renderMaskPreview();
 }
 
-async function openCamera() {
-  // Check if we are on Android with native camera interface
-  const isAndroid = /Android/i.test(navigator.userAgent);
+// ===== Camera and library =====
+// Every photo, from any of these, opens in the editor and is counted at once.
 
+async function takePhoto() {
   if (isAndroid) {
-    // For Android, use the native JavaScript interface
-    if (typeof Android !== "undefined" && Android.openCamera) {
-      Android.openCamera();
-      return;
+    // The photo comes back through window.onNativeImageReady
+    if (window.Android && typeof window.Android.openCamera === "function") {
+      window.Android.openCamera();
+    } else {
+      cameraInput.click();
     }
-    // Fallback to HTML capture input if interface not available
-    cameraInput.click();
     return;
   }
 
-  // On iOS, WKWebView shows the system camera for the capture input
-  const isIOS =
-    /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   if (isIOS) {
-    cameraInput.click();
+    await openNativePhoto("native_take_photo");
     return;
   }
 
@@ -1073,30 +1246,54 @@ async function openCamera() {
     await invoke("open_camera");
   } catch (error) {
     console.error("Error opening camera:", error);
-    alert(
-      t("alert_open_camera_fail"),
-    );
+    alert(t("alert_open_camera_fail"));
   }
 }
 
-// Global callback function for Android camera result
-window.onCameraResult = async function (dataUrl) {
-  if (dataUrl) {
-    previewImg.src = dataUrl;
-    // For Android dataUrl, we might need to fetch it to get bytes if we want to process it
-    try {
-      const match = dataUrl.match(/^data:([^;,]+)[;,]/i);
-      originalImageMime = match ? match[1] : null;
-      const res = await fetch(dataUrl);
-      const buf = await res.arrayBuffer();
-      originalImageBytes = new Uint8Array(buf);
-      currentImageBytes = new Uint8Array(originalImageBytes);
-    } catch (e) {
-      console.error("Failed to load camera image bytes", e);
-    }
-    showPreview();
+async function choosePhoto() {
+  if (isAndroid && window.Android && typeof window.Android.pickImage === "function") {
+    window.Android.pickImage();
+    return;
   }
-};
+  if (isIOS) {
+    await openNativePhoto("native_pick_photo");
+    return;
+  }
+  await openGallery();
+}
+
+// iOS: camera or photo library through BCNativeBridge (see native.rs).
+async function openNativePhoto(command) {
+  try {
+    const picked = await invoke(command);
+    if (!picked) return;
+    const bytes = new Uint8Array(await invoke("take_staged_image"));
+    await openImage(bytes, "image/jpeg", picked);
+  } catch (e) {
+    showNativeError(e);
+  }
+}
+
+// Android: the camera or photo picker result waits in MainActivity until taken here.
+function takeAndroidResult() {
+  const bridge = window.Android;
+  if (!bridge || typeof bridge.takePendingResult !== "function") return;
+  const json = bridge.takePendingResult();
+  if (!json) return;
+  let result;
+  try {
+    result = JSON.parse(json);
+  } catch (e) {
+    console.error("Bad photo result:", e);
+    return;
+  }
+  if (result.error) {
+    showNativeError(result.error);
+    return;
+  }
+  const { data, mime, source, name, owned } = result.image;
+  openImage(base64ToBytes(data), mime, { source, name, owned });
+}
 
 async function openGallery() {
   try {
@@ -1109,40 +1306,48 @@ async function openGallery() {
         },
       ],
     });
-
     if (filePath) {
-      // Use fs.readFile to read the file content directly
-      // This bypasses asset protocol issues by reading into memory
-      try {
-        const contents = await readFile(filePath);
-        originalImageBytes = new Uint8Array(contents);
-        currentImageBytes = new Uint8Array(originalImageBytes);
-        originalImageMime = guessMimeFromPath(filePath);
-        const blob = new Blob([originalImageBytes]);
-        previewImg.src = URL.createObjectURL(blob);
-        showPreview();
-      } catch (readError) {
-        console.error("Error reading file with fs:", readError);
-        // Fallback to convertFileSrc
-        previewImg.src = convertFileSrc(filePath);
-        // NOTE: convertFileSrc gives a URL, not bytes. Processing might fail if we can't fetch it.
-        // Attempt to fetch bytes from the asset URL
-        try {
-          const res = await fetch(convertFileSrc(filePath));
-          const buf = await res.arrayBuffer();
-          originalImageBytes = new Uint8Array(buf);
-          currentImageBytes = new Uint8Array(originalImageBytes);
-          originalImageMime = guessMimeFromPath(filePath);
-        } catch (e) {
-          console.error("Failed to fetch asset bytes", e);
-        }
-        showPreview();
-      }
+      await openFilePath(filePath);
     }
   } catch (error) {
     console.error("Error opening gallery:", error);
   }
 }
+
+// ===== Quick actions (long press on the app icon) =====
+
+function updateQuickActions() {
+  const items = [
+    { type: "take-photo", title: t("take_photo"), icon: "camera" },
+    { type: "choose-photo", title: t("choose_photo"), icon: "photo.on.rectangle" },
+  ];
+  if (isAndroid) {
+    if (window.Android && typeof window.Android.setQuickActions === "function") {
+      window.Android.setQuickActions(JSON.stringify(items));
+    }
+  } else if (isIOS) {
+    invoke("set_quick_actions", { items }).catch((e) =>
+      console.warn("Failed to set quick actions:", e),
+    );
+  }
+}
+
+// iOS: the action the app was opened with. Android starts the camera or picker natively.
+async function runQuickAction() {
+  let action = null;
+  try {
+    action = await invoke("take_quick_action");
+  } catch (e) {
+    return;
+  }
+  if (action === "take-photo") {
+    takePhoto();
+  } else if (action === "choose-photo") {
+    choosePhoto();
+  }
+}
+
+// ===== Counting =====
 
 function readFloat(input, fallback) {
   if (!input) return fallback;
@@ -1175,79 +1380,360 @@ function readParamsFromUI() {
   };
 }
 
-function scheduleProcess(options = {}) {
-  if (!isPreviewVisible) return;
-  if (!originalImageBytes && !currentImageBytes) return;
+// Inverse of readParamsFromUI, for history entries.
+function applyParamsToUI(params) {
+  if (!params || typeof params !== "object") return;
+  const setValue = (input, value) => {
+    if (input && value !== undefined && value !== null) input.value = String(value);
+  };
+  const setChecked = (input, value) => {
+    if (input && typeof value === "boolean") input.checked = value;
+  };
+  setValue(minRadiusInput, params.min_radius);
+  setValue(maxRadiusInput, params.max_radius);
+  setValue(blurInput, params.blur);
+  setValue(thresholdMethodSelect, params.threshold_method);
+  setValue(adaptiveBlockInput, params.adaptive_block);
+  setValue(adaptiveCInput, params.adaptive_c);
+  setValue(morphKernelInput, params.morph_kernel);
+  setValue(morphOpenIterInput, params.morph_open_iter);
+  setValue(morphCloseIterInput, params.morph_close_iter);
+  setChecked(autoInvertInput, params.auto_invert);
+  setChecked(invertInput, params.invert);
+  setValue(sensitivityInput, params.sensitivity);
+  setChecked(splitClustersInput, params.split_clusters);
+  setChecked(skyOnlyInput, params.sky_only);
+  updateMethodSettingsVisibility();
+  syncSettingsOutputs();
+}
+
+function scheduleProcess() {
+  if (!isPreviewVisible || !sourceBytes) return;
   if (processTimer) clearTimeout(processTimer);
   processTimer = setTimeout(() => {
     processTimer = null;
-    runProcess(options);
+    runProcess();
   }, 100);
 }
 
-async function runProcess(options = {}) {
+async function runProcess() {
   if (!isPreviewVisible) return;
   if (isProcessing) {
     pendingProcess = true;
-    pendingProcessOptions = options;
     return;
   }
   isProcessing = true;
   try {
-    await processImage(options);
+    await processImage();
   } finally {
     isProcessing = false;
     if (pendingProcess) {
       pendingProcess = false;
-      const nextOptions = pendingProcessOptions ?? {};
-      pendingProcessOptions = null;
-      runProcess(nextOptions);
+      runProcess();
     }
   }
 }
 
-async function processImage(options = {}) {
-  const { applyCrop: shouldApplyCrop = true } = options;
-  if (shouldApplyCrop && isCropping) {
-    await applyCrop();
-    exitCropMode();
-  }
-
-  const sourceBytes = originalImageBytes;
-  if (!sourceBytes) {
+async function processImage() {
+  const bytes = sourceBytes;
+  if (!bytes) {
     alert(t("alert_no_image"));
     return;
   }
+  const session = editSession;
 
   const previousCount = countValue ? Number(countValue.textContent) : 0;
   const fallbackCount = Number.isFinite(previousCount) ? previousCount : 0;
   startCountingAnimation();
 
   try {
-    // Invoke Rust command
     const params = readParamsFromUI();
+    const crop = cropRect ? { ...cropRect } : null;
     const maskPayload = await buildMaskPayload();
     const result = await invoke("process_image", {
-      payload: Array.from(sourceBytes),
+      payload: Array.from(bytes),
       params,
       maskPayload: maskPayload ? Array.from(maskPayload) : null,
-      mask_payload: maskPayload ? Array.from(maskPayload) : null,
+      crop,
     });
+    if (session !== editSession) return;
 
-    // Update current bytes
-    currentImageBytes = new Uint8Array(result.bytes);
-
-    // Update preview
-    const blob = new Blob([currentImageBytes]);
-    previewImg.src = URL.createObjectURL(blob);
+    const blob = new Blob([new Uint8Array(result.bytes)], { type: "image/png" });
+    setResultUrl(URL.createObjectURL(blob));
+    // While cropping, the preview shows the whole photo; the result waits for the crop.
+    if (!isCropping) previewImg.src = resultUrl;
     updateCount(result.count);
-
+    lastResult = { count: result.count, params, crop, blob };
+    scheduleHistorySave();
   } catch (e) {
+    if (session !== editSession) return;
     updateCount(fallbackCount);
     console.error("Image processing failed:", e);
     alert(t("alert_process_fail", { error: e }));
   }
 }
+
+// ===== History =====
+// Each photo gets one entry that follows its latest result. Saves are queued one after
+// another, so the first save's id is known to the next.
+
+function scheduleHistorySave() {
+  if (historySaveTimer) clearTimeout(historySaveTimer);
+  historySaveTimer = setTimeout(() => {
+    historySaveTimer = null;
+    queueHistorySave();
+  }, HISTORY_SAVE_DELAY);
+}
+
+function flushHistorySave() {
+  if (historySaveTimer) {
+    clearTimeout(historySaveTimer);
+    historySaveTimer = null;
+    queueHistorySave();
+  }
+  return historySaveChain;
+}
+
+// Independent of key order: params come back from Rust sorted by name.
+function historyKey({ count, params, crop }) {
+  const sortedParams = params
+    ? Object.keys(params)
+        .sort()
+        .map((name) => [name, params[name]])
+    : null;
+  const cropValues = crop ? [crop.x, crop.y, crop.width, crop.height] : null;
+  return JSON.stringify([count, sortedParams, cropValues]);
+}
+
+function queueHistorySave() {
+  const session = editSession;
+  const result = lastResult;
+  const info = { ...sourceInfo };
+  const updateMask = maskChangedSinceSave;
+  if (!result) return;
+  const key = historyKey(result);
+  if (!updateMask && historySavedKeys.get(session) === key) return;
+  historySavedKeys.set(session, key);
+  maskChangedSinceSave = false;
+  const maskPromise = updateMask ? buildMaskPayload() : Promise.resolve(null);
+  historySaveChain = historySaveChain
+    .then(async () => {
+      const [thumb, mask] = await Promise.all([makeThumbnail(result.blob), maskPromise]);
+      if (!thumb) return;
+      const saved = await invoke("history_save", {
+        entry: {
+          id: historyIds.get(session) ?? null,
+          source: info.source,
+          owned: info.owned,
+          name: info.name,
+          count: result.count,
+          params: result.params,
+          crop: result.crop,
+        },
+        thumb: Array.from(thumb),
+        mask: mask ? Array.from(mask) : null,
+        updateMask,
+      });
+      historyIds.set(session, saved.id);
+    })
+    .catch((e) => console.error("Failed to save history:", e));
+}
+
+async function makeThumbnail(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = await loadImage(url);
+    const scale = Math.min(1, THUMB_SIZE / Math.max(image.naturalWidth, image.naturalHeight));
+    const blob = await drawToBlob(
+      image,
+      { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight },
+      Math.max(1, Math.round(image.naturalWidth * scale)),
+      Math.max(1, Math.round(image.naturalHeight * scale)),
+      "image/jpeg",
+    );
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+  } catch (e) {
+    console.warn("Failed to make a thumbnail:", e);
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function refreshHistory() {
+  try {
+    historyEntries = await invoke("history_list");
+  } catch (e) {
+    console.error("Failed to load history:", e);
+    historyEntries = [];
+  }
+  renderHistory();
+}
+
+function formatDate(ms) {
+  try {
+    return new Intl.DateTimeFormat(currentLang, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(ms));
+  } catch (e) {
+    return new Date(ms).toLocaleString();
+  }
+}
+
+const TRASH_ICON =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5-1-1h-5l-1 1H5v2h14V4z"/></svg>';
+
+function renderHistory() {
+  if (!historySection || !historyList) return;
+  const visible = !isPreviewVisible && historyEntries.length > 0;
+  historySection.hidden = !visible;
+  document.body.classList.toggle("has-history", historyEntries.length > 0);
+  if (!visible) return;
+
+  const ids = new Set(historyEntries.map((entry) => entry.id));
+  historyList.replaceChildren(
+    ...historyEntries.map((entry) => {
+      const item = document.createElement("li");
+      item.className = "history-item";
+
+      const openButton = document.createElement("button");
+      openButton.type = "button";
+      openButton.className = "history-open";
+      const thumb = document.createElement("img");
+      thumb.className = "history-thumb";
+      thumb.alt = "";
+      setHistoryThumb(thumb, entry);
+      const text = document.createElement("span");
+      text.className = "history-text";
+      const count = document.createElement("span");
+      count.className = "history-count";
+      count.textContent = `${entry.count} ${birdsSuffix(entry.count)}`;
+      const meta = document.createElement("span");
+      meta.className = "history-meta";
+      meta.textContent = formatDate(entry.updated_at);
+      const detail = document.createElement("span");
+      detail.className = "history-meta";
+      detail.textContent = entry.source ? entry.name ?? "" : t("history_unlinked");
+      text.append(count, meta);
+      if (detail.textContent) text.append(detail);
+      openButton.append(thumb, text);
+      openButton.addEventListener("click", () => openHistoryEntry(entry, item));
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "icon-button history-delete";
+      deleteButton.setAttribute("aria-label", t("history_delete"));
+      deleteButton.innerHTML = TRASH_ICON;
+      deleteButton.addEventListener("click", () => deleteHistoryEntry(entry, true));
+
+      item.append(openButton, deleteButton);
+      return item;
+    }),
+  );
+
+  for (const [id, cached] of historyThumbUrls) {
+    if (!ids.has(id)) {
+      URL.revokeObjectURL(cached.url);
+      historyThumbUrls.delete(id);
+    }
+  }
+}
+
+async function setHistoryThumb(img, entry) {
+  // Entries change their thumbnail when edited, so the key includes the update time.
+  const key = `${entry.id}@${entry.updated_at}`;
+  const cached = historyThumbUrls.get(entry.id);
+  if (cached && cached.key === key) {
+    img.src = cached.url;
+    return;
+  }
+  try {
+    const bytes = await invoke("history_thumb", { id: entry.id });
+    const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+    if (cached) URL.revokeObjectURL(cached.url);
+    historyThumbUrls.set(entry.id, { key, url });
+    img.src = url;
+  } catch (e) {
+    console.warn("Missing thumbnail:", e);
+  }
+}
+
+async function loadSourceBytes(source) {
+  if (source.startsWith("photos:")) {
+    return new Uint8Array(await invoke("native_load_photo", { source }));
+  }
+  if (isAndroid) {
+    const bridge = window.Android;
+    const base64 =
+      bridge && typeof bridge.readImage === "function" ? bridge.readImage(source) : null;
+    if (!base64) throw "photo-missing";
+    return base64ToBytes(base64);
+  }
+  return new Uint8Array(await invoke("read_image", { source }));
+}
+
+async function openHistoryEntry(entry, item) {
+  if (item.classList.contains("is-loading")) return;
+  if (!entry.source) {
+    await tellUser(t("history_unlinked_detail"));
+    return;
+  }
+  item.classList.add("is-loading");
+  let bytes = null;
+  let error = null;
+  try {
+    bytes = await loadSourceBytes(entry.source);
+  } catch (e) {
+    error = String(e);
+  } finally {
+    item.classList.remove("is-loading");
+  }
+  if (!bytes) {
+    console.warn("History photo unavailable:", error);
+    if (error === "photos-denied") {
+      showNativeError(error);
+      return;
+    }
+    if (await askUser(t("history_missing"))) {
+      await deleteHistoryEntry(entry, false);
+    }
+    return;
+  }
+  let mask = null;
+  if (entry.has_mask) {
+    try {
+      mask = new Uint8Array(await invoke("history_mask", { id: entry.id }));
+    } catch (e) {
+      console.warn("Missing mask:", e);
+    }
+  }
+  await openImage(bytes, guessMimeFromPath(entry.name ?? ""), entry, entry, mask);
+}
+
+async function deleteHistoryEntry(entry, confirmOwned) {
+  if (confirmOwned && entry.owned && !(await askUser(t("history_delete_owned_confirm")))) {
+    return;
+  }
+  try {
+    await invoke("history_delete", { id: entry.id });
+  } catch (e) {
+    console.error("Failed to delete history entry:", e);
+  }
+  await refreshHistory();
+}
+
+async function clearHistory() {
+  if (!(await askUser(t("history_clear_confirm")))) return;
+  try {
+    await invoke("history_clear");
+  } catch (e) {
+    console.error("Failed to clear history:", e);
+  }
+  await refreshHistory();
+}
+
+// ===== Helpers =====
 
 function guessMimeFromPath(path) {
   if (!path) return null;
@@ -1260,21 +1746,24 @@ function guessMimeFromPath(path) {
   return null;
 }
 
-async function loadImageFromBytes(bytes, mime) {
-  const blob = new Blob([bytes], { type: mime || "image/png" });
-  const url = URL.createObjectURL(blob);
+function loadImage(url) {
   const img = new Image();
-  return await new Promise((resolve, reject) => {
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = (e) => {
-      URL.revokeObjectURL(url);
-      reject(e);
-    };
+  return new Promise((resolve, reject) => {
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(e);
     img.src = url;
   });
+}
+
+// Draws `rect` of the image at width x height and encodes it.
+async function drawToBlob(image, rect, width, height, type) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height, 0, 0, width, height);
+  return await new Promise((resolve) => canvas.toBlob(resolve, type, 0.85));
 }
 
 // Android: system back steps out of fullscreen/crop/mask, then returns to the start screen.
@@ -1282,9 +1771,9 @@ window.onAndroidBack = function () {
   if (isFullscreenPreview) {
     setFullscreenPreview(false);
   } else if (isCropping) {
-    exitCropMode();
+    cancelCrop();
   } else if (isMasking) {
-    exitMaskMode();
+    cancelMaskMode();
   } else if (isPreviewVisible) {
     resetApp();
   }
@@ -1325,7 +1814,7 @@ function setupAndroid() {
   document.addEventListener("pointerdown", startRipple);
 }
 
-const RIPPLE_TARGETS = ".action-button, .icon-button, .lang-switch, .advanced-summary";
+const RIPPLE_TARGETS = ".action-button, .icon-button, .lang-switch, .advanced-summary, .history-open";
 
 function startRipple(e) {
   const target = e.target.closest(RIPPLE_TARGETS);
@@ -1370,6 +1859,12 @@ function setupMac() {
   syncFullscreen();
 }
 
+function setupIOS() {
+  const { listen } = window.__TAURI__.event;
+  listen("quick-action", runQuickAction);
+  runQuickAction();
+}
+
 // Toolbar / top app bar change their background once content scrolls under them
 function setupScrollState() {
   const update = () => {
@@ -1391,7 +1886,6 @@ window.addEventListener("DOMContentLoaded", () => {
   dragDropArea = document.querySelector("#dragDropArea");
   cameraBtn = document.querySelector("#cameraBtn");
   galleryBtn = document.querySelector("#galleryBtn");
-  imageInput = document.querySelector("#imageInput");
   cameraInput = document.querySelector("#cameraInput");
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
@@ -1401,10 +1895,15 @@ window.addEventListener("DOMContentLoaded", () => {
   countValue = document.querySelector("#countValue");
   countSuffix = document.querySelector("#countSuffix");
   processActions = document.querySelector("#processActions");
+  cropActions = document.querySelector("#cropActions");
+  cropResetBtn = document.querySelector("#cropResetBtn");
+  cropCancelBtn = document.querySelector("#cropCancelBtn");
+  cropDoneBtn = document.querySelector("#cropDoneBtn");
+  cropHint = document.querySelector("#cropHint");
   settingsPanel = document.querySelector("#settingsPanel");
   cropBtn = document.querySelector("#cropBtn");
   maskBtn = document.querySelector("#maskBtn");
-  cropCancelBtn = document.querySelector("#cropCancelBtn");
+  maskCancelBtn = document.querySelector("#maskCancelBtn");
   cropOverlay = document.querySelector("#cropOverlay");
   cropBox = document.querySelector("#cropBox");
   maskOverlay = document.querySelector("#maskOverlay");
@@ -1412,12 +1911,9 @@ window.addEventListener("DOMContentLoaded", () => {
   maskBrushControls = document.querySelector("#maskBrushControls");
   maskBrushInput = document.querySelector("#maskBrushSize");
   maskBrushValue = document.querySelector("#maskBrushSizeValue");
-  cropMasks = {
-    top: document.querySelector(".crop-mask-top"),
-    right: document.querySelector(".crop-mask-right"),
-    bottom: document.querySelector(".crop-mask-bottom"),
-    left: document.querySelector(".crop-mask-left"),
-  };
+  historySection = document.querySelector("#historySection");
+  historyList = document.querySelector("#historyList");
+  historyClearBtn = document.querySelector("#historyClearBtn");
   backBtn = document.querySelector("#backBtn");
   langSelect = document.querySelector("#langSelect");
   minRadiusInput = document.querySelector("#minRadius");
@@ -1462,38 +1958,52 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   setupScrollState();
   setupContextMenu();
+  setupFileInputs();
 
-  if (dragDropArea && !isAndroid) {
+  if (dragDropArea && !isAndroid && !isIOS) {
     setupDragAndDrop();
+  }
+  if (dragDropArea && !isAndroid) {
+    dragDropArea.addEventListener("click", choosePhoto);
   }
 
   if (cameraBtn) {
-    cameraBtn.addEventListener("click", openCamera);
+    cameraBtn.addEventListener("click", takePhoto);
   }
 
   if (galleryBtn) {
-    galleryBtn.addEventListener("click", openGallery);
+    galleryBtn.addEventListener("click", choosePhoto);
   }
 
   if (cropBtn) {
-    cropBtn.addEventListener("click", toggleCrop);
+    cropBtn.addEventListener("click", enterCropMode);
+  }
+  if (cropDoneBtn) {
+    cropDoneBtn.addEventListener("click", applyCrop);
+  }
+  if (cropCancelBtn) {
+    cropCancelBtn.addEventListener("click", cancelCrop);
+  }
+  if (cropResetBtn) {
+    cropResetBtn.addEventListener("click", () => {
+      if (!isCropping || !sourceImage) return;
+      cropDraft = fullCrop();
+      updateCropUI();
+    });
   }
   if (maskBtn) {
     maskBtn.addEventListener("click", toggleMask);
   }
-  if (cropCancelBtn) {
-    cropCancelBtn.addEventListener("click", () => {
-      if (isCropping) {
-        exitCropMode();
-      } else if (isMasking) {
-        exitMaskMode();
-      }
-    });
+  if (maskCancelBtn) {
+    maskCancelBtn.addEventListener("click", cancelMaskMode);
   }
   if (maskBrushInput) {
     maskBrushInput.value = String(DEFAULT_MASK_BRUSH_SIZE);
     maskBrushInput.addEventListener("input", updateMaskBrushValue);
     updateMaskBrushValue();
+  }
+  if (historyClearBtn) {
+    historyClearBtn.addEventListener("click", clearHistory);
   }
 
   bindRangeValue(minRadiusInput, minRadiusValue, (value) => formatFixed(value, 1));
@@ -1518,14 +2028,13 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if (previewImg) {
     previewImg.addEventListener("load", () => {
-      updateRadiusLimits();
       syncMaskCanvasSize();
       renderMaskPreview();
+      if (isCropping) updateCropUI();
     });
   }
   if (previewImg) {
     previewImg.addEventListener("dblclick", (e) => {
-      const isAndroid = /Android/i.test(navigator.userAgent);
       if (isAndroid) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1535,7 +2044,6 @@ window.addEventListener("DOMContentLoaded", () => {
     previewImg.addEventListener(
       "touchstart",
       (e) => {
-        const isAndroid = /Android/i.test(navigator.userAgent);
         if (!isAndroid) return;
         if (e.touches.length !== 1) return;
         tapStartTime = Date.now();
@@ -1548,7 +2056,6 @@ window.addEventListener("DOMContentLoaded", () => {
     previewImg.addEventListener(
       "touchend",
       (e) => {
-        const isAndroid = /Android/i.test(navigator.userAgent);
         if (!isAndroid) return;
         if (e.changedTouches.length !== 1) return;
         const now = Date.now();
@@ -1582,8 +2089,11 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  if (cropBox) {
-    cropBox.addEventListener("pointerdown", onCropPointerDown);
+  if (cropOverlay) {
+    cropOverlay.addEventListener("pointerdown", onCropPointerDown);
+    cropOverlay.addEventListener("pointermove", onCropPointerMove);
+    cropOverlay.addEventListener("pointerup", onCropPointerUp);
+    cropOverlay.addEventListener("pointercancel", onCropPointerUp);
   }
   if (maskCanvas) {
     maskCanvas.addEventListener("pointerdown", onMaskPointerDown);
@@ -1593,13 +2103,12 @@ window.addEventListener("DOMContentLoaded", () => {
     maskCanvas.addEventListener("pointerout", clearMaskHover);
   }
 
-  window.addEventListener("pointermove", onCropPointerMove);
-  window.addEventListener("pointerup", onCropPointerUp);
   window.addEventListener("pointermove", onMaskPointerMove);
   window.addEventListener("pointerup", onMaskPointerUp);
   window.addEventListener("resize", () => {
     syncMaskCanvasSize();
     renderMaskPreview();
+    if (isCropping) updateCropUI();
   });
 
   // Back button click handler
@@ -1637,13 +2146,13 @@ window.addEventListener("DOMContentLoaded", () => {
         ? "change"
         : "input";
     control.addEventListener(eventName, () => {
-      scheduleProcess({ applyCrop: false });
+      scheduleProcess();
     });
   });
 
   updateCropButtonState(false);
   updateMaskButtonState(false);
-  updateCancelButtonState();
+  updateEditingState();
   updateMaskBrushControlsState();
   updateMaskOverlayState();
 
@@ -1657,4 +2166,13 @@ window.addEventListener("DOMContentLoaded", () => {
     initialLang = normalizeLang(navigator.language);
   }
   setLanguage(initialLang);
+  refreshHistory();
+
+  // Photos that arrive from the camera or the library, also when the app was started by a
+  // quick action and the result came back before this page loaded.
+  window.onNativeImageReady = takeAndroidResult;
+  takeAndroidResult();
+  if (isIOS) {
+    setupIOS();
+  }
 });

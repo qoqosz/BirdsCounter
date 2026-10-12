@@ -28,6 +28,18 @@ Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCount
 
 The app loads an image, detects bird-like blobs, annotates them with circles, and returns the count.
 
+- **Quick actions:** long-press the app icon on Android or iOS for *Take Photo* and *Choose Photo*. They appear
+  after the app has run once, titled in the app's language.
+- **Counting starts at once** for every photo: taken, picked, dropped, or opened from the history.
+- **Crop** shows the whole photo with the crop frame. Drag a corner or an edge to resize it, drag inside to move
+  it, or drag outside it to draw a new one. *Reset* goes back to the whole photo, and the crop can be changed
+  again later. The mask is kept when the crop changes.
+- **History** lists every photo with its latest count. Opening an entry restores its settings, crop and mask.
+  Entries link to the photo instead of copying it: a file path on the desktop, the photo library on iOS (opening
+  it again asks for photo access) and Android (a persisted permission). Photos taken in the app are stored in
+  its own folder (iOS: *Files → BirdsCounter → Photos*) and deleted with their entry. Only a small thumbnail is
+  kept per entry.
+
 ## Tech Stack
 
 - Tauri 2.12 (`tauri`, `tauri-build`)

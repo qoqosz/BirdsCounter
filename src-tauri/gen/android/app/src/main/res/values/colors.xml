@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- Quick action icons: Material 3 baseline primary container -->
+    <color name="shortcut_background">#FFEADDFF</color>
+    <color name="shortcut_foreground">#FF21005D</color>
 </resources>
