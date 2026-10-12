@@ -1,6 +1,6 @@
 [package]
 name = "birdscounter"
-version = "0.6.4"
+version = "0.7.0"
 description = "Birds counting app"
 authors = ["Łukasz Bednarski"]
 edition = "2024"
