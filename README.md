@@ -28,6 +28,10 @@ Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCount
 
 The app loads an image, detects bird-like blobs, annotates them with circles, and returns the count.
 
+- **Marked birds:** the eye button on the photo shows or hides the rings around the detected birds.
+- **Full resolution:** the expand button (or a double click/tap on the photo) opens the photo full screen. Pinch,
+  scroll or double tap to zoom down to single pixels, and drag to pan; the rings can be toggled there too.
+
 - **Quick actions:** long-press the app icon on Android or iOS for *Take Photo* and *Choose Photo*. They appear
   after the app has run once, titled in the app's language.
 - **Counting starts at once** for every photo: taken, picked, dropped, or opened from the history.

@@ -55,8 +55,10 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 **Rust (`src-tauri/src/`)**
 
 - `lib.rs` registers the Tauri commands:
-  - `process_image(payload, params, mask_payload, crop)` returns `{ bytes, count }`, where `bytes` is the annotated
-    PNG of the crop. `crop` is a rectangle in photo pixels. The mask covers the whole photo, and Rust crops it too.
+  - `process_image(payload, params, mask_payload, crop)` returns `{ birds, count }`, where `birds` lists the
+    detections (`x`, `y`, `radius`, `count`) in pixels of the whole photo. `crop` is a rectangle in photo pixels. The
+    mask covers the whole photo (at any resolution, Rust scales it), and Rust crops it too. The frontend draws the
+    rings; `BlobFilter::apply` still returns an annotated PNG for the `count` example.
   - `open_camera` launches Photo Booth or FaceTime on macOS, and the system camera app on Windows and Linux.
   - `history.rs`: `history_*` commands and `read_image`. The history is `history.json` plus `thumbs/` and `masks/`
     in the app data dir. Entries link to the photo through a `source` string (`file:`, `appdoc:`, `content://`
@@ -85,8 +87,14 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 - `main.js` is a single file of global state and DOM handlers, using `window.__TAURI__` (`withGlobalTauri: true`).
 - Image bytes go to Rust as plain arrays. Every photo goes through `openImage()`, which counts it at once. Crop is
   non-destructive: `cropRect` (photo pixels) goes to Rust, and crop mode shows the whole photo with the frame.
-  The mask is painted on an offscreen canvas at the photo's full resolution, so it survives crop changes, and
-  is sent as a PNG.
+  The mask is painted on an offscreen canvas covering the whole photo, capped at `MASK_MAX_PIXELS` (full-resolution
+  canvases made every stroke slow on iOS, which also refuses canvases over 16.7 MP), so it survives crop changes,
+  and is sent as a PNG. A stroke paints only its own segment on the overlay; `renderMaskPreview` redraws all of
+  it only when the view changes.
+- The editor shows a scaled-down copy of the photo (`PREVIEW_SIZE`) with the rings on `#birdCanvas`. The eye
+  button hides them (`showRings`, kept in `localStorage`). The full resolution viewer (`#photoViewer`, opened by
+  its button or a double click/tap) draws the visible part of the photo and the rings on one canvas per frame;
+  pinch, drag, ctrl/⌘ + wheel and double tap zoom and pan.
 - History: each opened photo gets one entry. `queueHistorySave` updates it after each result, saves are chained
   and keyed by `editSession`, and saves that change nothing are skipped.
 - Desktop drag and drop uses Tauri's `onDragDropEvent` (`dragDropEnabled: true`), so dropped files keep their paths.

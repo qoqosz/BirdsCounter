@@ -2,12 +2,12 @@
 pub mod blob_filter;
 mod history;
 mod native;
-use blob_filter::{BlobFilter, BlobParams, Crop};
+use blob_filter::{Bird, BlobFilter, BlobParams, Crop};
 use tauri::Manager;
 
 #[derive(serde::Serialize)]
 struct ProcessResult {
-    bytes: Vec<u8>,
+    birds: Vec<Bird>,
     count: u32,
 }
 
@@ -82,7 +82,8 @@ async fn open_camera() -> Result<String, String> {
 }
 
 /// Counts the birds in the image, or in its `crop`; the mask covers the whole image.
-/// Runs off the main thread so the UI stays responsive.
+/// The frontend draws the rings, so only the detections go back. Runs off the main
+/// thread so the UI stays responsive.
 #[tauri::command(async)]
 fn process_image(
     payload: Vec<u8>,
@@ -91,11 +92,9 @@ fn process_image(
     crop: Option<Crop>,
 ) -> Result<ProcessResult, String> {
     let filter = BlobFilter::new(params);
-    let (bytes, count) = filter.apply(payload, mask_payload, crop)?;
-    Ok(ProcessResult {
-        bytes,
-        count: count as u32,
-    })
+    let birds = filter.detect(payload, mask_payload, crop)?;
+    let count = birds.iter().map(|bird| bird.count).sum();
+    Ok(ProcessResult { birds, count })
 }
 
 /// Native macOS menu bar; "Open Image…" (⌘O) is forwarded to the frontend.

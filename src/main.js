@@ -8,13 +8,28 @@ const DEFAULT_MASK_BRUSH_SIZE = 24;
 // so its slider has a fixed range with fine steps instead of following the photo.
 const MIN_RADIUS_LIMIT = 30;
 const MASK_TINT_COLOR = "#e24d5c";
-const MASK_BRUSH_OUTLINE = "rgba(226, 77, 92, 0.95)";
-const MASK_BRUSH_FILL = "rgba(226, 77, 92, 0.2)";
+// The mask is painted at up to this many pixels: at a large photo's full resolution every
+// stroke is slow and iOS refuses canvases over 16.7 MP. Rust scales it up to the photo.
+const MASK_MAX_PIXELS = 2048 * 2048;
+// Rings around the detections, as the detector used to draw them: red for one bird,
+// orange and labelled for several merged ones. Sizes are in CSS pixels, except that the
+// ring keeps RING_PADDING photo pixels around the bird.
+const RING_COLOR = "#ff2a2a";
+const RING_CLUSTER_COLOR = "#ff8c00";
+const RING_LINE_WIDTH = 2;
+const RING_MIN_RADIUS = 4;
+const RING_PADDING = 2;
+const RING_LABEL_SIZE = 13;
+// The viewer zooms in until one photo pixel spans this many device pixels.
+const VIEWER_MAX_DEVICE_ZOOM = 8;
+const DOUBLE_TAP_TIME = 320;
+const DOUBLE_TAP_DISTANCE = 30;
 const SUPPORTED_LANGS = ["en", "pl"];
 const DEFAULT_LANG = "en";
-// Longest side of the history thumbnails and of the quick cropped preview.
+// Longest side of the history thumbnails and of the photo shown in the editor (the viewer
+// shows it at full resolution).
 const THUMB_SIZE = 320;
-const PREVIEW_SIZE = 1600;
+const PREVIEW_SIZE = 2048;
 const HISTORY_SAVE_DELAY = 400;
 // Error codes from the native photo code (BCNativeBridge.m, MainActivity.kt).
 const NATIVE_ERRORS = {
@@ -52,7 +67,14 @@ let countPrefix;
 let countValue;
 let countSuffix;
 let backBtn;
-let fullscreenCloseBtn;
+let birdCanvas;
+let marksBtn;
+let viewerBtn;
+let photoViewer;
+let viewerCanvas;
+let viewerMarksBtn;
+let viewerCloseBtn;
+let maskBrushCursor;
 let historySection;
 let historyList;
 let historyClearBtn;
@@ -64,7 +86,8 @@ let sourceUrl = null;
 let sourceInfo = { source: null, name: null, owned: false };
 // Region to count in, in pixels of the photo; null for the whole photo.
 let cropRect = null;
-let resultUrl = null;
+// The photo as shown in the editor: scaled down (null when it is small enough), and its crop.
+let fullPreviewUrl = null;
 let workingPreviewUrl = null;
 // Bumped whenever another photo is opened or the editor closes, so late results are dropped.
 let editSession = 0;
@@ -80,7 +103,6 @@ let maskDragState = null;
 let maskBitmap = null;
 let maskContext = null;
 let maskHasPaint = false;
-let maskHoverPoint = null;
 let maskPngCache = null;
 let maskSnapshot = null;
 let langSelect;
@@ -113,7 +135,15 @@ let skyOnlyInput;
 let isProcessing = false;
 let pendingProcess = false;
 let processTimer = null;
-let isFullscreenPreview = false;
+let showRings = true;
+let isViewerOpen = false;
+// Viewer zoom: a photo pixel p is drawn at x + (p - view.x) * scale; `fit` shows all of it.
+let viewerView = null;
+let viewerPointers = new Map();
+let viewerGesture = null;
+let viewerTap = null;
+let viewerLastTap = null;
+let viewerFrame = 0;
 let lastTapTime = 0;
 let lastTapX = 0;
 let lastTapY = 0;
@@ -319,11 +349,12 @@ async function openImage(bytes, mime, info, entry = null, maskBytes = null) {
     showNativeError("photo-unreadable");
     return;
   }
+  const previewUrl = await makePreviewUrl(image, wholeRect(image));
 
   await flushHistorySave();
   editSession++;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
-  setResultUrl(null);
+  setPreviewUrls(previewUrl, null);
   sourceBytes = bytes;
   sourceImage = image;
   sourceUrl = url;
@@ -386,7 +417,7 @@ function resetApp() {
   }
   pendingProcess = false;
   imagePreview.style.display = "none";
-  setFullscreenPreview(false);
+  closeViewer();
   if (countLabel) countLabel.style.display = "none";
   if (processActions) processActions.style.display = "none";
   if (settingsPanel) settingsPanel.style.display = "none";
@@ -403,61 +434,65 @@ function resetApp() {
   cropRect = null;
   lastResult = null;
   if (previewImg) previewImg.removeAttribute("src");
-  setResultUrl(null);
+  setPreviewUrls(null, null);
   resetCropUI();
   clearMaskData();
   resetMaskUI();
+  renderRings();
   updateCount(0);
   renderHistory();
 }
 
-function setResultUrl(url) {
-  if (resultUrl) URL.revokeObjectURL(resultUrl);
-  resultUrl = url;
+function wholeRect(image) {
+  return { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight };
 }
 
-// The photo, cropped, until the counted result replaces it.
+function setPreviewUrls(full, working) {
+  if (fullPreviewUrl && fullPreviewUrl !== full) URL.revokeObjectURL(fullPreviewUrl);
+  if (workingPreviewUrl && workingPreviewUrl !== working) URL.revokeObjectURL(workingPreviewUrl);
+  fullPreviewUrl = full;
+  workingPreviewUrl = working;
+}
+
+// `rect` of the photo scaled down to PREVIEW_SIZE; null when that is the whole photo
+// and it is small enough to show as it is.
+async function makePreviewUrl(image, rect) {
+  const scale = Math.min(1, PREVIEW_SIZE / Math.max(rect.width, rect.height));
+  const whole = rect.width === image.naturalWidth && rect.height === image.naturalHeight;
+  if (whole && scale === 1) return null;
+  const blob = await drawToBlob(
+    image,
+    rect,
+    Math.max(1, Math.round(rect.width * scale)),
+    Math.max(1, Math.round(rect.height * scale)),
+    "image/jpeg",
+  );
+  return blob ? URL.createObjectURL(blob) : null;
+}
+
+// The whole photo, as shown while cropping.
+function fullPreviewSrc() {
+  return fullPreviewUrl ?? sourceUrl;
+}
+
+// Shows the photo, cropped; the rings are drawn over it.
 async function showWorkingPreview() {
   if (!sourceImage || !previewImg) return;
-  if (workingPreviewUrl) {
-    URL.revokeObjectURL(workingPreviewUrl);
-    workingPreviewUrl = null;
-  }
+  setPreviewUrls(fullPreviewUrl, null);
   if (!cropRect) {
-    previewImg.src = sourceUrl;
+    previewImg.src = fullPreviewSrc();
     return;
   }
   const session = editSession;
-  const scale = Math.min(1, PREVIEW_SIZE / Math.max(cropRect.width, cropRect.height));
-  const blob = await drawToBlob(
-    sourceImage,
-    cropRect,
-    Math.round(cropRect.width * scale),
-    Math.round(cropRect.height * scale),
-    "image/jpeg",
-  );
-  // Too late when the result for this crop is already shown.
-  const counted = lastResult && JSON.stringify(lastResult.crop) === JSON.stringify(cropRect);
-  if (!blob || session !== editSession || isCropping || counted) return;
-  workingPreviewUrl = URL.createObjectURL(blob);
-  previewImg.src = workingPreviewUrl;
-}
-
-function setFullscreenPreview(active) {
-  if (!imagePreview || !previewImg) return;
-  isFullscreenPreview = active;
-  imagePreview.classList.toggle("is-fullscreen", active);
-  document.body.classList.toggle("fullscreen-preview", active);
-  updateMaskOverlayState();
-  requestAnimationFrame(() => {
-    syncMaskCanvasSize();
-    renderMaskPreview();
-  });
-}
-
-function toggleFullscreenPreview() {
-  if (!isPreviewVisible || isCropping || isMasking) return;
-  setFullscreenPreview(!isFullscreenPreview);
+  const crop = cropRect;
+  const url = await makePreviewUrl(sourceImage, crop);
+  if (!url) return;
+  if (session !== editSession || isCropping || crop !== cropRect) {
+    URL.revokeObjectURL(url);
+    return;
+  }
+  setPreviewUrls(fullPreviewUrl, url);
+  previewImg.src = url;
 }
 
 function birdsSuffix(value) {
@@ -627,12 +662,410 @@ function updateEditingState() {
     window.Android.setEditing(editing);
   }
   document.body.classList.toggle("is-cropping", isCropping);
+  document.body.classList.toggle("is-masking", isMasking);
   if (maskCancelBtn) maskCancelBtn.style.display = isMasking ? "inline-flex" : "none";
   if (isPreviewVisible && processActions) {
     processActions.style.display = isCropping ? "none" : "flex";
   }
   if (cropActions) cropActions.style.display = isCropping ? "flex" : "none";
   if (cropHint) cropHint.style.display = isCropping ? "block" : "none";
+  // Rings belong to the counted crop, not to the whole photo shown while cropping.
+  renderRings();
+}
+
+// ===== Rings =====
+// Rust returns the detections and the rings are drawn over the photo, so they can be
+// hidden and stay sharp at any zoom.
+
+function sameCrop(a, b) {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+// Detections to draw over the current view, if any.
+function shownBirds() {
+  if (!showRings || !lastResult) return null;
+  return sameCrop(lastResult.crop, cropRect) ? lastResult.birds : null;
+}
+
+// Draws a ring around each detection, a photo pixel p landing at (p - origin) * scale.
+function drawRings(ctx, birds, options) {
+  const {
+    originX,
+    originY,
+    scale,
+    width,
+    height,
+    lineWidth = RING_LINE_WIDTH,
+    minRadius = RING_MIN_RADIUS,
+    labelSize = RING_LABEL_SIZE,
+  } = options;
+  const visible = [];
+  for (const bird of birds) {
+    const x = (bird.x - originX) * scale;
+    const y = (bird.y - originY) * scale;
+    const r = Math.max(minRadius, (bird.radius + RING_PADDING) * scale);
+    if (x + r < 0 || y + r < 0 || x - r > width || y - r > height) continue;
+    visible.push({ x, y, r, count: bird.count });
+  }
+
+  ctx.save();
+  ctx.lineWidth = lineWidth;
+  for (const [color, merged] of [
+    [RING_COLOR, false],
+    [RING_CLUSTER_COLOR, true],
+  ]) {
+    ctx.beginPath();
+    for (const ring of visible) {
+      if ((ring.count > 1) !== merged) continue;
+      ctx.moveTo(ring.x + ring.r, ring.y);
+      ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2);
+    }
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
+
+  ctx.font = `700 ${labelSize}px system-ui, -apple-system, sans-serif`;
+  ctx.textBaseline = "bottom";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(2, labelSize / 4);
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillStyle = RING_CLUSTER_COLOR;
+  for (const ring of visible) {
+    if (ring.count <= 1) continue;
+    const label = String(ring.count);
+    const x = ring.x + ring.r * 0.7 + 2;
+    const y = ring.y - ring.r * 0.7;
+    ctx.strokeText(label, x, y);
+    ctx.fillText(label, x, y);
+  }
+  ctx.restore();
+}
+
+// Rings over the editor's photo, at the screen's resolution.
+function renderRings() {
+  if (!birdCanvas || !previewImg) return;
+  const rect = previewImg.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(rect.width * dpr));
+  const height = Math.max(1, Math.round(rect.height * dpr));
+  if (birdCanvas.width !== width || birdCanvas.height !== height) {
+    birdCanvas.width = width;
+    birdCanvas.height = height;
+  }
+  const ctx = birdCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const birds = isCropping ? null : shownBirds();
+  const view = viewRect();
+  if (!birds || !view || rect.width <= 0) return;
+  ctx.setTransform(width / rect.width, 0, 0, height / rect.height, 0, 0);
+  drawRings(ctx, birds, {
+    originX: view.x,
+    originY: view.y,
+    scale: rect.width / view.width,
+    width: rect.width,
+    height: rect.height,
+  });
+}
+
+function setShowRings(show, persist = true) {
+  showRings = show;
+  for (const button of [marksBtn, viewerMarksBtn]) {
+    if (!button) continue;
+    button.classList.toggle("is-off", !show);
+    button.setAttribute("aria-pressed", show ? "true" : "false");
+  }
+  if (persist) {
+    try {
+      localStorage.setItem("showRings", show ? "1" : "0");
+    } catch (e) {
+      console.warn("Failed to persist the rings setting:", e);
+    }
+  }
+  renderRings();
+  requestViewerRender();
+}
+
+// ===== Full resolution viewer =====
+// Draws the visible part of the photo (or its crop) at the current zoom, so it stays
+// sharp down to single pixels without scaling a huge layer.
+
+function openViewer() {
+  if (!isPreviewVisible || isCropping || isMasking || !sourceImage || !photoViewer) return;
+  isViewerOpen = true;
+  photoViewer.hidden = false;
+  document.body.classList.add("viewer-open");
+  viewerPointers.clear();
+  viewerGesture = null;
+  viewerTap = null;
+  viewerLastTap = null;
+  viewerView = null;
+  layoutViewer();
+  viewerCloseBtn?.focus({ preventScroll: true });
+}
+
+function closeViewer() {
+  if (!isViewerOpen) return;
+  isViewerOpen = false;
+  photoViewer.hidden = true;
+  document.body.classList.remove("viewer-open");
+  viewerPointers.clear();
+  viewerGesture = null;
+  if (viewerFrame) cancelAnimationFrame(viewerFrame);
+  viewerFrame = 0;
+  // Frees the canvas memory right away; WebKit only does it when the canvas is collected.
+  viewerCanvas.width = 0;
+  viewerCanvas.height = 0;
+}
+
+function viewerMaxScale() {
+  const dpr = window.devicePixelRatio || 1;
+  return Math.max(viewerView.fit, VIEWER_MAX_DEVICE_ZOOM / dpr);
+}
+
+// Fits the photo on open, and keeps the zoom within limits when the window changes.
+function layoutViewer() {
+  const view = viewRect();
+  if (!isViewerOpen || !view) return;
+  const width = viewerCanvas.clientWidth;
+  const height = viewerCanvas.clientHeight;
+  if (!width || !height) return;
+  const fit = Math.min(width / view.width, height / view.height);
+  if (!viewerView || viewerView.scale <= viewerView.fit) {
+    viewerView = { scale: fit, fit, x: 0, y: 0 };
+  } else {
+    viewerView.fit = fit;
+    viewerView.scale = clamp(viewerView.scale, fit, viewerMaxScale());
+  }
+  clampViewer();
+  requestViewerRender();
+}
+
+// Centres the photo where it is smaller than the screen and keeps it covering the screen
+// where it is larger.
+function clampViewer() {
+  const view = viewRect();
+  if (!viewerView || !view) return;
+  const width = viewerCanvas.clientWidth;
+  const height = viewerCanvas.clientHeight;
+  const shownWidth = view.width * viewerView.scale;
+  const shownHeight = view.height * viewerView.scale;
+  viewerView.x =
+    shownWidth <= width ? (width - shownWidth) / 2 : clamp(viewerView.x, width - shownWidth, 0);
+  viewerView.y =
+    shownHeight <= height
+      ? (height - shownHeight) / 2
+      : clamp(viewerView.y, height - shownHeight, 0);
+}
+
+// Zooms keeping the photo point under (cx, cy) in place.
+function zoomViewerAt(cx, cy, scale) {
+  if (!viewerView) return;
+  const next = clamp(scale, viewerView.fit, viewerMaxScale());
+  const ratio = next / viewerView.scale;
+  viewerView.x = cx - (cx - viewerView.x) * ratio;
+  viewerView.y = cy - (cy - viewerView.y) * ratio;
+  viewerView.scale = next;
+  clampViewer();
+  requestViewerRender();
+}
+
+// Double tap: zooms in to full resolution (a photo pixel per device pixel), or back out.
+function toggleViewerZoom(cx, cy) {
+  if (!viewerView) return;
+  if (viewerView.scale > viewerView.fit * 1.01) {
+    zoomViewerAt(cx, cy, viewerView.fit);
+    return;
+  }
+  const dpr = window.devicePixelRatio || 1;
+  zoomViewerAt(cx, cy, Math.max(viewerView.fit * 2, 1 / dpr));
+}
+
+function requestViewerRender() {
+  if (!isViewerOpen || viewerFrame) return;
+  viewerFrame = requestAnimationFrame(renderViewer);
+}
+
+function renderViewer() {
+  viewerFrame = 0;
+  const view = viewRect();
+  if (!isViewerOpen || !viewerView || !view || !sourceImage) return;
+  const dpr = window.devicePixelRatio || 1;
+  const width = viewerCanvas.clientWidth;
+  const height = viewerCanvas.clientHeight;
+  const canvasWidth = Math.max(1, Math.round(width * dpr));
+  const canvasHeight = Math.max(1, Math.round(height * dpr));
+  if (viewerCanvas.width !== canvasWidth || viewerCanvas.height !== canvasHeight) {
+    viewerCanvas.width = canvasWidth;
+    viewerCanvas.height = canvasHeight;
+  }
+  const ctx = viewerCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+  ctx.setTransform(canvasWidth / width, 0, 0, canvasHeight / height, 0, 0);
+
+  const { x, y, scale } = viewerView;
+  // Only the part of the photo on screen
+  const left = Math.max(view.x, view.x - x / scale);
+  const top = Math.max(view.y, view.y - y / scale);
+  const right = Math.min(view.x + view.width, view.x + (width - x) / scale);
+  const bottom = Math.min(view.y + view.height, view.y + (height - y) / scale);
+  if (right > left && bottom > top) {
+    // Pixels stay pixels when zoomed in far enough to tell them apart.
+    ctx.imageSmoothingEnabled = scale * dpr < 3;
+    ctx.drawImage(
+      sourceImage,
+      left,
+      top,
+      right - left,
+      bottom - top,
+      x + (left - view.x) * scale,
+      y + (top - view.y) * scale,
+      (right - left) * scale,
+      (bottom - top) * scale,
+    );
+  }
+  const birds = shownBirds();
+  if (birds) {
+    drawRings(ctx, birds, {
+      originX: view.x - x / scale,
+      originY: view.y - y / scale,
+      scale,
+      width,
+      height,
+    });
+  }
+}
+
+// One finger (or the mouse) pans, two fingers pinch; each change of fingers starts over
+// from the current zoom, so nothing jumps.
+function startViewerGesture() {
+  const points = [...viewerPointers.values()];
+  if (!viewerView || points.length === 0) {
+    viewerGesture = null;
+    return;
+  }
+  if (points.length === 1) {
+    viewerGesture = {
+      kind: "pan",
+      startX: points[0].x,
+      startY: points[0].y,
+      x: viewerView.x,
+      y: viewerView.y,
+    };
+    return;
+  }
+  const [a, b] = points;
+  viewerGesture = {
+    kind: "pinch",
+    distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+    midX: (a.x + b.x) / 2,
+    midY: (a.y + b.y) / 2,
+    scale: viewerView.scale,
+    x: viewerView.x,
+    y: viewerView.y,
+  };
+}
+
+function onViewerPointerDown(e) {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  try {
+    viewerCanvas.setPointerCapture(e.pointerId);
+  } catch (err) {
+    // The pointer is already gone; its events still arrive while over the canvas.
+  }
+  viewerPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  viewerTap =
+    viewerPointers.size === 1
+      ? { id: e.pointerId, x: e.clientX, y: e.clientY, time: performance.now() }
+      : null;
+  startViewerGesture();
+  e.preventDefault();
+}
+
+function onViewerPointerMove(e) {
+  if (!viewerPointers.has(e.pointerId) || !viewerGesture || !viewerView) return;
+  viewerPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const points = [...viewerPointers.values()];
+  const gesture = viewerGesture;
+  if (gesture.kind === "pan") {
+    viewerView.x = gesture.x + points[0].x - gesture.startX;
+    viewerView.y = gesture.y + points[0].y - gesture.startY;
+  } else if (points.length >= 2) {
+    const [a, b] = points;
+    const scale = clamp(
+      (gesture.scale * Math.hypot(b.x - a.x, b.y - a.y)) / gesture.distance,
+      viewerView.fit,
+      viewerMaxScale(),
+    );
+    // The photo point that was under the fingers follows them.
+    const ratio = scale / gesture.scale;
+    viewerView.x = (a.x + b.x) / 2 - (gesture.midX - gesture.x) * ratio;
+    viewerView.y = (a.y + b.y) / 2 - (gesture.midY - gesture.y) * ratio;
+    viewerView.scale = scale;
+  }
+  clampViewer();
+  requestViewerRender();
+}
+
+function onViewerPointerUp(e) {
+  if (!viewerPointers.has(e.pointerId)) return;
+  viewerPointers.delete(e.pointerId);
+  const tap = viewerTap;
+  viewerTap = null;
+  if (e.type === "pointerup" && tap && tap.id === e.pointerId) {
+    const now = performance.now();
+    const travel = Math.hypot(e.clientX - tap.x, e.clientY - tap.y);
+    if (travel < 10 && now - tap.time < 300) {
+      const last = viewerLastTap;
+      if (
+        last &&
+        now - last.time < DOUBLE_TAP_TIME &&
+        Math.hypot(e.clientX - last.x, e.clientY - last.y) < DOUBLE_TAP_DISTANCE
+      ) {
+        viewerLastTap = null;
+        toggleViewerZoom(e.clientX, e.clientY);
+      } else {
+        viewerLastTap = { x: e.clientX, y: e.clientY, time: now };
+      }
+    }
+  }
+  startViewerGesture();
+}
+
+// Trackpad pinch (reported with ctrlKey) or ⌘ + wheel zooms, scrolling pans.
+function onViewerWheel(e) {
+  if (!viewerView) return;
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    zoomViewerAt(e.clientX, e.clientY, viewerView.scale * Math.exp(-e.deltaY * 0.01));
+    return;
+  }
+  const lines = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? viewerCanvas.clientHeight : 1;
+  viewerView.x -= e.deltaX * lines;
+  viewerView.y -= e.deltaY * lines;
+  clampViewer();
+  requestViewerRender();
+}
+
+function onViewerKeyDown(e) {
+  if (!isViewerOpen || !viewerView) return;
+  const cx = viewerCanvas.clientWidth / 2;
+  const cy = viewerCanvas.clientHeight / 2;
+  if (e.key === "Escape") {
+    closeViewer();
+  } else if (e.key === "+" || e.key === "=") {
+    zoomViewerAt(cx, cy, viewerView.scale * 1.5);
+  } else if (e.key === "-") {
+    zoomViewerAt(cx, cy, viewerView.scale / 1.5);
+  } else if (e.key === "0") {
+    zoomViewerAt(cx, cy, viewerView.fit);
+  } else {
+    return;
+  }
+  e.preventDefault();
 }
 
 // ===== Mask =====
@@ -645,10 +1078,7 @@ function updateMaskBrushControlsState() {
 function updateMaskOverlayState() {
   if (!maskOverlay) return;
   maskOverlay.classList.toggle("is-active", isMasking);
-  maskOverlay.classList.toggle(
-    "has-mask",
-    maskHasPaint && !isMasking && !isCropping && !isFullscreenPreview,
-  );
+  maskOverlay.classList.toggle("has-mask", maskHasPaint && !isMasking && !isCropping);
 }
 
 function updateMaskBrushValue() {
@@ -657,14 +1087,24 @@ function updateMaskBrushValue() {
   updateRangeFill(maskBrushInput);
 }
 
+// Drops a canvas's pixels at once; WebKit only frees them when the canvas is collected,
+// and counts them against its canvas memory limit until then.
+function releaseCanvas(canvas) {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 function clearMaskData() {
   maskHasPaint = false;
   maskDragState = null;
-  maskHoverPoint = null;
+  releaseCanvas(maskBitmap);
+  releaseCanvas(maskSnapshot);
   maskBitmap = null;
   maskContext = null;
   maskPngCache = null;
   maskSnapshot = null;
+  hideMaskBrushCursor();
   if (maskCanvas) {
     const ctx = maskCanvas.getContext("2d");
     if (ctx) {
@@ -677,19 +1117,24 @@ function clearMaskData() {
 function resetMaskUI() {
   isMasking = false;
   maskDragState = null;
-  maskHoverPoint = null;
+  releaseCanvas(maskSnapshot);
   maskSnapshot = null;
+  hideMaskBrushCursor();
   updateMaskButtonState(false);
   updateEditingState();
   updateMaskBrushControlsState();
   updateMaskOverlayState();
 }
 
+// The mask covers the whole photo, scaled down to MASK_MAX_PIXELS.
 function ensureMaskBitmap() {
   if (!sourceImage) return false;
-  const width = sourceImage.naturalWidth;
-  const height = sourceImage.naturalHeight;
-  if (!width || !height) return false;
+  const photoWidth = sourceImage.naturalWidth;
+  const photoHeight = sourceImage.naturalHeight;
+  if (!photoWidth || !photoHeight) return false;
+  const scale = Math.min(1, Math.sqrt(MASK_MAX_PIXELS / (photoWidth * photoHeight)));
+  const width = Math.max(1, Math.round(photoWidth * scale));
+  const height = Math.max(1, Math.round(photoHeight * scale));
   if (maskBitmap && maskBitmap.width === width && maskBitmap.height === height && maskContext) {
     return true;
   }
@@ -719,6 +1164,7 @@ async function restoreMask(bytes) {
     URL.revokeObjectURL(url);
   }
   updateMaskOverlayState();
+  renderMaskPreview();
 }
 
 // Part of the photo shown in the preview: the crop, or all of it.
@@ -728,16 +1174,20 @@ function viewRect() {
   return { x: 0, y: 0, width: sourceImage.naturalWidth, height: sourceImage.naturalHeight };
 }
 
+// Resizing clears the canvas, so callers redraw it when this returns true.
 function syncMaskCanvasSize() {
-  if (!maskCanvas || !previewImg) return;
+  if (!maskCanvas || !previewImg) return false;
   const rect = previewImg.getBoundingClientRect();
   const width = Math.max(1, Math.round(rect.width));
   const height = Math.max(1, Math.round(rect.height));
-  if (maskCanvas.width === width && maskCanvas.height === height) return;
+  if (maskCanvas.width === width && maskCanvas.height === height) return false;
   maskCanvas.width = width;
   maskCanvas.height = height;
+  return true;
 }
 
+// Redraws the whole overlay from the mask. Strokes only add their own segment
+// (drawMaskStroke), so this runs when the view changes, not while painting.
 function renderMaskPreview() {
   if (!maskCanvas) return;
   syncMaskCanvasSize();
@@ -745,37 +1195,25 @@ function renderMaskPreview() {
   if (!overlayCtx) return;
   overlayCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
   const view = viewRect();
-  if (maskHasPaint && maskBitmap && view) {
-    overlayCtx.save();
-    overlayCtx.globalAlpha = isMasking ? 1.0 : 0.9;
-    overlayCtx.drawImage(
-      maskBitmap,
-      view.x,
-      view.y,
-      view.width,
-      view.height,
-      0,
-      0,
-      maskCanvas.width,
-      maskCanvas.height,
-    );
-    overlayCtx.globalCompositeOperation = "source-in";
-    overlayCtx.fillStyle = MASK_TINT_COLOR;
-    overlayCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
-    overlayCtx.restore();
-  }
-  if (isMasking && maskHoverPoint) {
-    const radius = getMaskBrushRadiusPixels();
-    overlayCtx.save();
-    overlayCtx.lineWidth = 2;
-    overlayCtx.strokeStyle = MASK_BRUSH_OUTLINE;
-    overlayCtx.fillStyle = MASK_BRUSH_FILL;
-    overlayCtx.beginPath();
-    overlayCtx.arc(maskHoverPoint.x, maskHoverPoint.y, radius, 0, Math.PI * 2);
-    overlayCtx.fill();
-    overlayCtx.stroke();
-    overlayCtx.restore();
-  }
+  if (!maskHasPaint || !maskBitmap || !view) return;
+  const sx = maskBitmap.width / sourceImage.naturalWidth;
+  const sy = maskBitmap.height / sourceImage.naturalHeight;
+  overlayCtx.save();
+  overlayCtx.drawImage(
+    maskBitmap,
+    view.x * sx,
+    view.y * sy,
+    view.width * sx,
+    view.height * sy,
+    0,
+    0,
+    maskCanvas.width,
+    maskCanvas.height,
+  );
+  overlayCtx.globalCompositeOperation = "source-in";
+  overlayCtx.fillStyle = MASK_TINT_COLOR;
+  overlayCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+  overlayCtx.restore();
 }
 
 function getMaskBrushRadiusPixels() {
@@ -785,12 +1223,10 @@ function getMaskBrushRadiusPixels() {
   return Math.max(1, parsed);
 }
 
-// Pointer position in photo pixels.
-function toMaskImagePoint(clientX, clientY) {
+// Pointer position in photo pixels; `rect` is the overlay's, read once per stroke.
+function toMaskImagePoint(clientX, clientY, rect) {
   const view = viewRect();
-  if (!maskCanvas || !maskBitmap || !view) return null;
-  const rect = maskCanvas.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return null;
+  if (!view || rect.width <= 0 || rect.height <= 0) return null;
 
   const x = Math.min(Math.max(clientX - rect.left, 0), rect.width);
   const y = Math.min(Math.max(clientY - rect.top, 0), rect.height);
@@ -801,66 +1237,93 @@ function toMaskImagePoint(clientX, clientY) {
   };
 }
 
-function toMaskCanvasPoint(clientX, clientY) {
-  if (!maskCanvas) return null;
-  const rect = maskCanvas.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return null;
-  if (
-    clientX < rect.left ||
-    clientX > rect.right ||
-    clientY < rect.top ||
-    clientY > rect.bottom
-  ) {
-    return null;
+// The brush outline is an element moved with a transform, so hovering and painting don't
+// redraw any canvas.
+function moveMaskBrushCursor(clientX, clientY, rect) {
+  if (!maskBrushCursor) return;
+  const inside =
+    clientX >= rect.left &&
+    clientX <= rect.right &&
+    clientY >= rect.top &&
+    clientY <= rect.bottom;
+  if (!inside && !maskDragState) {
+    hideMaskBrushCursor();
+    return;
   }
-
-  return {
-    x: ((clientX - rect.left) / rect.width) * maskCanvas.width,
-    y: ((clientY - rect.top) / rect.height) * maskCanvas.height,
-  };
+  const radius = getMaskBrushRadiusPixels();
+  const size = `${radius * 2}px`;
+  if (maskBrushCursor.style.width !== size) {
+    maskBrushCursor.style.width = size;
+    maskBrushCursor.style.height = size;
+  }
+  const x = clamp(clientX - rect.left, 0, rect.width) - radius;
+  const y = clamp(clientY - rect.top, 0, rect.height) - radius;
+  maskBrushCursor.style.transform = `translate(${x}px, ${y}px)`;
+  maskBrushCursor.classList.add("is-visible");
 }
 
-function toMaskCanvasPointFromImagePoint(point) {
-  const view = viewRect();
-  if (!maskCanvas || !view || !point) return null;
-  return {
-    x: ((point.x - view.x) / view.width) * maskCanvas.width,
-    y: ((point.y - view.y) / view.height) * maskCanvas.height,
-  };
+function hideMaskBrushCursor() {
+  maskBrushCursor?.classList.remove("is-visible");
 }
 
-function drawMaskStroke(from, to) {
+function strokeSegment(ctx, from, to, radius, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1, radius * 2);
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  // Zero-length lines draw nothing, so a tap needs the dot.
+  ctx.beginPath();
+  ctx.arc(to.x, to.y, Math.max(0.5, radius), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Paints the segment from `from` to `to` (photo pixels) into the mask and onto the overlay.
+function drawMaskStroke(from, to, rect) {
   const view = viewRect();
-  if (!ensureMaskBitmap() || !maskContext || !maskCanvas || !view) return;
-  const rect = maskCanvas.getBoundingClientRect();
+  if (!ensureMaskBitmap() || !maskCanvas || !view) return;
   if (rect.width <= 0 || rect.height <= 0) return;
 
-  const scale = Math.max(view.width / rect.width, view.height / rect.height);
-  const radius = getMaskBrushRadiusPixels() * scale;
+  const brush = getMaskBrushRadiusPixels();
+  const sx = maskBitmap.width / sourceImage.naturalWidth;
+  const sy = maskBitmap.height / sourceImage.naturalHeight;
+  const photoPerScreen = Math.max(view.width / rect.width, view.height / rect.height);
+  strokeSegment(
+    maskContext,
+    { x: from.x * sx, y: from.y * sy },
+    { x: to.x * sx, y: to.y * sy },
+    brush * photoPerScreen * sx,
+    "#ffffff",
+  );
 
-  maskContext.save();
-  maskContext.strokeStyle = "#ffffff";
-  maskContext.fillStyle = "#ffffff";
-  maskContext.lineCap = "round";
-  maskContext.lineJoin = "round";
-  maskContext.lineWidth = Math.max(1, radius * 2);
-  maskContext.beginPath();
-  maskContext.moveTo(from.x, from.y);
-  maskContext.lineTo(to.x, to.y);
-  maskContext.stroke();
-  maskContext.beginPath();
-  maskContext.arc(to.x, to.y, Math.max(1, radius), 0, Math.PI * 2);
-  maskContext.fill();
-  maskContext.restore();
+  const overlayCtx = maskCanvas.getContext("2d");
+  if (overlayCtx) {
+    const ox = maskCanvas.width / view.width;
+    const oy = maskCanvas.height / view.height;
+    strokeSegment(
+      overlayCtx,
+      { x: (from.x - view.x) * ox, y: (from.y - view.y) * oy },
+      { x: (to.x - view.x) * ox, y: (to.y - view.y) * oy },
+      brush * (maskCanvas.width / rect.width),
+      MASK_TINT_COLOR,
+    );
+  }
 
-  maskHasPaint = true;
   maskPngCache = null;
   maskChangedSinceSave = true;
-  updateMaskOverlayState();
-  renderMaskPreview();
+  if (!maskHasPaint) {
+    maskHasPaint = true;
+    updateMaskOverlayState();
+  }
 }
 
-// The mask as PNG at the photo's resolution; Rust crops it with the photo.
+// The mask as PNG; Rust scales it to the photo and crops it with it.
 async function buildMaskPayload() {
   if (!maskHasPaint || !maskBitmap) return null;
   if (maskPngCache) return maskPngCache;
@@ -872,15 +1335,14 @@ async function buildMaskPayload() {
 
 function enterMaskMode() {
   if (!sourceImage || !maskOverlay || !maskCanvas) return;
-  if (isFullscreenPreview) {
-    setFullscreenPreview(false);
-  }
+  closeViewer();
   if (isCropping) {
     exitCropMode();
   }
 
   if (!ensureMaskBitmap()) return;
   // Cancel brings this back.
+  releaseCanvas(maskSnapshot);
   maskSnapshot = document.createElement("canvas");
   maskSnapshot.width = maskBitmap.width;
   maskSnapshot.height = maskBitmap.height;
@@ -892,7 +1354,6 @@ function enterMaskMode() {
   updateEditingState();
   updateMaskBrushControlsState();
   updateMaskOverlayState();
-  syncMaskCanvasSize();
   renderMaskPreview();
 }
 
@@ -900,8 +1361,9 @@ function exitMaskMode(options = {}) {
   const { process = false } = options;
   isMasking = false;
   maskDragState = null;
-  maskHoverPoint = null;
+  releaseCanvas(maskSnapshot);
   maskSnapshot = null;
+  hideMaskBrushCursor();
   updateMaskButtonState(false);
   updateEditingState();
   updateMaskBrushControlsState();
@@ -1000,9 +1462,7 @@ function fullCrop() {
 
 async function enterCropMode() {
   if (!sourceImage || !cropOverlay) return;
-  if (isFullscreenPreview) {
-    setFullscreenPreview(false);
-  }
+  closeViewer();
   if (isMasking) {
     exitMaskMode();
   }
@@ -1012,7 +1472,7 @@ async function enterCropMode() {
   updateEditingState();
   updateMaskOverlayState();
 
-  previewImg.src = sourceUrl;
+  previewImg.src = fullPreviewSrc();
   try {
     await previewImg.decode();
   } catch (e) {
@@ -1037,11 +1497,7 @@ function exitCropMode() {
 
 function cancelCrop() {
   exitCropMode();
-  if (resultUrl) {
-    previewImg.src = resultUrl;
-  } else {
-    showWorkingPreview();
-  }
+  showWorkingPreview();
 }
 
 function applyCrop() {
@@ -1155,43 +1611,33 @@ function onCropPointerUp(e) {
 }
 
 function onMaskPointerDown(e) {
-  if (!isMasking) return;
+  if (!isMasking || maskDragState) return;
   if (!ensureMaskBitmap() || !maskCanvas) return;
 
-  syncMaskCanvasSize();
-  const point = toMaskImagePoint(e.clientX, e.clientY);
+  if (syncMaskCanvasSize()) renderMaskPreview();
+  const rect = maskCanvas.getBoundingClientRect();
+  const point = toMaskImagePoint(e.clientX, e.clientY, rect);
   if (!point) return;
-  const hoverPoint = toMaskCanvasPoint(e.clientX, e.clientY);
-  if (hoverPoint) {
-    maskHoverPoint = hoverPoint;
-  }
 
   maskDragState = {
     pointerId: e.pointerId,
     lastPoint: point,
+    rect,
   };
   maskCanvas.setPointerCapture(e.pointerId);
-  drawMaskStroke(point, point);
+  drawMaskStroke(point, point, rect);
+  moveMaskBrushCursor(e.clientX, e.clientY, rect);
   e.preventDefault();
 }
 
 function onMaskPointerMove(e) {
   if (!maskDragState || e.pointerId !== maskDragState.pointerId) return;
-  if (isMasking) {
-    const hoverPoint = toMaskCanvasPoint(e.clientX, e.clientY);
-    if (hoverPoint) {
-      maskHoverPoint = hoverPoint;
-    } else {
-      const fallback = toMaskCanvasPointFromImagePoint(maskDragState.lastPoint);
-      if (fallback) {
-        maskHoverPoint = fallback;
-      }
-    }
-  }
-  const next = toMaskImagePoint(e.clientX, e.clientY);
+  const { rect } = maskDragState;
+  const next = toMaskImagePoint(e.clientX, e.clientY, rect);
   if (!next) return;
-  drawMaskStroke(maskDragState.lastPoint, next);
+  drawMaskStroke(maskDragState.lastPoint, next, rect);
   maskDragState.lastPoint = next;
+  moveMaskBrushCursor(e.clientX, e.clientY, rect);
   e.preventDefault();
 }
 
@@ -1201,28 +1647,19 @@ function onMaskPointerUp(e) {
     maskCanvas.releasePointerCapture(e.pointerId);
   }
   maskDragState = null;
+  // A finger leaves no hover.
+  if (e.pointerType !== "mouse") hideMaskBrushCursor();
 }
 
 function onMaskPointerHover(e) {
-  if (!isMasking) return;
-  const point = toMaskCanvasPoint(e.clientX, e.clientY);
-  if (!point) {
-    if (!maskDragState && maskHoverPoint) {
-      maskHoverPoint = null;
-      renderMaskPreview();
-    }
-    return;
-  }
-  maskHoverPoint = point;
-  renderMaskPreview();
+  if (!isMasking || maskDragState) return;
+  if (e.pointerType !== "mouse" && e.pointerType !== "pen") return;
+  moveMaskBrushCursor(e.clientX, e.clientY, maskCanvas.getBoundingClientRect());
 }
 
 function clearMaskHover() {
-  if (!isMasking) return;
-  if (maskDragState) return;
-  if (!maskHoverPoint) return;
-  maskHoverPoint = null;
-  renderMaskPreview();
+  if (!isMasking || maskDragState) return;
+  hideMaskBrushCursor();
 }
 
 // ===== Camera and library =====
@@ -1461,12 +1898,10 @@ async function processImage() {
     });
     if (session !== editSession) return;
 
-    const blob = new Blob([new Uint8Array(result.bytes)], { type: "image/png" });
-    setResultUrl(URL.createObjectURL(blob));
-    // While cropping, the preview shows the whole photo; the result waits for the crop.
-    if (!isCropping) previewImg.src = resultUrl;
     updateCount(result.count);
-    lastResult = { count: result.count, params, crop, blob };
+    lastResult = { count: result.count, params, crop, birds: result.birds };
+    renderRings();
+    requestViewerRender();
     scheduleHistorySave();
   } catch (e) {
     if (session !== editSession) return;
@@ -1511,9 +1946,10 @@ function historyKey({ count, params, crop }) {
 function queueHistorySave() {
   const session = editSession;
   const result = lastResult;
+  const image = sourceImage;
   const info = { ...sourceInfo };
   const updateMask = maskChangedSinceSave;
-  if (!result) return;
+  if (!result || !image) return;
   const key = historyKey(result);
   if (!updateMask && historySavedKeys.get(session) === key) return;
   historySavedKeys.set(session, key);
@@ -1521,7 +1957,7 @@ function queueHistorySave() {
   const maskPromise = updateMask ? buildMaskPayload() : Promise.resolve(null);
   historySaveChain = historySaveChain
     .then(async () => {
-      const [thumb, mask] = await Promise.all([makeThumbnail(result.blob), maskPromise]);
+      const [thumb, mask] = await Promise.all([makeThumbnail(image, result), maskPromise]);
       if (!thumb) return;
       const saved = await invoke("history_save", {
         entry: {
@@ -1542,24 +1978,29 @@ function queueHistorySave() {
     .catch((e) => console.error("Failed to save history:", e));
 }
 
-async function makeThumbnail(blob) {
-  const url = URL.createObjectURL(blob);
+// The counted part of the photo with its rings.
+async function makeThumbnail(image, result) {
+  const rect = result.crop ?? wholeRect(image);
+  const scale = Math.min(1, THUMB_SIZE / Math.max(rect.width, rect.height));
+  const width = Math.max(1, Math.round(rect.width * scale));
+  const height = Math.max(1, Math.round(rect.height * scale));
   try {
-    const image = await loadImage(url);
-    const scale = Math.min(1, THUMB_SIZE / Math.max(image.naturalWidth, image.naturalHeight));
-    const blob = await drawToBlob(
-      image,
-      { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight },
-      Math.max(1, Math.round(image.naturalWidth * scale)),
-      Math.max(1, Math.round(image.naturalHeight * scale)),
-      "image/jpeg",
+    const blob = await drawToBlob(image, rect, width, height, "image/jpeg", (ctx) =>
+      drawRings(ctx, result.birds, {
+        originX: rect.x,
+        originY: rect.y,
+        scale: width / rect.width,
+        width,
+        height,
+        lineWidth: 1.5,
+        minRadius: 2,
+        labelSize: 10,
+      }),
     );
     return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
   } catch (e) {
     console.warn("Failed to make a thumbnail:", e);
     return null;
-  } finally {
-    URL.revokeObjectURL(url);
   }
 }
 
@@ -1758,21 +2199,24 @@ function loadImage(url) {
   });
 }
 
-// Draws `rect` of the image at width x height and encodes it.
-async function drawToBlob(image, rect, width, height, type) {
+// Draws `rect` of the image at width x height, then `decorate` on top, and encodes it.
+async function drawToBlob(image, rect, width, height, type, decorate = null) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height, 0, 0, width, height);
-  return await new Promise((resolve) => canvas.toBlob(resolve, type, 0.85));
+  decorate?.(ctx);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.85));
+  releaseCanvas(canvas);
+  return blob;
 }
 
-// Android: system back steps out of fullscreen/crop/mask, then returns to the start screen.
+// Android: system back steps out of the viewer/crop/mask, then returns to the start screen.
 window.onAndroidBack = function () {
-  if (isFullscreenPreview) {
-    setFullscreenPreview(false);
+  if (isViewerOpen) {
+    closeViewer();
   } else if (isCropping) {
     cancelCrop();
   } else if (isMasking) {
@@ -1892,7 +2336,14 @@ window.addEventListener("DOMContentLoaded", () => {
   cameraInput = document.querySelector("#cameraInput");
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
-  fullscreenCloseBtn = document.querySelector("#fullscreenCloseBtn");
+  birdCanvas = document.querySelector("#birdCanvas");
+  marksBtn = document.querySelector("#marksBtn");
+  viewerBtn = document.querySelector("#viewerBtn");
+  photoViewer = document.querySelector("#photoViewer");
+  viewerCanvas = document.querySelector("#viewerCanvas");
+  viewerMarksBtn = document.querySelector("#viewerMarksBtn");
+  viewerCloseBtn = document.querySelector("#viewerCloseBtn");
+  maskBrushCursor = document.querySelector("#maskBrushCursor");
   countLabel = document.querySelector("#countLabel");
   countPrefix = document.querySelector("#countLabel [data-i18n='count_prefix']");
   countValue = document.querySelector("#countValue");
@@ -2031,8 +2482,8 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if (previewImg) {
     previewImg.addEventListener("load", () => {
-      syncMaskCanvasSize();
       renderMaskPreview();
+      renderRings();
       if (isCropping) updateCropUI();
     });
   }
@@ -2041,7 +2492,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (isAndroid) return;
       e.preventDefault();
       e.stopPropagation();
-      toggleFullscreenPreview();
+      openViewer();
     });
 
     previewImg.addEventListener(
@@ -2074,7 +2525,7 @@ window.addEventListener("DOMContentLoaded", () => {
         const delta = now - lastTapTime;
         const dist = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
         if (delta < 320 && dist < 28) {
-          toggleFullscreenPreview();
+          openViewer();
           lastTapTime = 0;
           return;
         }
@@ -2085,12 +2536,27 @@ window.addEventListener("DOMContentLoaded", () => {
       { passive: true },
     );
   }
-  if (fullscreenCloseBtn) {
-    fullscreenCloseBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      setFullscreenPreview(false);
-    });
+  let initialShowRings = true;
+  try {
+    initialShowRings = localStorage.getItem("showRings") !== "0";
+  } catch (e) {
+    // Shown by default
   }
+  setShowRings(initialShowRings, false);
+  for (const button of [marksBtn, viewerMarksBtn]) {
+    button?.addEventListener("click", () => setShowRings(!showRings));
+  }
+  viewerBtn?.addEventListener("click", openViewer);
+  viewerCloseBtn?.addEventListener("click", closeViewer);
+  if (viewerCanvas) {
+    viewerCanvas.addEventListener("pointerdown", onViewerPointerDown);
+    viewerCanvas.addEventListener("pointermove", onViewerPointerMove);
+    viewerCanvas.addEventListener("pointerup", onViewerPointerUp);
+    viewerCanvas.addEventListener("pointercancel", onViewerPointerUp);
+    viewerCanvas.addEventListener("wheel", onViewerWheel, { passive: false });
+    viewerCanvas.addEventListener("dblclick", (e) => e.preventDefault());
+  }
+  document.addEventListener("keydown", onViewerKeyDown);
 
   if (cropOverlay) {
     cropOverlay.addEventListener("pointerdown", onCropPointerDown);
@@ -2109,8 +2575,9 @@ window.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("pointermove", onMaskPointerMove);
   window.addEventListener("pointerup", onMaskPointerUp);
   window.addEventListener("resize", () => {
-    syncMaskCanvasSize();
     renderMaskPreview();
+    renderRings();
+    layoutViewer();
     if (isCropping) updateCropUI();
   });
 

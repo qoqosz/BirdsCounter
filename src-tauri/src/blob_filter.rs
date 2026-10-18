@@ -137,6 +137,15 @@ impl Blob {
     }
 }
 
+/// A detected bird, or several merged ones (`count`), in pixels of the whole image.
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+pub struct Bird {
+    pub x: f64,
+    pub y: f64,
+    pub radius: f64,
+    pub count: u32,
+}
+
 /// Regions where birds are not looked for.
 struct Masks<'a> {
     /// Painted by the user (255 = excluded); detections are cut along it.
@@ -169,14 +178,52 @@ impl BlobFilter {
         Self { params }
     }
 
-    /// Counts the birds in `payload`, or in its `crop` region. The exclusion mask covers
-    /// the whole image, not just the crop. Returns the annotated (cropped) image as PNG.
+    /// Finds the birds in `payload`, or in its `crop` region. The exclusion mask covers
+    /// the whole image, not just the crop. Positions are in pixels of the whole image.
+    pub fn detect(
+        &self,
+        payload: Vec<u8>,
+        mask_payload: Option<Vec<u8>>,
+        crop: Option<Crop>,
+    ) -> Result<Vec<Bird>, String> {
+        let (_, blobs, origin) = self.run(payload, mask_payload, crop)?;
+        Ok(blobs
+            .iter()
+            .map(|blob| Bird {
+                x: blob.center.x + origin.x as f64,
+                y: blob.center.y + origin.y as f64,
+                radius: blob.radius(),
+                count: blob.count,
+            })
+            .collect())
+    }
+
+    /// Like `detect`, but returns the (cropped) image annotated with rings as PNG, and
+    /// the number of birds.
     pub fn apply(
         &self,
         payload: Vec<u8>,
         mask_payload: Option<Vec<u8>>,
         crop: Option<Crop>,
     ) -> Result<(Vec<u8>, usize), String> {
+        let (image, blobs, _) = self.run(payload, mask_payload, crop)?;
+        let annotated = annotate(&image, &blobs)?;
+        let mut buf = core::Vector::new();
+        let encode_params = core::Vector::new();
+        imgcodecs::imencode(".png", &annotated, &mut buf, &encode_params)
+            .map_err(|e| format!("OpenCV encode error: {}", e))?;
+
+        let count = blobs.iter().map(|blob| blob.count as usize).sum();
+        Ok((buf.to_vec(), count))
+    }
+
+    /// The (cropped) image, the blobs found in it and the crop's top left corner.
+    fn run(
+        &self,
+        payload: Vec<u8>,
+        mask_payload: Option<Vec<u8>>,
+        crop: Option<Crop>,
+    ) -> Result<(core::Mat, Vec<Blob>, core::Point), String> {
         let params = &self.params;
 
         let vec: core::Vector<u8> = core::Vector::from_iter(payload);
@@ -244,14 +291,8 @@ impl BlobFilter {
             blobs = split_merged(blobs);
         }
 
-        let annotated = annotate(&image, &blobs)?;
-        let mut buf = core::Vector::new();
-        let encode_params = core::Vector::new();
-        imgcodecs::imencode(".png", &annotated, &mut buf, &encode_params)
-            .map_err(|e| format!("OpenCV encode error: {}", e))?;
-
-        let count = blobs.iter().map(|blob| blob.count as usize).sum();
-        Ok((buf.to_vec(), count))
+        let origin = crop_rect.map_or(core::Point::new(0, 0), |rect| rect.tl());
+        Ok((image, blobs, origin))
     }
 
     /// Estimates the sky without birds and keeps blobs that are clearly darker than it.
@@ -990,6 +1031,8 @@ fn decode_mask(mask_bytes: Vec<u8>, width: i32, height: i32) -> Result<core::Mat
         return Err("Mask decode failed".to_string());
     }
 
+    // The app paints the mask at a lower resolution than large photos; linear
+    // scaling keeps its edges smooth, and any coverage counts as masked below.
     let mut resized = core::Mat::default();
     if decoded.cols() != width || decoded.rows() != height {
         imgproc::resize(
@@ -998,7 +1041,7 @@ fn decode_mask(mask_bytes: Vec<u8>, width: i32, height: i32) -> Result<core::Mat
             core::Size::new(width, height),
             0.0,
             0.0,
-            imgproc::INTER_NEAREST,
+            imgproc::INTER_LINEAR,
         )
         .map_err(|e| format!("Mask resize error: {}", e))?;
     } else {
@@ -1314,6 +1357,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!((decoded.cols(), decoded.rows()), (crop.width, crop.height));
+
+        // Detections are reported in pixels of the whole image, inside the crop.
+        let found = BlobFilter::new(BlobParams::default())
+            .detect(encode(&img), None, Some(crop))
+            .unwrap();
+        assert_eq!(found.iter().map(|bird| bird.count).sum::<u32>(), 30);
+        assert!(found.iter().all(|bird| {
+            bird.x >= crop.x as f64
+                && bird.x < (crop.x + crop.width) as f64
+                && bird.y >= crop.y as f64
+                && bird.y < (crop.y + crop.height) as f64
+        }));
+        assert!(found.iter().any(|bird| bird.y >= 200.0));
 
         // Excluding rows 2..=4 (y <= 220) leaves rows 5..=7.
         let mut mask = core::Mat::new_rows_cols_with_default(

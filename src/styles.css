@@ -367,62 +367,103 @@ h1 {
     -webkit-user-drag: none;
 }
 
-body.fullscreen-preview {
-    overflow: hidden;
-}
-
-.image-preview.is-fullscreen {
-    position: fixed;
+/* Rings around the detected birds, and the buttons over the photo */
+.bird-overlay {
+    position: absolute;
     inset: 0;
-    z-index: 40;
-    width: 100vw;
-    height: 100vh;
-    max-width: none;
-    max-height: none;
-    border-radius: 0;
-    background: #000000;
-    box-shadow: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-}
-
-.image-preview.is-fullscreen img {
     width: 100%;
     height: 100%;
-    object-fit: contain;
-    border-radius: 0;
+    z-index: 19;
+    pointer-events: none;
 }
 
-.fullscreen-close {
+body.is-cropping .bird-overlay {
+    display: none;
+}
+
+.preview-tools {
     position: absolute;
-    top: calc(12px + var(--safe-top));
-    right: calc(12px + var(--safe-right));
-    z-index: 45;
+    right: 8px;
+    bottom: 8px;
+    z-index: 22;
+    display: flex;
+    gap: 8px;
+}
+
+body.is-cropping .preview-tools,
+body.is-masking .preview-tools {
+    display: none;
+}
+
+.overlay-button {
     width: 40px;
     height: 40px;
+    padding: 0;
     border-radius: 50%;
     border: none;
     background: rgba(0, 0, 0, 0.55);
     color: #ffffff;
-    display: none;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.fullscreen-close svg {
+.overlay-button svg {
     width: 22px;
     height: 22px;
 }
 
-.image-preview.is-fullscreen .fullscreen-close {
-    display: inline-flex;
+.overlay-button:active {
+    background: rgba(0, 0, 0, 0.75);
 }
 
-.fullscreen-close:active {
-    background: rgba(0, 0, 0, 0.75);
+.marks-toggle .icon-hidden,
+.marks-toggle.is-off .icon-shown {
+    display: none;
+}
+
+.marks-toggle.is-off .icon-hidden {
+    display: block;
+}
+
+/* ===== Full resolution viewer ===== */
+body.viewer-open {
+    overflow: hidden;
+}
+
+.photo-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: #000000;
+}
+
+.photo-viewer[hidden] {
+    display: none;
+}
+
+.viewer-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: grab;
+}
+
+.viewer-canvas:active {
+    cursor: grabbing;
+}
+
+.viewer-tools {
+    position: absolute;
+    top: calc(12px + var(--safe-top));
+    right: calc(12px + var(--safe-right));
+    display: flex;
+    gap: 12px;
 }
 
 /* ===== Count label ===== */
@@ -654,6 +695,26 @@ body.is-cropping .crop-overlay {
 .mask-overlay canvas {
     width: 100%;
     height: 100%;
+    display: block;
+}
+
+.mask-overlay.has-mask canvas {
+    opacity: 0.9;
+}
+
+.mask-brush-cursor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: none;
+    box-sizing: border-box;
+    border: 2px solid rgba(226, 77, 92, 0.95);
+    border-radius: 50%;
+    background: rgba(226, 77, 92, 0.2);
+    pointer-events: none;
+}
+
+.mask-brush-cursor.is-visible {
     display: block;
 }
 
@@ -1615,7 +1676,7 @@ body.is-android .history-meta {
     letter-spacing: 0.25px;
 }
 
-body.is-android .fullscreen-close {
+body.is-android .viewer-tools .overlay-button {
     width: 48px;
     height: 48px;
 }
@@ -1815,7 +1876,7 @@ body.is-ios .count-label {
     font-weight: 600;
 }
 
-body.is-ios .fullscreen-close {
+body.is-ios .viewer-tools .overlay-button {
     width: 44px;
     height: 44px;
 }
