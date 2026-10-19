@@ -1,0 +1,94 @@
+# Builds the portable Windows app (x64) and attaches it to a GitHub release: a single .exe with OpenCV and
+# the C runtime linked statically, which runs without installing anything.
+# Runs when a release is published, or by hand: with a release tag it attaches the exe to that release, without
+# one it builds the selected branch and uploads the exe as a workflow artifact.
+name: Windows EXE
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach the EXE to (e.g. v0.8.0). Empty builds the selected branch.
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-exe-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # Without a tag, checks out the branch the workflow was run on.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      # libclang for the opencv crate's binding generator; the runner image usually has LLVM already.
+      - name: Install LLVM
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\LLVM\bin\libclang.dll")) {
+            choco install llvm -y --no-progress
+          }
+
+      # Static OpenCV 5 built from source takes a while, so it is cached until the setup script changes.
+      - name: Cache OpenCV
+        id: opencv-cache
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/opencv-windows
+          key: opencv-windows-${{ hashFiles('setup_opencv_windows.ps1') }}
+
+      - name: Build OpenCV
+        if: steps.opencv-cache.outputs.cache-hit != 'true'
+        run: ./setup_opencv_windows.ps1
+
+      # Installs the toolchain and components pinned in rust-toolchain.toml.
+      - name: Set up Rust
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-all-crates: true
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "^2.12" --locked
+
+      # Also checks that the exe imports neither the dynamic C runtime nor OpenCV DLLs.
+      - name: Build EXE
+        run: ./build_windows.ps1
+
+      - name: Name the EXE
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $asset = "BirdsCounter_${version}_windows_x64.exe"
+          Copy-Item src-tauri/target/x86_64-pc-windows-msvc/release/birdscounter.exe $asset
+          "ASSET=$asset" >> $env:GITHUB_ENV
+
+      - name: Attach EXE to the release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$env:TAG" "$env:ASSET" --clobber
+          if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+
+      - name: Upload EXE as a workflow artifact
+        if: env.TAG == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error

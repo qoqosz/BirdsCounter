@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-BirdsCounter is a Tauri 2 app (macOS desktop, Android, iOS) that counts birds in a photo. A Rust backend
+BirdsCounter is a Tauri 2 app (macOS and Windows desktop, Android, iOS) that counts birds in a photo. A Rust backend
 does the detection with OpenCV 5. The frontend is static HTML/CSS/JS in `src/`, with no bundler and no npm.
 
 ## Commands
@@ -19,12 +19,15 @@ cd src-tauri && cargo run --release --example count -- --out annotated/ photo1.j
 cd src-tauri && cargo clippy && cargo fmt
 ./build_android.sh --target aarch64  # release APK (also: make android); targets aarch64|armv7|x86_64|x86
 ./build_ios.sh --target sim          # iOS (sim | x86_64 | device)
+./setup_opencv_windows.ps1           # Windows: build static OpenCV into src-tauri/opencv-windows (PowerShell)
+./build_windows.ps1                  # Windows: portable x64 exe, no installer
 ./app_icons.sh                       # copy the icon into the Android/iOS projects (run after `cargo tauri icon`)
 ```
 
 Publishing a GitHub release runs `.github/workflows/macos-dmg.yml`, which builds the Apple silicon DMG against
-Homebrew's OpenCV, and `.github/workflows/android-apk.yml`, which builds the signed arm64 APK from the `ANDROID_*`
-repository secrets. Both attach their output to the release. Don't commit APKs or other build outputs.
+Homebrew's OpenCV, `.github/workflows/windows-exe.yml`, which builds the portable x64 exe, and
+`.github/workflows/android-apk.yml`, which builds the signed arm64 APK from the `ANDROID_*` repository secrets. All
+attach their output to the release. Don't commit APKs, EXEs or other build outputs.
 
 The `count` example is the quickest way to tune the detector on real photos. It prints the count per file and
 accepts `--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split` and
@@ -39,6 +42,12 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   `build_android.sh`.
 - **Desktop (macOS):** uses the host OpenCV through pkg-config (`opencv5`). `src-tauri/.cargo/config.toml` disables
   the `environment` probe on darwin targets, so the iOS framework variables don't leak into desktop builds.
+- **Windows:** one portable exe, everything linked statically. `setup_opencv_windows.ps1` builds OpenCV from
+  source (`BUILD_SHARED_LIBS=OFF`, `BUILD_WITH_STATIC_CRT=ON`, only the needed modules), since OpenCV's Windows
+  package is DLL-only. `build_windows.ps1` passes every `.lib` of that install as `OPENCV_LINK_LIBS`, sets
+  `OPENCV_MSVC_CRT=static` for the crate's C++ wrapper, and builds with `--target x86_64-pc-windows-msvc
+  --no-bundle`. `src-tauri/.cargo/config.toml` enables `crt-static` for that target. All three must agree on `/MT`,
+  or linking fails with runtime mismatches (LNK2038). The script checks the exe's imports with `dumpbin`.
 - **Android:** static libs from `src-tauri/opencv-android-sdk`, downloaded by `./setup_opencv_android.sh` (the
   "16kb-page-fix" package, required by Google Play). `build_android.sh` sets the `OPENCV_*` variables.
   `src-tauri/build.rs` adds link paths and only the third-party archives the SDK actually ships, plus the NDK system

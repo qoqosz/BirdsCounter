@@ -1,7 +1,7 @@
 # BirdsCounter
 
 Count the birds in a photo of a flock. BirdsCounter finds the sky, detects the birds against it, circles each one
-and tells you how many there are. It runs on macOS, Android and iOS, and each platform gets its own native look.
+and tells you how many there are. It runs on macOS, Windows, Android and iOS, and each platform gets its own native look.
 
 <p align="center"><img src="images/screenshots/macos.png" width="600" alt="BirdsCounter on macOS"></p>
 
@@ -19,6 +19,9 @@ Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCount
 - **Android:** `BirdsCounter_<version>_android_arm64.apk`, a signed release APK for 64-bit ARM phones.
 - **macOS (Apple silicon):** `BirdsCounter_<version>_macos_aarch64.dmg`. It uses OpenCV 5 from Homebrew
   (`brew install opencv`) and is not notarized, so open it with right-click → *Open* the first time.
+- **Windows (x64):** `BirdsCounter_<version>_windows_x64.exe`, a portable app in one file with OpenCV linked
+  statically. Nothing to install, just run it. It uses the WebView2 runtime that comes with Windows 11 and current
+  Windows 10. It is not signed, so SmartScreen may ask to confirm (*More info* → *Run anyway*).
 - **iOS:** build and install from source, see [Build iOS](#build-ios).
 
 ## How it works
@@ -125,6 +128,11 @@ cargo install tauri-cli --version "^2"
 - Generated Android project already present in `src-tauri/gen/android`
 - OpenCV Android SDK folder: `src-tauri/opencv-android-sdk`
 
+### Windows
+
+- Visual Studio 2022 or newer with the *Desktop development with C++* workload, CMake and LLVM (libclang)
+- Static OpenCV at `src-tauri/opencv-windows` (built with `./setup_opencv_windows.ps1`)
+
 ### iOS (macOS only)
 
 - Xcode 27 with the iOS SDK, and an Apple ID signed in under Xcode → Settings → Accounts
@@ -178,6 +186,27 @@ Shortcut:
 make android
 ```
 
+## Build Windows
+
+Run in PowerShell on Windows x64.
+
+1. Build OpenCV 5 from source as static libraries with the static C runtime (`/MT`), installed into
+   `src-tauri/opencv-windows`. OpenCV's own Windows package has only DLLs, so it can't be used. Takes about 10 minutes:
+
+```powershell
+./setup_opencv_windows.ps1
+```
+
+2. Build:
+
+```powershell
+./build_windows.ps1
+```
+
+Output: `src-tauri/target/x86_64-pc-windows-msvc/release/birdscounter.exe`. The frontend is embedded in the exe, and
+Rust is built with `crt-static` (`src-tauri/.cargo/config.toml`), so the exe needs no DLLs beyond Windows itself and
+WebView2. The script fails if `dumpbin` finds imports of the dynamic C runtime or OpenCV.
+
 ## Build iOS
 
 1. Download the OpenCV iOS framework:
@@ -220,15 +249,18 @@ copies the iOS icons into the Xcode asset catalog.
 
 ## Releases
 
-Publishing a GitHub release runs two workflows, which build the artifacts and attach them to the release. Both
+Publishing a GitHub release runs three workflows, which build the artifacts and attach them to the release. All
 can also be run by hand for an existing tag.
 
 - [`macos-dmg.yml`](.github/workflows/macos-dmg.yml) builds the Apple silicon DMG.
+- [`windows-exe.yml`](.github/workflows/windows-exe.yml) builds the portable x64 exe with `./setup_opencv_windows.ps1`
+  (cached) and `./build_windows.ps1`. Run by hand without a tag, it builds the selected branch and uploads the exe as
+  a workflow artifact instead (Actions → the run → *Artifacts*).
 - [`android-apk.yml`](.github/workflows/android-apk.yml) builds and signs the arm64 APK with `./build_android.sh`. It
   needs the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore, base64-encoded), `ANDROID_KEY_ALIAS`,
   `ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD`.
 
-Build outputs such as APKs are not committed.
+Build outputs such as APKs and EXEs are not committed.
 
 ## Troubleshooting
 

@@ -43,11 +43,16 @@ async fn open_camera() -> Result<String, String> {
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+
+        // CREATE_NO_WINDOW: the release exe has no console, so cmd would flash one up.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
         // On Windows, open the Camera app
         Command::new("cmd")
             .args(&["/C", "start", "microsoft.windows.camera:"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("Failed to open camera: {}", e))?;
 
