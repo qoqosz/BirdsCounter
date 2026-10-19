@@ -36,6 +36,9 @@ $CMakeArgs = @(
     "-B", $BuildDir,
     "-A", "x64",
     "-DCMAKE_INSTALL_PREFIX=$InstallDir",
+    # OpenCV enables ASM whenever CMake finds an assembler. On GitHub's runner that is MinGW's cc.exe, which
+    # renames every static library to lib*.a and breaks the IPP lookup. x64 doesn't need it (libjpeg-turbo uses NASM).
+    "-DCMAKE_ASM_COMPILER:FILEPATH=CMAKE_ASM_COMPILER-NOTFOUND",
     "-DBUILD_SHARED_LIBS=OFF",
     "-DBUILD_WITH_STATIC_CRT=ON",
     "-DBUILD_LIST=core,flann,geometry,imgproc,imgcodecs",
@@ -91,5 +94,12 @@ cmake --install $BuildDir --config Release
 if ($LASTEXITCODE -ne 0) { throw "OpenCV install failed" }
 
 Remove-Item -Recurse -Force $WorkDir
+
+$Libs = Get-ChildItem -Path $InstallDir -Recurse -Filter *.lib
+if (-not ($Libs | Where-Object { $_.Name -like "opencv_core*.lib" })) {
+    throw "No opencv_core*.lib in $InstallDir; check the library names CMake used"
+}
+Write-Host "Static libraries:"
+$Libs | ForEach-Object { Write-Host "  $($_.Name)" }
 
 Write-Host "OpenCV $OpenCvVersion (static, /MT) installed in $InstallDir"

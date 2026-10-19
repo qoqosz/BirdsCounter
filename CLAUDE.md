@@ -44,7 +44,8 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   the `environment` probe on darwin targets, so the iOS framework variables don't leak into desktop builds.
 - **Windows:** one portable exe, everything linked statically. `setup_opencv_windows.ps1` builds OpenCV from
   source (`BUILD_SHARED_LIBS=OFF`, `BUILD_WITH_STATIC_CRT=ON`, only the needed modules), since OpenCV's Windows
-  package is DLL-only. `build_windows.ps1` passes every `.lib` of that install as `OPENCV_LINK_LIBS`, sets
+  package is DLL-only. It also disables CMake's ASM detection, since an assembler on `PATH` (MinGW on GitHub's
+  runner) turns every library into `lib*.a`. `build_windows.ps1` passes every `.lib` of that install as `OPENCV_LINK_LIBS`, sets
   `OPENCV_MSVC_CRT=static` for the crate's C++ wrapper, and builds with `--target x86_64-pc-windows-msvc
   --no-bundle`. `src-tauri/.cargo/config.toml` enables `crt-static` for that target. All three must agree on `/MT`,
   or linking fails with runtime mismatches (LNK2038). The script checks the exe's imports with `dumpbin`.
