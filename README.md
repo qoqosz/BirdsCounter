@@ -1,8 +1,14 @@
 # BirdsCounter
 
 Count the birds in a photo of a flock. BirdsCounter finds the sky, detects the birds against it, circles each one
-and tells you how many there are. It runs on macOS, Windows, Android and iOS, and each platform gets its own native look.
-There is also a [web version](https://qoqosz.github.io/BirdsCounter/) that counts in the browser.
+and tells you how many there are. It runs in your browser, and as an app on macOS, Windows, Android and iOS, where
+each platform gets its own native look.
+
+<p align="center">
+  <a href="https://qoqosz.github.io/BirdsCounter/"><img alt="Try it in your browser" width="316" src="https://img.shields.io/badge/%E2%96%B6%20%20Try%20it%20in%20your%20browser-2ea44f?style=for-the-badge"></a>
+  <a href="https://github.com/qoqosz/BirdsCounter/releases/latest"><img alt="Download the apps" width="243" src="https://img.shields.io/badge/Download%20the%20apps-0969da?style=for-the-badge"></a>
+</p>
+<p align="center"><sub>The web version needs no install, and your photos never leave your device: they are counted in the browser.</sub></p>
 
 <p align="center"><img src="images/screenshots/macos.png" width="600" alt="BirdsCounter on macOS"></p>
 
