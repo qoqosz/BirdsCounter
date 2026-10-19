@@ -2,6 +2,7 @@
 
 Count the birds in a photo of a flock. BirdsCounter finds the sky, detects the birds against it, circles each one
 and tells you how many there are. It runs on macOS, Windows, Android and iOS, and each platform gets its own native look.
+There is also a [web version](https://qoqosz.github.io/BirdsCounter/) that counts in the browser.
 
 <p align="center"><img src="images/screenshots/macos.png" width="600" alt="BirdsCounter on macOS"></p>
 
@@ -23,6 +24,8 @@ Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCount
   statically. Nothing to install, just run it. It uses the WebView2 runtime that comes with Windows 11 and current
   Windows 10. It is not signed, so SmartScreen may ask to confirm (*More info* → *Run anyway*).
 - **iOS:** build and install from source, see [Build iOS](#build-ios).
+- **Web:** [qoqosz.github.io/BirdsCounter](https://qoqosz.github.io/BirdsCounter/), nothing to install. The photos
+  are counted in the browser and never leave the device. See [Web version](#web-version).
 
 ## How it works
 
@@ -117,10 +120,12 @@ Install Tauri CLI (if not installed):
 cargo install tauri-cli --version "^2"
 ```
 
-### Desktop
+### Desktop (macOS, Linux)
 
 - OpenCV 5 available on host system (used by `opencv` crate probing), e.g. `brew install opencv`
 - Platform dependencies required by Tauri (WebView/runtime toolchain)
+
+Windows links OpenCV statically instead, see [Windows](#windows).
 
 ### Android
 
@@ -207,6 +212,37 @@ Output: `src-tauri/target/x86_64-pc-windows-msvc/release/birdscounter.exe`. The 
 Rust is built with `crt-static` (`src-tauri/.cargo/config.toml`), so the exe needs no DLLs beyond Windows itself and
 WebView2. The script fails if `dumpbin` finds imports of the dynamic C runtime or OpenCV.
 
+## Web version
+
+The same frontend runs in a browser, with the detector ported to JavaScript on
+[OpenCV.js](https://docs.opencv.org/5.x/d5/d10/tutorial_js_root.html) 5.0:
+
+- `src/detector.js` is a port of `blob_filter.rs`, step for step, and gives the same counts.
+- `src/detector-worker.js` runs it in a Web Worker, so the page stays responsive. It decodes each photo once.
+- `src/web.js` stands in for Tauri when the page is not inside the app. It answers the commands `main.js` calls:
+  counting, and the history in IndexedDB. In the app it does nothing.
+
+Differences from the apps:
+
+- The history keeps a copy of each photo in the browser's storage, since a web page can't link to files.
+  Clearing the site's data clears the history.
+- The first count after the page loads waits for OpenCV.js (13 MB, cached by the browser afterwards).
+- Photos over 16.7 MP are counted scaled down to that size where the browser limits canvases (Safari and iOS).
+
+Build into `target/web` and serve it locally:
+
+```bash
+./build_web.sh --serve
+```
+
+Then open http://localhost:8000. To try it on a phone in the same network, serve `target/web` on all interfaces
+(`python3 -m http.server 8000 --directory target/web`) and open the computer's address. The tests run the web
+detector in Node on the synthetic scenes of the Rust tests:
+
+```bash
+node --test tests/web/
+```
+
 ## Build iOS
 
 1. Download the OpenCV iOS framework:
@@ -249,8 +285,8 @@ copies the iOS icons into the Xcode asset catalog.
 
 ## Releases
 
-Publishing a GitHub release runs three workflows, which build the artifacts and attach them to the release. All
-can also be run by hand for an existing tag.
+Publishing a GitHub release runs four workflows. Three build the apps and attach them to the release, and they can
+also be run by hand for an existing tag. The fourth publishes the web version.
 
 - [`macos-dmg.yml`](.github/workflows/macos-dmg.yml) builds the Apple silicon DMG.
 - [`windows-exe.yml`](.github/workflows/windows-exe.yml) builds the portable x64 exe with `./setup_opencv_windows.ps1`
@@ -259,6 +295,9 @@ can also be run by hand for an existing tag.
 - [`android-apk.yml`](.github/workflows/android-apk.yml) builds and signs the arm64 APK with `./build_android.sh`. It
   needs the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore, base64-encoded), `ANDROID_KEY_ALIAS`,
   `ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD`.
+- [`web-pages.yml`](.github/workflows/web-pages.yml) builds the web version with `./build_web.sh`, runs its tests
+  and deploys it to GitHub Pages. It needs *Settings → Pages → Source: GitHub Actions*. Run by hand, it deploys the
+  selected branch, if the `github-pages` environment allows it (by default only the default branch).
 
 Build outputs such as APKs and EXEs are not committed.
 
@@ -271,6 +310,11 @@ Build outputs such as APKs and EXEs are not committed.
   - Ensure host OpenCV dev libraries are installed and discoverable by `opencv` crate.
   - The project targets OpenCV 5 (`pkg-config --modversion opencv5`). OpenCV 4.x is not supported:
     `contourArea`/`moments` live in the `geometry` module, which only exists in OpenCV 5.
+
+- Windows link errors such as `LNK2038` (runtime library mismatch):
+  - OpenCV, the crate's C++ wrapper and Rust must all use the static CRT (`/MT`). Re-run
+    `./setup_opencv_windows.ps1` to rebuild OpenCV, then build with `./build_windows.ps1`, which sets
+    `OPENCV_MSVC_CRT=static` and checks the exe's imports.
 
 - iOS OpenCV link errors:
   - Verify `src-tauri/opencv2.framework` exists and is valid for selected architecture; re-run `./setup_opencv_ios.sh`.

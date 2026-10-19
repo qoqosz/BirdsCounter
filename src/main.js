@@ -1,6 +1,8 @@
 const { invoke } = window.__TAURI__.core;
 const { open, ask, message } = window.__TAURI__.dialog;
 const { readFile } = window.__TAURI__.fs;
+// In a browser, web.js stands in for Tauri (counting in a worker, history in IndexedDB).
+const isWeb = Boolean(window.__BIRDS_WEB__);
 
 const MIN_CROP_SIZE = 40;
 const DEFAULT_MASK_BRUSH_SIZE = 24;
@@ -153,6 +155,8 @@ let tapStartY = 0;
 let isAndroid = false;
 let isMac = false;
 let isIOS = false;
+// A desktop browser: the shared default look, with no camera button.
+let isDesktopWeb = false;
 let countingAnimationTimer = null;
 let countingDotCount = 1;
 
@@ -185,7 +189,7 @@ function t(key, params = {}) {
 
 async function loadTranslations(lang) {
   try {
-    const res = await fetch(`/i18n/${lang}.json`);
+    const res = await fetch(`i18n/${lang}.json`);
     if (!res.ok) throw new Error(`Missing translation file for ${lang}`);
     return await res.json();
   } catch (e) {
@@ -204,7 +208,8 @@ function applyTranslations() {
 
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key =
-      (isMac && el.dataset.i18nMac) ||
+      (isDesktopWeb && el.dataset.i18nWeb) ||
+      ((isMac || isDesktopWeb) && el.dataset.i18nMac) ||
       (isAndroid && el.dataset.i18nAndroid) ||
       (isIOS && el.dataset.i18nIos) ||
       el.dataset.i18n;
@@ -282,6 +287,10 @@ function base64ToBytes(base64) {
 
 // Desktop: Tauri reports dropped files with their paths, so the history can link to them.
 function setupDragAndDrop() {
+  if (isWeb) {
+    setupWebDragAndDrop();
+    return;
+  }
   const webview = window.__TAURI__.webview?.getCurrentWebview?.();
   if (!webview) return;
   webview.onDragDropEvent(async (event) => {
@@ -302,7 +311,40 @@ function setupDragAndDrop() {
   });
 }
 
-// Fallback for an Android build without the native bridge: a plain file input.
+// Browser: dropped files come without a path; web.js keeps a copy for the history.
+function setupWebDragAndDrop() {
+  let depth = 0;
+  const accepting = () => !isCropping && !isMasking && !isPreviewVisible;
+  window.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    depth++;
+    dragDropArea.classList.toggle("drag-over", accepting());
+  });
+  window.addEventListener("dragleave", () => {
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) dragDropArea.classList.remove("drag-over");
+  });
+  window.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = accepting() ? "copy" : "none";
+  });
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    depth = 0;
+    dragDropArea.classList.remove("drag-over");
+    if (!accepting()) return;
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (!files.length) return;
+    const file = files.find((f) => f.type.startsWith("image/") || guessMimeFromPath(f.name));
+    if (!file) {
+      alert(t("alert_drop_image"));
+      return;
+    }
+    handleFileObject(file);
+  });
+}
+
+// Fallback for an Android build without the native bridge, and the browser: a file input.
 function setupFileInputs() {
   cameraInput.addEventListener("change", (e) => {
     if (e.target.files.length > 0) {
@@ -314,7 +356,21 @@ function setupFileInputs() {
 
 async function handleFileObject(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  await openImage(bytes, file.type || null, { source: null, name: file.name, owned: false });
+  const mime = file.type || guessMimeFromPath(file.name);
+  const source = isWeb
+    ? await invoke("web_keep_photo", { bytes, name: file.name, mime })
+    : null;
+  await openImage(bytes, mime, { source, name: file.name, owned: false });
+}
+
+// Browser: the camera (phones) or the file chooser, through the same file input.
+function pickWebFile(camera) {
+  if (camera) {
+    cameraInput.setAttribute("capture", "environment");
+  } else {
+    cameraInput.removeAttribute("capture");
+  }
+  cameraInput.click();
 }
 
 async function openFilePath(path) {
@@ -1666,6 +1722,10 @@ function clearMaskHover() {
 // Every photo, from any of these, opens in the editor and is counted at once.
 
 async function takePhoto() {
+  if (isWeb) {
+    pickWebFile(true);
+    return;
+  }
   if (isAndroid) {
     // The photo comes back through window.onNativeImageReady
     if (window.Android && typeof window.Android.openCamera === "function") {
@@ -1691,6 +1751,10 @@ async function takePhoto() {
 }
 
 async function choosePhoto() {
+  if (isWeb) {
+    pickWebFile(false);
+    return;
+  }
   if (isAndroid && window.Android && typeof window.Android.pickImage === "function") {
     window.Android.pickImage();
     return;
@@ -1891,9 +1955,9 @@ async function processImage() {
     const crop = cropRect ? { ...cropRect } : null;
     const maskPayload = await buildMaskPayload();
     const result = await invoke("process_image", {
-      payload: Array.from(bytes),
+      payload: ipcBytes(bytes),
       params,
-      maskPayload: maskPayload ? Array.from(maskPayload) : null,
+      maskPayload: maskPayload ? ipcBytes(maskPayload) : null,
       crop,
     });
     if (session !== editSession) return;
@@ -1969,8 +2033,8 @@ function queueHistorySave() {
           params: result.params,
           crop: result.crop,
         },
-        thumb: Array.from(thumb),
-        mask: mask ? Array.from(mask) : null,
+        thumb: ipcBytes(thumb),
+        mask: mask ? ipcBytes(mask) : null,
         updateMask,
       });
       historyIds.set(session, saved.id);
@@ -2104,6 +2168,9 @@ async function setHistoryThumb(img, entry) {
 }
 
 async function loadSourceBytes(source) {
+  if (isWeb) {
+    return new Uint8Array(await invoke("read_image", { source }));
+  }
   if (source.startsWith("photos:")) {
     return new Uint8Array(await invoke("native_load_photo", { source }));
   }
@@ -2178,6 +2245,11 @@ async function clearHistory() {
 }
 
 // ===== Helpers =====
+
+// Tauri takes bytes as a plain array; web.js takes the Uint8Array as it is.
+function ipcBytes(bytes) {
+  return isWeb ? bytes : Array.from(bytes);
+}
 
 function guessMimeFromPath(path) {
   if (!path) return null;
@@ -2399,8 +2471,13 @@ window.addEventListener("DOMContentLoaded", () => {
   isIOS =
     /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
     (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  isMac = !isIOS && /Macintosh|Mac OS X/i.test(navigator.userAgent);
+  // The macOS look needs the app's window (traffic lights, WebKit system colors).
+  isMac = !isWeb && !isIOS && /Macintosh|Mac OS X/i.test(navigator.userAgent);
+  isDesktopWeb = isWeb && !isAndroid && !isIOS;
 
+  if (isWeb) {
+    document.body.classList.add("is-web");
+  }
   if (isAndroid) {
     document.body.classList.add("is-android");
     setupAndroid();
@@ -2411,7 +2488,9 @@ window.addEventListener("DOMContentLoaded", () => {
     setupMac();
   }
   setupScrollState();
-  setupContextMenu();
+  if (!isWeb) {
+    setupContextMenu();
+  }
   setupFileInputs();
 
   if (dragDropArea && !isAndroid && !isIOS) {
@@ -2423,6 +2502,8 @@ window.addEventListener("DOMContentLoaded", () => {
 
   if (cameraBtn) {
     cameraBtn.addEventListener("click", takePhoto);
+    // A desktop browser would only open the file chooser again.
+    if (isDesktopWeb) cameraBtn.hidden = true;
   }
 
   if (galleryBtn) {

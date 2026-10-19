@@ -2,6 +2,7 @@
   "app_title": "Licznik Ptaków",
   "drag_text": "Przeciągnij i upuść obraz tutaj",
   "drag_subtext": "lub użyj przycisków poniżej",
+  "drag_subtext_web": "lub otwórz go przyciskiem poniżej",
   "start_title": "Policz ptaki na zdjęciu",
   "start_subtext": "Zrób zdjęcie stada lub wybierz je z galerii",
   "use_camera": "Użyj aparatu",

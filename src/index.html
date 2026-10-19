@@ -7,7 +7,9 @@
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title data-i18n="app_title">Birds Counter</title>
-    <script type="module" src="/main.js" defer></script>
+    <!-- Stands in for Tauri in a browser (see web.js); does nothing in the app -->
+    <script src="web.js"></script>
+    <script type="module" src="main.js" defer></script>
 </head>
 
 <body>
@@ -48,7 +50,7 @@
             </div>
             <p class="drag-text" data-i18n="drag_text" data-i18n-android="start_title" data-i18n-ios="start_title">Drag and drop an image here</p>
             <p class="drag-subtext" data-i18n="drag_subtext" data-i18n-android="start_subtext"
-                data-i18n-ios="start_subtext">or use the buttons below
+                data-i18n-ios="start_subtext" data-i18n-web="drag_subtext_web">or use the buttons below
             </p>
             <input type="file" id="cameraInput" accept="image/*" capture="environment"
                 style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;" />

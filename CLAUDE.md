@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Overview
 
 BirdsCounter is a Tauri 2 app (macOS and Windows desktop, Android, iOS) that counts birds in a photo. A Rust backend
-does the detection with OpenCV 5. The frontend is static HTML/CSS/JS in `src/`, with no bundler and no npm.
+does the detection with OpenCV 5. The frontend is static HTML/CSS/JS in `src/`, with no bundler and no npm. The same
+frontend is also a web page (GitHub Pages) that counts in the browser with OpenCV.js.
 
 ## Commands
 
@@ -22,12 +23,15 @@ cd src-tauri && cargo clippy && cargo fmt
 ./setup_opencv_windows.ps1           # Windows: build static OpenCV into src-tauri/opencv-windows (PowerShell)
 ./build_windows.ps1                  # Windows: portable x64 exe, no installer
 ./app_icons.sh                       # copy the icon into the Android/iOS projects (run after `cargo tauri icon`)
+./build_web.sh --serve               # web version into target/web (downloads OpenCV.js), served at localhost:8000
+node --test tests/web/               # web detector tests (after ./build_web.sh, which fetches OpenCV.js)
 ```
 
 Publishing a GitHub release runs `.github/workflows/macos-dmg.yml`, which builds the Apple silicon DMG against
 Homebrew's OpenCV, `.github/workflows/windows-exe.yml`, which builds the portable x64 exe, and
 `.github/workflows/android-apk.yml`, which builds the signed arm64 APK from the `ANDROID_*` repository secrets. All
-attach their output to the release. Don't commit APKs, EXEs or other build outputs.
+attach their output to the release. `.github/workflows/web-pages.yml` builds the web version, runs its tests and
+deploys it to GitHub Pages. Don't commit APKs, EXEs or other build outputs.
 
 The `count` example is the quickest way to tune the detector on real photos. It prints the count per file and
 accepts `--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split` and
@@ -123,6 +127,19 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 - i18n: `src/i18n/{en,pl}.json` with `data-i18n` and `data-i18n-attr` attributes. `data-i18n-mac`,
   `data-i18n-android` and `data-i18n-ios` give per-platform keys. Polish plural forms for the count are handled in `birdsSuffix`.
   Add new keys to both files.
+
+**Web version**
+
+- `index.html` loads `web.js` before `main.js`. Without `window.__TAURI__` it installs a stand-in with `core.invoke`
+  and sets `window.__BIRDS_WEB__` (`isWeb` in `main.js`). It handles `process_image`, the `history_*` commands and
+  `read_image` (IndexedDB, with a copy of each photo under a `web:` source) and `web_keep_photo`. `main.js` passes
+  bytes as `Uint8Array` there (`ipcBytes`). Desktop browsers get the default look, with no camera button.
+- `src/detector.js` ports `blob_filter.rs` to OpenCV.js 5.0. **Keep the two in sync**: constants, steps and their
+  order match, and `tests/web/detector.test.cjs` mirrors the Rust tests. `detector-worker.js` runs it in a worker
+  and decodes the photo with `createImageBitmap` (gray with OpenCV's fixed-point weights; scaled down over 16.7 MP
+  where canvases are limited). The painted mask is read by its alpha.
+- Paths must stay relative (the site lives under `/BirdsCounter/`). OpenCV.js comes from npm
+  (`@techstark/opencv-js`, checksum pinned in `build_web.sh`) and is not committed.
 
 **Android native bridge**
 

@@ -1,0 +1,53 @@
+# Publishes the web version on GitHub Pages: the frontend from src/ with OpenCV.js, which counts the birds
+# in the browser. Runs when a release is published, or by hand (the github-pages environment only accepts
+# the branches its protection rules allow, by default the default branch).
+# Needs Settings → Pages → Source set to "GitHub Actions".
+name: Web (GitHub Pages)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Downloads OpenCV.js (checksum pinned in the script) and assembles target/web.
+      - name: Build
+        run: ./build_web.sh
+
+      # The web detector on the synthetic scenes of the Rust tests.
+      - name: Test the detector
+        run: node --test tests/web/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

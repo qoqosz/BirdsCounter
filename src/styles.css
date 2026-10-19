@@ -288,6 +288,11 @@ h1 {
     transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
 }
 
+/* The camera button in a desktop browser */
+.action-button[hidden] {
+    display: none;
+}
+
 .btn-icon {
     flex: none;
     width: 18px;

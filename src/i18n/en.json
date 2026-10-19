@@ -2,6 +2,7 @@
   "app_title": "Birds Counter",
   "drag_text": "Drag and drop an image here",
   "drag_subtext": "or use the buttons below",
+  "drag_subtext_web": "or open one with the button below",
   "start_title": "Count birds in a photo",
   "start_subtext": "Take a photo of the flock or choose one from your gallery",
   "use_camera": "Use Camera",
