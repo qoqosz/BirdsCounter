@@ -47,7 +47,8 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   package is DLL-only. It also disables CMake's ASM detection, since an assembler on `PATH` (MinGW on GitHub's
   runner) turns every library into `lib*.a`. `build_windows.ps1` passes every `.lib` of that install as `OPENCV_LINK_LIBS`, sets
   `OPENCV_MSVC_CRT=static` for the crate's C++ wrapper, and builds with `--target x86_64-pc-windows-msvc
-  --no-bundle`. `src-tauri/.cargo/config.toml` enables `crt-static` for that target. All three must agree on `/MT`,
+  --no-bundle`. `src-tauri/.cargo/config.toml` enables `crt-static` for that target and links `libucrt.lib` in place of
+  `ucrt.lib`, because `WebView2LoaderStatic.lib` would otherwise switch the exe to the DLL Universal CRT. All three must agree on `/MT`,
   or linking fails with runtime mismatches (LNK2038). The script checks the exe's imports with `dumpbin`.
 - **Android:** static libs from `src-tauri/opencv-android-sdk`, downloaded by `./setup_opencv_android.sh` (the
   "16kb-page-fix" package, required by Google Play). `build_android.sh` sets the `OPENCV_*` variables.

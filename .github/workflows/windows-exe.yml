@@ -43,9 +43,10 @@ jobs:
           }
 
       # Static OpenCV 5 built from source takes a while, so it is cached until the setup script changes.
-      - name: Cache OpenCV
+      # Saved right after the build, so a later failing step doesn't throw it away.
+      - name: Restore OpenCV
         id: opencv-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: src-tauri/opencv-windows
           key: opencv-windows-${{ hashFiles('setup_opencv_windows.ps1') }}
@@ -53,6 +54,13 @@ jobs:
       - name: Build OpenCV
         if: steps.opencv-cache.outputs.cache-hit != 'true'
         run: ./setup_opencv_windows.ps1
+
+      - name: Save OpenCV
+        if: steps.opencv-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: src-tauri/opencv-windows
+          key: ${{ steps.opencv-cache.outputs.cache-primary-key }}
 
       # Installs the toolchain and components pinned in rust-toolchain.toml.
       - name: Set up Rust

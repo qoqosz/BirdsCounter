@@ -26,4 +26,11 @@ OPENCV_PKGCONFIG_NAME = "opencv5"
 [target.x86_64-pc-windows-msvc]
 # Static C runtime (/MT), so the portable exe needs no Visual C++ Redistributable.
 # OpenCV from setup_opencv_windows.ps1 is built with the same runtime.
-rustflags = ["-C", "target-feature=+crt-static"]
+# WebView2LoaderStatic.lib (webview2-com-sys) uses the "hybrid CRT": its directives swap the static
+# Universal CRT (libucrt.lib) for the DLL one (ucrt.lib, api-ms-win-crt-*.dll). Link libucrt.lib explicitly
+# and drop ucrt.lib, so the whole C runtime stays static.
+rustflags = [
+    "-C", "target-feature=+crt-static",
+    "-C", "link-arg=/NODEFAULTLIB:ucrt.lib",
+    "-C", "link-arg=libucrt.lib",
+]
