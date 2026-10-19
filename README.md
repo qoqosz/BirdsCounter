@@ -240,7 +240,7 @@ Then open http://localhost:8000. To try it on a phone in the same network, serve
 detector in Node on the synthetic scenes of the Rust tests:
 
 ```bash
-node --test tests/web/
+node --test tests/web/*.test.cjs
 ```
 
 ## Build iOS

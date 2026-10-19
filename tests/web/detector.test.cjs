@@ -1,6 +1,6 @@
 // Tests of the web detector (src/detector.js) on synthetic cloudy-sky scenes, ported from
 // the tests in src-tauri/src/blob_filter.rs. Run `./build_web.sh` once (it downloads
-// OpenCV.js), then `node --test tests/web/`.
+// OpenCV.js), then `node --test tests/web/*.test.cjs`.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");

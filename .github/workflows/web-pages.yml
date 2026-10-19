@@ -34,7 +34,7 @@ jobs:
 
       # The web detector on the synthetic scenes of the Rust tests.
       - name: Test the detector
-        run: node --test tests/web/
+        run: node --test tests/web/*.test.cjs
 
       - uses: actions/configure-pages@v5
 

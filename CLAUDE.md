@@ -24,7 +24,7 @@ cd src-tauri && cargo clippy && cargo fmt
 ./build_windows.ps1                  # Windows: portable x64 exe, no installer
 ./app_icons.sh                       # copy the icon into the Android/iOS projects (run after `cargo tauri icon`)
 ./build_web.sh --serve               # web version into target/web (downloads OpenCV.js), served at localhost:8000
-node --test tests/web/               # web detector tests (after ./build_web.sh, which fetches OpenCV.js)
+node --test tests/web/*.test.cjs     # web detector tests (after ./build_web.sh, which fetches OpenCV.js)
 ```
 
 Publishing a GitHub release runs `.github/workflows/macos-dmg.yml`, which builds the Apple silicon DMG against
