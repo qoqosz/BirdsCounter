@@ -1,6 +1,6 @@
 # Publishes the web version on GitHub Pages: the frontend from src/ with OpenCV.js, which counts the birds
-# in the browser. Runs when a release is published, or by hand (the github-pages environment only accepts
-# the branches its protection rules allow, by default the default branch).
+# in the browser. Runs when a release is published, or by hand. The github-pages environment accepts
+# deployments from master and from v* tags (Settings → Environments → github-pages).
 # Needs Settings → Pages → Source set to "GitHub Actions".
 name: Web (GitHub Pages)
 
