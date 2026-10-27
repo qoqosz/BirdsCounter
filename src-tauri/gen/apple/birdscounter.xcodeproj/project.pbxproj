@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B1A2C3D4E5F60718293A4B01 /* ShareViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60718293A4B02 /* ShareViewController.m */; };
+		B1A2C3D4E5F60718293A4B03 /* birdscounter_Share.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B1A2C3D4E5F60718293A4B04 /* birdscounter_Share.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		22AEC1B6BD4E452087670E57 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 24FE4232895663367C323327 /* Metal.framework */; };
 		2FABD955371D900E82BC8089 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 59A9B24D4DE9C71902698570 /* UIKit.framework */; };
 		51AD8070584F5E023B7AC8DA /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 89A9C937E5732C565F92DB96 /* libapp.a */; };
@@ -23,6 +25,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B1A2C3D4E5F60718293A4B02 /* ShareViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ShareViewController.m; sourceTree = "<group>"; };
+		B1A2C3D4E5F60718293A4B04 /* birdscounter_Share.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = birdscounter_Share.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1A2C3D4E5F60718293A4B05 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B1A2C3D4E5F60718293A4B06 /* BirdsCounterShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BirdsCounterShare.entitlements; sourceTree = "<group>"; };
 		04F3B3137C86A73386967D1B /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		14A1F8A34D5A080118BDCF5C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		165CC8BB02242EDB48703DB1 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
@@ -65,6 +71,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		B1A2C3D4E5F60718293A4B07 /* BirdsCounterShare */ = {
+			isa = PBXGroup;
+			children = (
+				B1A2C3D4E5F60718293A4B06 /* BirdsCounterShare.entitlements */,
+				B1A2C3D4E5F60718293A4B05 /* Info.plist */,
+				B1A2C3D4E5F60718293A4B02 /* ShareViewController.m */,
+			);
+			path = BirdsCounterShare;
+			sourceTree = "<group>";
+		};
 		2F20DCBE023E5A69D8CBAAAA /* bindings */ = {
 			isa = PBXGroup;
 			children = (
@@ -138,6 +154,7 @@
 			isa = PBXGroup;
 			children = (
 				36DB9F464067598694CF7ADC /* birdscounter.app */,
+				B1A2C3D4E5F60718293A4B04 /* birdscounter_Share.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -149,6 +166,7 @@
 				CBD62B1B9BD9D524F91A1F14 /* Assets.xcassets */,
 				E9860A2263FC4BDD687CA3C4 /* LaunchScreen.storyboard */,
 				C060E4653DBF10C5616D29B7 /* birdscounter_iOS */,
+				B1A2C3D4E5F60718293A4B07 /* BirdsCounterShare */,
 				8DBD261295C7B40F6CCBD8FD /* Externals */,
 				BAB06857885BBD702922A83C /* Sources */,
 				6E56056D40B2D6C6BC379D7B /* src */,
@@ -159,7 +177,46 @@
 		};
 /* End PBXGroup section */
 
+/* Begin PBXContainerItemProxy section */
+		B1A2C3D4E5F60718293A4B0D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 09F31EDFEDDB5ABF8A5557E4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B1A2C3D4E5F60718293A4B0A;
+			remoteInfo = birdscounter_Share;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B1A2C3D4E5F60718293A4B08 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B1A2C3D4E5F60718293A4B03 /* birdscounter_Share.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXNativeTarget section */
+		B1A2C3D4E5F60718293A4B0A /* birdscounter_Share */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B1A2C3D4E5F60718293A4B0B /* Build configuration list for PBXNativeTarget "birdscounter_Share" */;
+			buildPhases = (
+				B1A2C3D4E5F60718293A4B0C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = birdscounter_Share;
+			productName = birdscounter_Share;
+			productReference = B1A2C3D4E5F60718293A4B04 /* birdscounter_Share.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		EE0E6CB15E0BC8770527FA09 /* birdscounter_iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BB95FB8175FBEE5A69C0999B /* Build configuration list for PBXNativeTarget "birdscounter_iOS" */;
@@ -168,10 +225,12 @@
 				713F296EB9752B487BEBE967 /* Sources */,
 				9B9703163EDD2837BD0780DD /* Resources */,
 				AB82355FE9FDDC3E7A80C987 /* Frameworks */,
+				B1A2C3D4E5F60718293A4B08 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B1A2C3D4E5F60718293A4B09 /* PBXTargetDependency */,
 			);
 			name = birdscounter_iOS;
 			packageProductDependencies = (
@@ -181,6 +240,14 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		B1A2C3D4E5F60718293A4B09 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B1A2C3D4E5F60718293A4B0A /* birdscounter_Share */;
+			targetProxy = B1A2C3D4E5F60718293A4B0D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		09F31EDFEDDB5ABF8A5557E4 /* Project object */ = {
@@ -203,6 +270,7 @@
 			projectRoot = "";
 			targets = (
 				EE0E6CB15E0BC8770527FA09 /* birdscounter_iOS */,
+				B1A2C3D4E5F60718293A4B0A /* birdscounter_Share */,
 			);
 		};
 /* End PBXProject section */
@@ -245,6 +313,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B1A2C3D4E5F60718293A4B0C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1A2C3D4E5F60718293A4B01 /* ShareViewController.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		713F296EB9752B487BEBE967 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -257,6 +333,46 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		B1A2C3D4E5F60718293A4B0E /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BirdsCounterShare/BirdsCounterShare.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "4G34J2WJPQ";
+				INFOPLIST_FILE = BirdsCounterShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.birdscounter.app.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
+		B1A2C3D4E5F60718293A4B0F /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = BirdsCounterShare/BirdsCounterShare.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "4G34J2WJPQ";
+				INFOPLIST_FILE = BirdsCounterShare/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.birdscounter.app.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = release;
+		};
 		1591BCAE768917144CB798C0 /* release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -479,6 +595,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B1A2C3D4E5F60718293A4B0B /* Build configuration list for PBXNativeTarget "birdscounter_Share" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B1A2C3D4E5F60718293A4B0E /* debug */,
+				B1A2C3D4E5F60718293A4B0F /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
 		BB95FB8175FBEE5A69C0999B /* Build configuration list for PBXNativeTarget "birdscounter_iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

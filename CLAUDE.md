@@ -79,7 +79,11 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
     in the app data dir. Entries link to the photo through a `source` string (`file:`, `appdoc:`, `content://`
     or `photos:`, see the module docs) instead of copying it. Photos the app took (`owned`, named
     `BirdsCounter_*`) are deleted with their entry.
-  - `native.rs`: the iOS camera, photo library picker and home screen quick actions. It calls the Objective-C class
+  - `native.rs`: the iOS camera, photo library picker, photos opened from other apps (document type
+    `public.image` in `Info.plist`, and the Share extension `gen/apple/BirdsCounterShare`, which leaves the image in the
+    App Group `group.com.birdscounter.app` and opens `birdscounter://shared`; `BCNativeBridge` also imports it whenever
+    the app becomes active, reports it as request 0, and Rust emits `shared-photo`) and home screen quick actions.
+    The extension target is hand-added to the `.pbxproj` (don't regenerate it with xcodegen). It calls the Objective-C class
     `BCNativeBridge` (`gen/apple/Sources/birdscounter/BCNativeBridge.m`, hand-maintained, listed in the
     `.pbxproj`) by name at runtime. `native::install` must run between `build()` and `run()` in `lib.rs`, so it
     can hook Tao's `AppDelegate`/`TaoSceneDelegate` before a quick action launches the app. On other platforms
@@ -150,6 +154,8 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   - `takePendingResult()`: the result waits in Kotlin, and `window.onNativeImageReady()` tells the page to take
     it. The page also takes it on load, so a photo taken before the page loaded is not lost.
   - `readImage(source)`, used by the history.
+  - Sharing a photo to the app (`ACTION_SEND`, `image/*`) copies it to `BirdsCounter_*.jpg` and delivers it like a
+    camera photo.
   - `setQuickActions(json)`: dynamic shortcuts that start `ACTION_TAKE_PHOTO` or `ACTION_CHOOSE_PHOTO`.
 - Camera photos are kept in `getExternalFilesDir(Pictures)` as `BirdsCounter_*.jpg`.
 - `main.js` also calls these optional bridge methods, each guarded by `typeof` checks:

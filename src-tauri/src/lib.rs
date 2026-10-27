@@ -179,6 +179,7 @@ pub fn run() {
             history::history_clear,
             native::native_take_photo,
             native::native_pick_photo,
+            native::native_take_shared_photo,
             native::native_load_photo,
             native::take_staged_image,
             native::take_quick_action,

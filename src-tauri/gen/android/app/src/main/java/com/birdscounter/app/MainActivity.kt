@@ -124,7 +124,44 @@ class MainActivity : TauriActivity() {
         when (intent?.action) {
             ACTION_TAKE_PHOTO -> openCamera()
             ACTION_CHOOSE_PHOTO -> openPicker()
+            Intent.ACTION_SEND -> handleSharedPhoto(intent)
         }
+    }
+
+    // A photo shared from another app. The grant on its Uri ends with this task, so the photo
+    // is copied into the app's pictures folder, where the history can open it again.
+    private fun handleSharedPhoto(intent: Intent) {
+        val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        }
+        if (uri == null) {
+            deliverResult(JSONObject().put("error", "photo-unreadable"))
+            return
+        }
+        // Handle each Intent once, not again when the activity is recreated.
+        intent.action = null
+        Thread {
+            try {
+                val file = createImageFile()
+                val copied = contentResolver.openInputStream(uri)?.use { input ->
+                    file.outputStream().use { input.copyTo(it) }
+                    true
+                } ?: false
+                if (!copied || file.length() == 0L) {
+                    file.delete()
+                    deliverResult(JSONObject().put("error", "photo-unreadable"))
+                    return@Thread
+                }
+                runOnUiThread {
+                    deliverImage(Uri.fromFile(file), "file:${file.absolutePath}", file.name, owned = true)
+                }
+            } catch (e: Exception) {
+                deliverResult(JSONObject().put("error", "photo-unreadable"))
+            }
+        }.start()
     }
 
     private fun hasCameraPermission(): Boolean {

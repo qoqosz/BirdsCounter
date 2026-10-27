@@ -1778,6 +1778,18 @@ async function openNativePhoto(command) {
   }
 }
 
+// iOS: a photo another app shared or opened with BirdsCounter.
+async function openSharedPhoto() {
+  try {
+    const picked = await invoke("native_take_shared_photo");
+    if (!picked) return;
+    const bytes = new Uint8Array(await invoke("take_staged_image"));
+    await openImage(bytes, "image/jpeg", picked);
+  } catch (e) {
+    showNativeError(e);
+  }
+}
+
 // Android: the camera or photo picker result waits in MainActivity until taken here.
 function takeAndroidResult() {
   const bridge = window.Android;
@@ -2382,6 +2394,8 @@ function setupIOS() {
   const { listen } = window.__TAURI__.event;
   listen("quick-action", runQuickAction);
   runQuickAction();
+  listen("shared-photo", openSharedPhoto);
+  openSharedPhoto();
 }
 
 // Toolbar / top app bar change their background once content scrolls under them

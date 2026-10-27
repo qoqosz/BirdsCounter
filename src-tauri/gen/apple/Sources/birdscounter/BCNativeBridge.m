@@ -1,5 +1,5 @@
-// Native iOS features for src-tauri/src/native.rs: the camera, the photo library picker and
-// home screen quick actions. Rust looks this class up at runtime and passes two C callbacks
+// Native iOS features for src-tauri/src/native.rs: the camera, the photo library picker,
+// photos shared from other apps and home screen quick actions. Rust looks this class up at runtime and passes two C callbacks
 // to +installWithQuickActionHandler:imageHandler: before the app launches.
 //
 // Image results are JPEG with the orientation applied. Errors are short codes the frontend
@@ -17,7 +17,11 @@ typedef void (*BCImageHandler)(uint64_t request, const uint8_t *bytes, uint64_t 
 
 static BCQuickActionHandler gQuickActionHandler;
 static BCImageHandler gImageHandler;
+// Shared with the Share extension (see the entitlements of both targets).
+static NSString *const BCAppGroup = @"group.com.birdscounter.app";
 static IMP gOriginalWillConnect;
+static IMP gOriginalSceneOpenURLs;
+static IMP gOriginalAppOpenURL;
 // Pickers hold their delegates weakly; these keep them alive while a picker is shown.
 static NSMutableSet *gActiveRequests;
 
@@ -89,13 +93,74 @@ static void BCScenePerformAction(id self, SEL _cmd, UIWindowScene *scene,
   if (completion) completion(YES);
 }
 
+// A photo another app shared with, or opened in, BirdsCounter. Reported as request 0, which
+// no pending request uses; Rust treats it as a shared photo.
+static void BCReportShared(NSData *data, NSString *name) {
+  UIImage *image = data ? [UIImage imageWithData:data] : nil;
+  if (image) BCReportImage(0, image, nil, name);
+}
+
+// Photos from the Share extension (BirdsCounterShare) wait as files in the App Group
+// container until the app is active. A file is consumed once.
+static void BCImportPendingShare(void) {
+  NSFileManager *files = NSFileManager.defaultManager;
+  NSURL *container = [files containerURLForSecurityApplicationGroupIdentifier:BCAppGroup];
+  NSURL *directory = [container URLByAppendingPathComponent:@"Shared" isDirectory:YES];
+  NSArray<NSURL *> *pending = [files contentsOfDirectoryAtURL:directory
+                                   includingPropertiesForKeys:nil
+                                                      options:NSDirectoryEnumerationSkipsHiddenFiles
+                                                        error:nil];
+  // Shares are named by time, so the last one is the newest.
+  NSURL *newest = [pending sortedArrayUsingComparator:^NSComparisonResult(NSURL *a, NSURL *b) {
+    return [a.lastPathComponent compare:b.lastPathComponent];
+  }].lastObject;
+  NSData *data = newest ? [NSData dataWithContentsOfURL:newest] : nil;
+  for (NSURL *url in pending) [files removeItemAtURL:url error:nil];
+  BCReportShared(data, newest.lastPathComponent);
+}
+
+static void BCHandleSharedURL(NSURL *url) {
+  if (!url) return;
+  // birdscounter://shared: the Share extension has left a photo for us.
+  if (!url.isFileURL) {
+    BCImportPendingShare();
+    return;
+  }
+  BOOL scoped = [url startAccessingSecurityScopedResource];
+  // The file may be gone once the scope ends, so read it before leaving.
+  NSData *data = [NSData dataWithContentsOfURL:url];
+  if (scoped) [url stopAccessingSecurityScopedResource];
+  BCReportShared(data, url.lastPathComponent);
+}
+
 // -[TaoSceneDelegate scene:willConnectToSession:options:]: a quick action that launches the
-// app on the scene lifecycle only arrives in the connection options.
+// app on the scene lifecycle only arrives in the connection options, and so do the files
+// that launched it.
 static void BCSceneWillConnect(id self, SEL _cmd, UIScene *scene, UISceneSession *session,
                                UISceneConnectionOptions *options) {
   ((void (*)(id, SEL, UIScene *, UISceneSession *, UISceneConnectionOptions *))
        gOriginalWillConnect)(self, _cmd, scene, session, options);
   if (options.shortcutItem) BCHandleShortcut(options.shortcutItem);
+  BCHandleSharedURL(options.URLContexts.anyObject.URL);
+}
+
+// -[TaoSceneDelegate scene:openURLContexts:]
+static void BCSceneOpenURLs(id self, SEL _cmd, UIScene *scene, NSSet<UIOpenURLContext *> *contexts) {
+  if (gOriginalSceneOpenURLs) {
+    ((void (*)(id, SEL, UIScene *, NSSet *))gOriginalSceneOpenURLs)(self, _cmd, scene, contexts);
+  }
+  BCHandleSharedURL(contexts.anyObject.URL);
+}
+
+// -[AppDelegate application:openURL:options:], without scenes
+static BOOL BCApplicationOpenURL(id self, SEL _cmd, UIApplication *application, NSURL *url,
+                                 NSDictionary *options) {
+  BOOL handled = gOriginalAppOpenURL
+                     ? ((BOOL (*)(id, SEL, UIApplication *, NSURL *, NSDictionary *))
+                            gOriginalAppOpenURL)(self, _cmd, application, url, options)
+                     : NO;
+  BCHandleSharedURL(url);
+  return handled;
 }
 
 @interface BCImageRequest
@@ -169,10 +234,20 @@ static void BCSceneWillConnect(id self, SEL _cmd, UIScene *scene, UISceneSession
   gQuickActionHandler = (BCQuickActionHandler)quickActionHandler;
   gImageHandler = (BCImageHandler)imageHandler;
   gActiveRequests = [NSMutableSet set];
+  [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification
+                                                  object:nil
+                                                   queue:NSOperationQueue.mainQueue
+                                              usingBlock:^(NSNotification *note) {
+                                                BCImportPendingShare();
+                                              }];
 
   // Tao declares both delegates at runtime; add the quick action callbacks to them.
   Class appDelegate = NSClassFromString(@"AppDelegate");
   if (appDelegate) {
+    Method openURL = class_getInstanceMethod(appDelegate, @selector(application:openURL:options:));
+    if (openURL && !gOriginalAppOpenURL) {
+      gOriginalAppOpenURL = method_setImplementation(openURL, (IMP)BCApplicationOpenURL);
+    }
     class_replaceMethod(appDelegate,
                         @selector(application:performActionForShortcutItem:completionHandler:),
                         (IMP)BCApplicationPerformAction, "v@:@@@?");
@@ -184,6 +259,10 @@ static void BCSceneWillConnect(id self, SEL _cmd, UIScene *scene, UISceneSession
                         (IMP)BCScenePerformAction, "v@:@@@?");
     Method willConnect =
         class_getInstanceMethod(sceneDelegate, @selector(scene:willConnectToSession:options:));
+    Method openURLs = class_getInstanceMethod(sceneDelegate, @selector(scene:openURLContexts:));
+    if (openURLs && !gOriginalSceneOpenURLs) {
+      gOriginalSceneOpenURLs = method_setImplementation(openURLs, (IMP)BCSceneOpenURLs);
+    }
     if (willConnect && !gOriginalWillConnect) {
       gOriginalWillConnect = method_setImplementation(willConnect, (IMP)BCSceneWillConnect);
     }

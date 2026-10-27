@@ -1,4 +1,4 @@
-//! Camera, photo library and home screen quick actions on iOS.
+//! Camera, photo library, photos shared from other apps and home screen quick actions on iOS.
 //!
 //! The UIKit side is the Objective-C class `BCNativeBridge` in
 //! `gen/apple/Sources/birdscounter/BCNativeBridge.m`, looked up at runtime so the library
@@ -57,6 +57,7 @@ mod ios {
     static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
     static REQUESTS: Mutex<Option<HashMap<u64, Sender<NativeResult>>>> = Mutex::new(None);
     static QUICK_ACTION: Mutex<Option<String>> = Mutex::new(None);
+    static SHARED: Mutex<Option<NativeImage>> = Mutex::new(None);
     pub(super) static STAGED: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
     fn bridge() -> Result<&'static AnyClass, String> {
@@ -102,6 +103,14 @@ mod ios {
                 name: unsafe { string(name) },
             }))
         };
+        // Request 0 is a photo shared from another app (see BCHandleSharedURL).
+        if request == 0 {
+            if let (Ok(Some(image)), Some(app)) = (result, APP.get()) {
+                *SHARED.lock().unwrap() = Some(image);
+                let _ = app.emit("shared-photo", ());
+            }
+            return;
+        }
         let sender = REQUESTS
             .lock()
             .unwrap()
@@ -174,19 +183,16 @@ mod ios {
             .unwrap_or_else(|| Err("No answer from the photo picker".to_string()))
     }
 
-    pub async fn take_photo(app: AppHandle) -> Result<Option<PickedImage>, String> {
-        let Some(image) = request(&app, "takePhoto", None).await? else {
-            return Ok(None);
-        };
-        // The only copy of the photo: keep it in Documents, which the Files app shows.
+    /// The only copy of the photo: keeps it in Documents, which the Files app shows.
+    fn save_owned(app: &AppHandle, image: NativeImage) -> Result<PickedImage, String> {
         let name = image
             .name
             .filter(|n| n.starts_with(OWNED_PHOTO_PREFIX) && !n.contains('/'))
             .unwrap_or_else(|| {
-                format!(
-                    "{OWNED_PHOTO_PREFIX}{id}.jpg",
-                    id = NEXT_REQUEST.load(Ordering::Relaxed)
-                )
+                let millis = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis());
+                format!("{OWNED_PHOTO_PREFIX}{millis}.jpg")
             });
         let relative = format!("Photos/{name}");
         let path = app
@@ -199,11 +205,27 @@ mod ios {
         }
         std::fs::write(&path, &image.bytes).map_err(|e| format!("Saving the photo: {e}"))?;
         *STAGED.lock().unwrap() = Some(image.bytes);
-        Ok(Some(PickedImage {
+        Ok(PickedImage {
             source: Some(format!("appdoc:{relative}")),
             name: Some(name),
             owned: true,
-        }))
+        })
+    }
+
+    pub async fn take_photo(app: AppHandle) -> Result<Option<PickedImage>, String> {
+        let Some(image) = request(&app, "takePhoto", None).await? else {
+            return Ok(None);
+        };
+        save_owned(&app, image).map(Some)
+    }
+
+    /// The photo another app shared, once. It is copied like a camera photo, because the
+    /// file it came from is only readable while the share lasts.
+    pub fn take_shared_photo(app: AppHandle) -> Result<Option<PickedImage>, String> {
+        match SHARED.lock().unwrap().take() {
+            Some(image) => save_owned(&app, image).map(Some),
+            None => Ok(None),
+        }
     }
 
     pub async fn pick_photo(app: AppHandle) -> Result<Option<PickedImage>, String> {
@@ -261,6 +283,10 @@ mod ios {
         Err(UNSUPPORTED.to_string())
     }
 
+    pub fn take_shared_photo(_app: AppHandle) -> Result<Option<PickedImage>, String> {
+        Ok(None)
+    }
+
     pub fn take_quick_action() -> Option<String> {
         None
     }
@@ -280,6 +306,12 @@ pub async fn native_take_photo(app: AppHandle) -> Result<Option<PickedImage>, St
 #[tauri::command]
 pub async fn native_pick_photo(app: AppHandle) -> Result<Option<PickedImage>, String> {
     ios::pick_photo(app).await
+}
+
+/// A photo another app shared with BirdsCounter, once. Its bytes wait in `take_staged_image`.
+#[tauri::command]
+pub fn native_take_shared_photo(app: AppHandle) -> Result<Option<PickedImage>, String> {
+    ios::take_shared_photo(app)
 }
 
 /// Bytes of the photo from the last `native_take_photo` or `native_pick_photo`.
