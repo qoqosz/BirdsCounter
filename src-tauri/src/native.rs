@@ -251,6 +251,16 @@ mod ios {
         QUICK_ACTION.lock().unwrap().take()
     }
 
+    /// Opens the share sheet for a file, which must outlive the sheet.
+    pub fn share_file(app: AppHandle, path: &std::path::Path) -> Result<(), String> {
+        let bridge = bridge()?;
+        let path = CString::new(path.to_string_lossy().into_owned()).map_err(|e| e.to_string())?;
+        app.run_on_main_thread(move || unsafe {
+            let _: () = msg_send![bridge, shareFile: path.as_ptr() as *mut c_char];
+        })
+        .map_err(|e| e.to_string())
+    }
+
     pub fn set_quick_actions(app: AppHandle, items: Vec<QuickAction>) -> Result<(), String> {
         let bridge = bridge()?;
         let json = CString::new(serde_json::to_string(&items).map_err(|e| e.to_string())?)
@@ -289,6 +299,10 @@ mod ios {
 
     pub fn take_quick_action() -> Option<String> {
         None
+    }
+
+    pub fn share_file(_app: AppHandle, _path: &std::path::Path) -> Result<(), String> {
+        Err(UNSUPPORTED.to_string())
     }
 
     pub fn set_quick_actions(_app: AppHandle, _items: Vec<QuickAction>) -> Result<(), String> {
@@ -346,4 +360,19 @@ pub fn take_quick_action() -> Option<String> {
 #[tauri::command]
 pub fn set_quick_actions(app: AppHandle, items: Vec<QuickAction>) -> Result<(), String> {
     ios::set_quick_actions(app, items)
+}
+
+/// Opens the iOS share sheet with an image. Android shares through `MainActivity`.
+#[tauri::command]
+pub fn native_share_image(app: AppHandle, bytes: Vec<u8>, name: String) -> Result<(), String> {
+    let name = std::path::Path::new(&name)
+        .file_name()
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    // Only the latest picture is kept; the previous share has finished by now.
+    let dir = std::env::temp_dir().join("BirdsCounterShare");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).map_err(|e| format!("Saving the picture: {e}"))?;
+    ios::share_file(app, &path)
 }

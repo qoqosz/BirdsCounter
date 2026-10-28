@@ -365,6 +365,30 @@ class MainActivity : TauriActivity() {
             return readBase64(uri)
         }
 
+        // Opens the share sheet with a JPEG given as base64. It is written to the cache
+        // folder (see file_paths.xml), which keeps only the latest picture.
+        @JavascriptInterface
+        fun shareImage(base64: String, name: String) {
+            Thread {
+                try {
+                    val dir = File(cacheDir, "shared")
+                    dir.deleteRecursively()
+                    dir.mkdirs()
+                    val file = File(dir, File(name).name)
+                    file.writeBytes(Base64.decode(base64, Base64.DEFAULT))
+                    val uri = FileProvider.getUriForFile(this@MainActivity, "${packageName}.fileprovider", file)
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "image/jpeg"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    runOnUiThread { startActivity(Intent.createChooser(send, null)) }
+                } catch (e: Exception) {
+                    // The page already gave up waiting; there is nothing to share.
+                }
+            }.start()
+        }
+
         // JSON array of {"type", "title"}, titled in the app's language by the page.
         @JavascriptInterface
         fun setQuickActions(json: String) {

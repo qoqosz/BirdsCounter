@@ -424,6 +424,38 @@ body.is-masking .preview-tools {
     background: rgba(0, 0, 0, 0.75);
 }
 
+/* Sharing is native, so the buttons exist on iOS and Android only */
+.share-button,
+.history-share {
+    display: none;
+}
+
+body.is-ios .share-button,
+body.is-android .share-button {
+    display: inline-flex;
+}
+
+body.is-ios .history-share,
+body.is-android .history-share {
+    display: inline-flex;
+}
+
+.share-button:disabled {
+    opacity: 0.4;
+}
+
+.icon-share-ios {
+    display: none;
+}
+
+body.is-ios .icon-share-ios {
+    display: block;
+}
+
+body.is-ios .icon-share-material {
+    display: none;
+}
+
 .marks-toggle .icon-hidden,
 .marks-toggle.is-off .icon-shown {
     display: none;
@@ -806,9 +838,13 @@ body.is-cropping .crop-overlay {
     text-overflow: ellipsis;
 }
 
+.history-delete,
+.history-share {
+    color: var(--text-secondary);
+}
+
 .history-delete {
     margin-right: 8px;
-    color: var(--text-secondary);
 }
 
 /* ===== Settings (grouped form) ===== */
@@ -1945,13 +1981,15 @@ body.is-ios .history-meta {
     font-size: 15px;
 }
 
-body.is-ios .history-delete {
+body.is-ios .history-delete,
+body.is-ios .history-share {
     background: transparent;
     box-shadow: none;
     color: var(--text-tertiary);
 }
 
-body.is-ios .history-delete:active {
+body.is-ios .history-delete:active,
+body.is-ios .history-share:active {
     background: var(--fill);
 }
 

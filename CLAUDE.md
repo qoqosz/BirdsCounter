@@ -88,6 +88,10 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
     `.pbxproj`) by name at runtime. `native::install` must run between `build()` and `run()` in `lib.rs`, so it
     can hook Tao's `AppDelegate`/`TaoSceneDelegate` before a quick action launches the app. On other platforms
     the commands report that they are unsupported.
+- Sharing (iOS and Android only): `shareCurrentResult` (editor and viewer buttons) and `shareHistoryEntry` (history
+  rows, which count again with the entry's settings) compose a JPEG with `composeShareImage` (photo, rings if shown,
+  black bar with the count). iOS: `native_share_image` writes it to the temp dir and `+[BCNativeBridge shareFile:]`
+  opens `UIActivityViewController`. Android: `window.Android.shareImage(base64, name)` uses the FileProvider cache path.
 - `lib.rs` also builds the native macOS menu bar. Its "Open Image…" (⌘O) emits the `menu-open-image` event to
   the frontend.
 - `blob_filter.rs` holds the whole detector. `BlobParams` is deserialized from the JS object built in

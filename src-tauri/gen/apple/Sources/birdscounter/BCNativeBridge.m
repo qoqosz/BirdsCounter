@@ -1,4 +1,4 @@
-// Native iOS features for src-tauri/src/native.rs: the camera, the photo library picker,
+// Native iOS features for src-tauri/src/native.rs: the camera, the photo library picker, the share sheet,
 // photos shared from other apps and home screen quick actions. Rust looks this class up at runtime and passes two C callbacks
 // to +installWithQuickActionHandler:imageHandler: before the app launches.
 //
@@ -286,6 +286,22 @@ static BOOL BCApplicationOpenURL(id self, SEL _cmd, UIApplication *application, 
                                                                 userInfo:nil]];
   }
   UIApplication.sharedApplication.shortcutItems = shortcuts;
+}
+
+// Opens the share sheet for the image file at `path`. On iPad it needs an anchor, so it
+// points at the middle of the screen.
++ (void)shareFile:(char *)path {
+  NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
+  UIActivityViewController *sheet =
+      [[UIActivityViewController alloc] initWithActivityItems:@[ url ] applicationActivities:nil];
+  UIViewController *top = BCTopViewController();
+  UIPopoverPresentationController *popover = sheet.popoverPresentationController;
+  if (popover) {
+    popover.sourceView = top.view;
+    popover.sourceRect = CGRectMake(CGRectGetMidX(top.view.bounds), CGRectGetMidY(top.view.bounds), 0, 0);
+    popover.permittedArrowDirections = 0;
+  }
+  [top presentViewController:sheet animated:YES completion:nil];
 }
 
 + (void)takePhoto:(uint64_t)requestId {

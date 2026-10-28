@@ -184,6 +184,7 @@ pub fn run() {
             native::take_staged_image,
             native::take_quick_action,
             native::set_quick_actions,
+            native::native_share_image,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

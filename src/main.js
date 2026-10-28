@@ -31,6 +31,9 @@ const DEFAULT_LANG = "en";
 // Longest side of the history thumbnails and of the photo shown in the editor (the viewer
 // shows it at full resolution).
 const THUMB_SIZE = 320;
+// Shared pictures are the counted part of the photo, scaled down to these limits.
+const SHARE_MAX_SIDE = 3000;
+const SHARE_MAX_PIXELS = 8_000_000;
 const PREVIEW_SIZE = 2048;
 const HISTORY_SAVE_DELAY = 400;
 // Error codes from the native photo code (BCNativeBridge.m, MainActivity.kt).
@@ -76,6 +79,8 @@ let photoViewer;
 let viewerCanvas;
 let viewerMarksBtn;
 let viewerCloseBtn;
+let shareBtn;
+let viewerShareBtn;
 let maskBrushCursor;
 let historySection;
 let historyList;
@@ -799,6 +804,7 @@ function drawRings(ctx, birds, options) {
 
 // Rings over the editor's photo, at the screen's resolution.
 function renderRings() {
+  updateShareButtons();
   if (!birdCanvas || !previewImg) return;
   const rect = previewImg.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -2104,6 +2110,10 @@ function formatDate(ms) {
 const TRASH_ICON =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5-1-1h-5l-1 1H5v2h14V4z"/></svg>';
 
+const SHARE_ICON =
+  '<svg class="icon-share-material" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>' +
+  '<svg class="icon-share-ios" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M7 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-1"/></svg>';
+
 function renderHistory() {
   if (!historySection || !historyList) return;
   const visible = !isPreviewVisible && historyEntries.length > 0;
@@ -2147,7 +2157,14 @@ function renderHistory() {
       deleteButton.innerHTML = TRASH_ICON;
       deleteButton.addEventListener("click", () => deleteHistoryEntry(entry, true));
 
-      item.append(openButton, deleteButton);
+      const shareButton = document.createElement("button");
+      shareButton.type = "button";
+      shareButton.className = "icon-button history-share";
+      shareButton.setAttribute("aria-label", t("share"));
+      shareButton.innerHTML = SHARE_ICON;
+      shareButton.addEventListener("click", () => shareHistoryEntry(entry, item));
+
+      item.append(openButton, shareButton, deleteButton);
       return item;
     }),
   );
@@ -2254,6 +2271,168 @@ async function clearHistory() {
     console.error("Failed to clear history:", e);
   }
   await refreshHistory();
+}
+
+// ===== Sharing =====
+// The picture is the counted part of the photo, with the rings if the user sees them, and a
+// black bar under it with the count. The system share sheet takes it from there (iOS and
+// Android only).
+
+function canShare() {
+  return isIOS || isAndroid;
+}
+
+function updateShareButtons() {
+  const ready = Boolean(
+    sourceImage && lastResult && sameCrop(lastResult.crop, cropRect) && !isCropping && !isMasking,
+  );
+  for (const button of [shareBtn, viewerShareBtn]) {
+    if (button) button.disabled = !ready;
+  }
+}
+
+// `birds` are drawn when not null. Returns a JPEG blob.
+async function composeShareImage(image, rect, birds, count) {
+  let scale = Math.min(
+    1,
+    SHARE_MAX_SIDE / Math.max(rect.width, rect.height),
+    Math.sqrt(SHARE_MAX_PIXELS / (rect.width * rect.height)),
+  );
+  const width = Math.max(1, Math.round(rect.width * scale));
+  const height = Math.max(1, Math.round(rect.height * scale));
+  scale = width / rect.width;
+  // Rings are sized for a screen about 800 px wide.
+  const k = Math.max(1, width / 800);
+  const barHeight = Math.round(Math.max(36, Math.min(width, height) * 0.075));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height + barHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw "canvas-unavailable";
+  try {
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, width, height + barHeight);
+    ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height, 0, 0, width, height);
+    if (birds) {
+      drawRings(ctx, birds, {
+        originX: rect.x,
+        originY: rect.y,
+        scale,
+        width,
+        height,
+        lineWidth: RING_LINE_WIDTH * k,
+        minRadius: RING_MIN_RADIUS * k,
+        labelSize: RING_LABEL_SIZE * k,
+      });
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `600 ${Math.round(barHeight * 0.5)}px system-ui, -apple-system, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      `${t("count_prefix")} ${count} ${birdsSuffix(count)}`,
+      width / 2,
+      height + barHeight / 2,
+      width - barHeight,
+    );
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+    if (!blob) throw "encoding-failed";
+    return blob;
+  } finally {
+    releaseCanvas(canvas);
+  }
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function shareBlob(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const name = `BirdsCounter_${Date.now()}.jpg`;
+  if (isAndroid) {
+    const bridge = window.Android;
+    if (!bridge || typeof bridge.shareImage !== "function") throw "share-unsupported";
+    bridge.shareImage(bytesToBase64(bytes), name);
+  } else {
+    await invoke("native_share_image", { bytes: Array.from(bytes), name });
+  }
+}
+
+function shareFailed(e) {
+  console.error("Failed to share:", e);
+  tellUser(t("share_failed", { error: e }));
+}
+
+// What the editor shows now.
+async function shareCurrentResult() {
+  if (!canShare() || !sourceImage || !lastResult || !sameCrop(lastResult.crop, cropRect)) return;
+  const buttons = [shareBtn, viewerShareBtn];
+  for (const button of buttons) if (button) button.disabled = true;
+  try {
+    const rect = lastResult.crop ?? wholeRect(sourceImage);
+    const blob = await composeShareImage(
+      sourceImage,
+      rect,
+      showRings ? lastResult.birds : null,
+      lastResult.count,
+    );
+    await shareBlob(blob);
+  } catch (e) {
+    shareFailed(e);
+  } finally {
+    updateShareButtons();
+  }
+}
+
+// A history entry keeps no detections, only the settings; counting again with them gives
+// the same rings the entry had.
+async function shareHistoryEntry(entry, item) {
+  if (item.classList.contains("is-loading")) return;
+  if (!entry.source) {
+    await tellUser(t("history_unlinked_detail"));
+    return;
+  }
+  item.classList.add("is-loading");
+  let url = null;
+  try {
+    const bytes = await loadSourceBytes(entry.source);
+    let mask = null;
+    if (entry.has_mask) {
+      try {
+        mask = new Uint8Array(await invoke("history_mask", { id: entry.id }));
+      } catch (e) {
+        console.warn("Missing mask:", e);
+      }
+    }
+    const result = await invoke("process_image", {
+      payload: ipcBytes(bytes),
+      params: entry.params,
+      maskPayload: mask ? ipcBytes(mask) : null,
+      crop: entry.crop ?? null,
+    });
+    url = URL.createObjectURL(new Blob([bytes], { type: guessMimeFromPath(entry.name ?? "") || undefined }));
+    const image = await loadImage(url);
+    const blob = await composeShareImage(
+      image,
+      entry.crop ?? wholeRect(image),
+      showRings ? result.birds : null,
+      result.count,
+    );
+    await shareBlob(blob);
+  } catch (e) {
+    if (String(e) === "photos-denied") showNativeError(e);
+    else if (String(e) === "photo-missing") await tellUser(t("share_missing"));
+    else shareFailed(e);
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+    item.classList.remove("is-loading");
+  }
 }
 
 // ===== Helpers =====
@@ -2429,6 +2608,8 @@ window.addEventListener("DOMContentLoaded", () => {
   viewerCanvas = document.querySelector("#viewerCanvas");
   viewerMarksBtn = document.querySelector("#viewerMarksBtn");
   viewerCloseBtn = document.querySelector("#viewerCloseBtn");
+  shareBtn = document.querySelector("#shareBtn");
+  viewerShareBtn = document.querySelector("#viewerShareBtn");
   maskBrushCursor = document.querySelector("#maskBrushCursor");
   countLabel = document.querySelector("#countLabel");
   countPrefix = document.querySelector("#countLabel [data-i18n='count_prefix']");
@@ -2642,6 +2823,9 @@ window.addEventListener("DOMContentLoaded", () => {
     button?.addEventListener("click", () => setShowRings(!showRings));
   }
   viewerBtn?.addEventListener("click", openViewer);
+  for (const button of [shareBtn, viewerShareBtn]) {
+    button?.addEventListener("click", shareCurrentResult);
+  }
   viewerCloseBtn?.addEventListener("click", closeViewer);
   if (viewerCanvas) {
     viewerCanvas.addEventListener("pointerdown", onViewerPointerDown);
