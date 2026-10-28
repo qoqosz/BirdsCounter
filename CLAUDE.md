@@ -114,8 +114,10 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   canvases made every stroke slow on iOS, which also refuses canvases over 16.7 MP), so it survives crop changes,
   and is sent as a PNG. A stroke paints only its own segment on the overlay; `renderMaskPreview` redraws all of
   it only when the view changes.
-- The editor shows a scaled-down copy of the photo (`PREVIEW_SIZE`) with the rings on `#birdCanvas`. The eye
-  button hides them (`showRings`, kept in `localStorage`). The full resolution viewer (`#photoViewer`, opened by
+- The editor shows a scaled-down copy of the photo (`PREVIEW_SIZE`) with the rings on `#birdCanvas`. The
+  Result / Original switch above the photo hides them (`showRings`, kept in `localStorage`). Under the photo are Crop,
+  Mask and Detection (opens the settings, folded away by default); on iOS and Android the share button sits at the
+  bottom of the screen. The full resolution viewer (`#photoViewer`, opened by
   its button or a double click/tap) draws the visible part of the photo and the rings on one canvas per frame;
   pinch, drag, ctrl/⌘ + wheel and double tap zoom and pan.
 - History: each opened photo gets one entry. `queueHistorySave` updates it after each result, saves are chained

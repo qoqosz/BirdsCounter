@@ -53,6 +53,8 @@ let imagePreview;
 let cropBtn;
 let maskBtn;
 let maskCancelBtn;
+let maskDoneBtn;
+let maskActions;
 let processActions;
 let cropActions;
 let cropResetBtn;
@@ -73,7 +75,9 @@ let countValue;
 let countSuffix;
 let backBtn;
 let birdCanvas;
-let marksBtn;
+let viewResultBtn;
+let viewOriginalBtn;
+let detectBtn;
 let viewerBtn;
 let photoViewer;
 let viewerCanvas;
@@ -143,6 +147,7 @@ let isProcessing = false;
 let pendingProcess = false;
 let processTimer = null;
 let showRings = true;
+let settingsOpen = false;
 let isViewerOpen = false;
 // Viewer zoom: a photo pixel p is drawn at x + (p - view.x) * scale; `fit` shows all of it.
 let viewerView = null;
@@ -455,9 +460,9 @@ async function openImage(bytes, mime, info, entry = null, maskBytes = null) {
 function showPreview() {
   isPreviewVisible = true;
   imagePreview.style.display = "block";
-  if (countLabel) countLabel.style.display = "block";
+  if (countLabel) countLabel.style.display = "flex";
   if (processActions) processActions.style.display = "flex";
-  if (settingsPanel) settingsPanel.style.display = "flex";
+  setSettingsOpen(false);
   if (backBtn) backBtn.style.display = "flex";
   document.body.classList.add("has-back");
   if (dragDropArea) dragDropArea.style.display = "none";
@@ -481,7 +486,7 @@ function resetApp() {
   closeViewer();
   if (countLabel) countLabel.style.display = "none";
   if (processActions) processActions.style.display = "none";
-  if (settingsPanel) settingsPanel.style.display = "none";
+  setSettingsOpen(false);
   if (backBtn) backBtn.style.display = "none";
   document.body.classList.remove("has-back");
   if (dragDropArea) dragDropArea.style.display = "flex";
@@ -724,9 +729,9 @@ function updateEditingState() {
   }
   document.body.classList.toggle("is-cropping", isCropping);
   document.body.classList.toggle("is-masking", isMasking);
-  if (maskCancelBtn) maskCancelBtn.style.display = isMasking ? "inline-flex" : "none";
+  if (maskActions) maskActions.style.display = isMasking ? "flex" : "none";
   if (isPreviewVisible && processActions) {
-    processActions.style.display = isCropping ? "none" : "flex";
+    processActions.style.display = editing ? "none" : "flex";
   }
   if (cropActions) cropActions.style.display = isCropping ? "flex" : "none";
   if (cropHint) cropHint.style.display = isCropping ? "block" : "none";
@@ -831,9 +836,30 @@ function renderRings() {
   });
 }
 
+// Detection settings stay folded away until the Detection button opens them.
+function setSettingsOpen(open) {
+  settingsOpen = open;
+  if (settingsPanel) settingsPanel.style.display = open && isPreviewVisible ? "flex" : "none";
+  if (detectBtn) {
+    detectBtn.classList.toggle("is-active", open);
+    detectBtn.setAttribute("aria-pressed", open ? "true" : "false");
+  }
+  if (open && settingsPanel) {
+    settingsPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
 function setShowRings(show, persist = true) {
   showRings = show;
-  for (const button of [marksBtn, viewerMarksBtn]) {
+  for (const [button, selected] of [
+    [viewResultBtn, show],
+    [viewOriginalBtn, !show],
+  ]) {
+    if (!button) continue;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+  }
+  for (const button of [viewerMarksBtn]) {
     if (!button) continue;
     button.classList.toggle("is-off", !show);
     button.setAttribute("aria-pressed", show ? "true" : "false");
@@ -1134,7 +1160,7 @@ function onViewerKeyDown(e) {
 
 function updateMaskBrushControlsState() {
   if (!maskBrushControls) return;
-  maskBrushControls.style.display = isMasking ? "flex" : "none";
+  maskBrushControls.style.display = isMasking ? "block" : "none";
 }
 
 function updateMaskOverlayState() {
@@ -2114,7 +2140,74 @@ const SHARE_ICON =
   '<svg class="icon-share-material" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z"/></svg>' +
   '<svg class="icon-share-ios" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M7 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-1"/></svg>';
 
+const MORE_ICON =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>';
+
+// The "⋮" button of a history row opens a small menu: Share and Delete (iOS and Android; elsewhere
+// the row has a Delete button).
+// It lives on the body, since the list clips its children.
+let historyMenu = null;
+
+function closeHistoryMenu() {
+  if (!historyMenu) return;
+  historyMenu.anchor.setAttribute("aria-expanded", "false");
+  historyMenu.element.remove();
+  historyMenu = null;
+}
+
+function toggleHistoryMenu(button, entry, item) {
+  const reopen = historyMenu?.anchor !== button;
+  closeHistoryMenu();
+  if (!reopen) return;
+
+  const actions = [];
+  if (canShare()) {
+    actions.push({ label: t("share"), icon: SHARE_ICON, run: () => shareHistoryEntry(entry, item) });
+  }
+  actions.push({
+    label: t("history_delete"),
+    icon: TRASH_ICON,
+    danger: true,
+    run: () => deleteHistoryEntry(entry, true),
+  });
+
+  const menu = document.createElement("div");
+  menu.className = "history-menu";
+  menu.setAttribute("role", "menu");
+  for (const action of actions) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "history-menu-item" + (action.danger ? " is-danger" : "");
+    row.setAttribute("role", "menuitem");
+    const label = document.createElement("span");
+    label.textContent = action.label;
+    row.append(label);
+    row.insertAdjacentHTML("beforeend", action.icon);
+    row.addEventListener("click", () => {
+      closeHistoryMenu();
+      action.run();
+    });
+    menu.append(row);
+  }
+  document.body.append(menu);
+
+  const anchor = button.getBoundingClientRect();
+  const margin = 8;
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  const left = Math.max(margin, Math.min(anchor.right - width, window.innerWidth - width - margin));
+  const below = anchor.bottom + 4;
+  const top = below + height + margin > window.innerHeight ? Math.max(margin, anchor.top - height - 4) : below;
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+
+  button.setAttribute("aria-expanded", "true");
+  historyMenu = { element: menu, anchor: button };
+  menu.querySelector("button")?.focus({ preventScroll: true });
+}
+
 function renderHistory() {
+  closeHistoryMenu();
   if (!historySection || !historyList) return;
   const visible = !isPreviewVisible && historyEntries.length > 0;
   historySection.hidden = !visible;
@@ -2150,21 +2243,23 @@ function renderHistory() {
       openButton.append(thumb, text);
       openButton.addEventListener("click", () => openHistoryEntry(entry, item));
 
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.className = "icon-button history-delete";
-      deleteButton.setAttribute("aria-label", t("history_delete"));
-      deleteButton.innerHTML = TRASH_ICON;
-      deleteButton.addEventListener("click", () => deleteHistoryEntry(entry, true));
+      const moreButton = document.createElement("button");
+      moreButton.type = "button";
+      moreButton.className = "icon-button history-more";
+      if (canShare()) {
+        moreButton.setAttribute("aria-label", t("history_more"));
+        moreButton.setAttribute("aria-haspopup", "menu");
+        moreButton.setAttribute("aria-expanded", "false");
+        moreButton.innerHTML = MORE_ICON;
+        moreButton.addEventListener("click", () => toggleHistoryMenu(moreButton, entry, item));
+      } else {
+        // Delete is the only action without sharing, so it needs no menu.
+        moreButton.setAttribute("aria-label", t("history_delete"));
+        moreButton.innerHTML = TRASH_ICON;
+        moreButton.addEventListener("click", () => deleteHistoryEntry(entry, true));
+      }
 
-      const shareButton = document.createElement("button");
-      shareButton.type = "button";
-      shareButton.className = "icon-button history-share";
-      shareButton.setAttribute("aria-label", t("share"));
-      shareButton.innerHTML = SHARE_ICON;
-      shareButton.addEventListener("click", () => shareHistoryEntry(entry, item));
-
-      item.append(openButton, shareButton, deleteButton);
+      item.append(openButton, moreButton);
       return item;
     }),
   );
@@ -2602,7 +2697,9 @@ window.addEventListener("DOMContentLoaded", () => {
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
   birdCanvas = document.querySelector("#birdCanvas");
-  marksBtn = document.querySelector("#marksBtn");
+  viewResultBtn = document.querySelector("#viewResultBtn");
+  viewOriginalBtn = document.querySelector("#viewOriginalBtn");
+  detectBtn = document.querySelector("#detectBtn");
   viewerBtn = document.querySelector("#viewerBtn");
   photoViewer = document.querySelector("#photoViewer");
   viewerCanvas = document.querySelector("#viewerCanvas");
@@ -2625,6 +2722,8 @@ window.addEventListener("DOMContentLoaded", () => {
   cropBtn = document.querySelector("#cropBtn");
   maskBtn = document.querySelector("#maskBtn");
   maskCancelBtn = document.querySelector("#maskCancelBtn");
+  maskDoneBtn = document.querySelector("#maskDoneBtn");
+  maskActions = document.querySelector("#maskActions");
   cropOverlay = document.querySelector("#cropOverlay");
   cropBox = document.querySelector("#cropBox");
   maskOverlay = document.querySelector("#maskOverlay");
@@ -2724,6 +2823,9 @@ window.addEventListener("DOMContentLoaded", () => {
   if (maskBtn) {
     maskBtn.addEventListener("click", toggleMask);
   }
+  if (maskDoneBtn) {
+    maskDoneBtn.addEventListener("click", toggleMask);
+  }
   if (maskCancelBtn) {
     maskCancelBtn.addEventListener("click", cancelMaskMode);
   }
@@ -2819,9 +2921,10 @@ window.addEventListener("DOMContentLoaded", () => {
     // Shown by default
   }
   setShowRings(initialShowRings, false);
-  for (const button of [marksBtn, viewerMarksBtn]) {
-    button?.addEventListener("click", () => setShowRings(!showRings));
-  }
+  viewResultBtn?.addEventListener("click", () => setShowRings(true));
+  viewOriginalBtn?.addEventListener("click", () => setShowRings(false));
+  viewerMarksBtn?.addEventListener("click", () => setShowRings(!showRings));
+  detectBtn?.addEventListener("click", () => setSettingsOpen(!settingsOpen));
   viewerBtn?.addEventListener("click", openViewer);
   for (const button of [shareBtn, viewerShareBtn]) {
     button?.addEventListener("click", shareCurrentResult);
@@ -2836,6 +2939,33 @@ window.addEventListener("DOMContentLoaded", () => {
     viewerCanvas.addEventListener("dblclick", (e) => e.preventDefault());
   }
   document.addEventListener("keydown", onViewerKeyDown);
+  document.addEventListener("pointerdown", (e) => {
+    if (historyMenu && !historyMenu.element.contains(e.target) && !historyMenu.anchor.contains(e.target)) {
+      closeHistoryMenu();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && historyMenu) {
+      historyMenu.anchor.focus({ preventScroll: true });
+      closeHistoryMenu();
+      return;
+    }
+    // Crop and mask show only ✕ and ✓, so Esc and Return stand in for Cancel and Done.
+    if (isViewerOpen || (!isCropping && !isMasking)) return;
+    if (e.key === "Enter" && e.target instanceof Element && e.target.closest("button, input, select, summary")) {
+      return;
+    }
+    if (e.key === "Escape") {
+      (isCropping ? cropCancelBtn : maskCancelBtn).click();
+    } else if (e.key === "Enter") {
+      (isCropping ? cropDoneBtn : maskDoneBtn).click();
+    } else {
+      return;
+    }
+    e.preventDefault();
+  });
+  window.addEventListener("resize", closeHistoryMenu);
+  window.addEventListener("scroll", closeHistoryMenu, { passive: true });
 
   if (cropOverlay) {
     cropOverlay.addEventListener("pointerdown", onCropPointerDown);

@@ -315,23 +315,9 @@ h1 {
     filter: brightness(0.88);
 }
 
-#maskCancelBtn {
-    display: none;
-}
-
 .action-button:disabled {
     opacity: 0.4;
     cursor: default;
-}
-
-.done-button {
-    background-color: var(--accent);
-    color: var(--on-accent);
-}
-
-.done-button:active {
-    background-color: var(--accent);
-    filter: brightness(0.88);
 }
 
 .text-button {
@@ -341,6 +327,60 @@ h1 {
     font-size: 0.9375em;
     padding: 4px 0;
     cursor: pointer;
+}
+
+.text-button:disabled {
+    color: var(--text-tertiary);
+    cursor: default;
+}
+
+/* Crop and mask: ✕ and ✓ as round buttons of one size, with Reset between them */
+.edit-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.edit-button {
+    flex: none;
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--edit-button-size, 44px);
+    height: var(--edit-button-size, 44px);
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: background-color 0.15s ease, filter 0.15s ease;
+}
+
+.edit-button svg {
+    width: 24px;
+    height: 24px;
+}
+
+.edit-button:active {
+    background-color: var(--surface-active);
+}
+
+.edit-button.done-button {
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.edit-button.done-button:active {
+    filter: brightness(0.88);
+}
+
+.edit-actions .reset-button {
+    min-height: var(--edit-button-size, 44px);
+    padding: 0 12px;
 }
 
 .edit-hint {
@@ -424,19 +464,29 @@ body.is-masking .preview-tools {
     background: rgba(0, 0, 0, 0.75);
 }
 
+/* "Zoom" opens the full resolution viewer */
+.zoom-button {
+    width: auto;
+    gap: 8px;
+    padding: 0 16px 0 12px;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.9375em;
+    font-weight: 600;
+}
+
+.zoom-button svg {
+    width: 20px;
+    height: 20px;
+}
+
 /* Sharing is native, so the buttons exist on iOS and Android only */
-.share-button,
-.history-share {
+.share-button {
     display: none;
 }
 
 body.is-ios .share-button,
 body.is-android .share-button {
-    display: inline-flex;
-}
-
-body.is-ios .history-share,
-body.is-android .history-share {
     display: inline-flex;
 }
 
@@ -503,16 +553,115 @@ body.viewer-open {
     gap: 12px;
 }
 
-/* ===== Count label ===== */
+/* ===== Result header: the count, and the Result / Original switch ===== */
 .count-label {
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.count-text {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
     font-size: 1.1em;
     font-weight: 500;
 }
 
 #countValue {
+    font-size: 2.4em;
     font-weight: 700;
+    line-height: 1.1;
     font-variant-numeric: tabular-nums;
+}
+
+.segmented {
+    display: inline-flex;
+    flex: none;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-button);
+}
+
+.segment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 14px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.segment + .segment {
+    border-left: 1px solid var(--border);
+}
+
+.segment.is-selected {
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.segment-check {
+    display: none;
+    width: 18px;
+    height: 18px;
+}
+
+body.is-cropping .segmented,
+body.is-masking .segmented {
+    visibility: hidden;
+}
+
+/* ===== Tools under the photo, and the share button ===== */
+.process-actions .tool-button {
+    flex-direction: column;
+    height: auto;
+    min-height: 72px;
+    padding: 12px 8px;
+    gap: 6px;
+    font-size: 0.8125em;
+}
+
+.tool-button .btn-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.share-result {
+    flex: none;
+    width: 100%;
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.share-result:active {
+    background-color: var(--accent);
+    filter: brightness(0.88);
+}
+
+.share-result:disabled {
+    opacity: 0.4;
+}
+
+/* The share button sits at the bottom of the screen */
+body.is-ios.has-back .container,
+body.is-android.has-back .container {
+    min-height: calc(100dvh - var(--header-height) - var(--safe-top));
+}
+
+body.is-ios .share-result,
+body.is-android .share-result {
+    margin-top: auto;
 }
 
 /* ===== Crop =====
@@ -838,13 +987,71 @@ body.is-cropping .crop-overlay {
     text-overflow: ellipsis;
 }
 
-.history-delete,
-.history-share {
+.history-more {
+    flex: none;
+    margin-right: 8px;
     color: var(--text-secondary);
 }
 
-.history-delete {
-    margin-right: 8px;
+/* Menu of a history row: Share, Delete */
+:root {
+    --menu-bg: #ffffff;
+    --menu-shadow: 0 4px 20px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+    --danger: #d70015;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --menu-bg: #2c2c2e;
+        --menu-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+        --danger: #ff453a;
+    }
+}
+
+.history-menu {
+    position: fixed;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    min-width: 180px;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--menu-bg);
+    box-shadow: var(--menu-shadow);
+    color: var(--text);
+}
+
+.history-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 40px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.history-menu-item svg {
+    flex: none;
+    width: 20px;
+    height: 20px;
+}
+
+.history-menu-item:active,
+.history-menu-item:focus-visible {
+    background-color: var(--surface-active);
+    outline: none;
+}
+
+.history-menu-item.is-danger {
+    color: var(--danger);
 }
 
 /* ===== Settings (grouped form) ===== */
@@ -973,6 +1180,7 @@ body.is-cropping .crop-overlay {
 }
 
 .mask-brush-controls .settings-field {
+    grid-template-columns: auto 1fr;
     border-top: none;
 }
 
@@ -1166,7 +1374,6 @@ body.is-mac .action-button:active {
 }
 
 body.is-mac .action-button.is-active,
-body.is-mac .done-button,
 body.is-mac #galleryBtn {
     color: #ffffff;
     background-color: var(--accent);
@@ -1184,7 +1391,6 @@ body.is-mac #galleryBtn {
 }
 
 body.is-mac .action-button.is-active:active,
-body.is-mac .done-button:active,
 body.is-mac #galleryBtn:active {
     background-color: var(--accent);
     filter: brightness(0.88);
@@ -1424,6 +1630,7 @@ body.is-android .action-button {
 }
 
 body.is-android .action-button::before,
+body.is-android .edit-button::before,
 body.is-android .history-open::before,
 body.is-android .icon-button::before,
 body.is-android .lang-switch::before,
@@ -1438,6 +1645,7 @@ body.is-android .advanced-summary::before {
 }
 
 body.is-android .action-button:active::before,
+body.is-android .edit-button:active::before,
 body.is-android .history-open:active::before,
 body.is-android .icon-button:active::before,
 body.is-android .lang-switch:active::before,
@@ -1451,16 +1659,9 @@ body.is-android .action-button.is-active:active {
     filter: none;
 }
 
-body.is-android .camera-button,
-body.is-android .done-button {
+body.is-android .camera-button {
     background-color: var(--md-primary);
     color: var(--md-on-primary);
-}
-
-body.is-android .reset-button {
-    flex: none;
-    padding: 0 12px;
-    color: var(--md-primary);
 }
 
 body.is-android .gallery-button {
@@ -1479,12 +1680,6 @@ body.is-android .action-button.is-active {
     background-color: var(--md-secondary-container);
     color: var(--md-on-secondary-container);
     box-shadow: none;
-}
-
-body.is-android .cancel-button {
-    flex: none;
-    padding: 0 12px;
-    color: var(--md-primary);
 }
 
 body.is-android .count-label {
@@ -1898,14 +2093,12 @@ body.is-ios .action-button:active {
 }
 
 body.is-ios .camera-button,
-body.is-ios .done-button,
 body.is-ios .action-button.is-active {
     background-color: var(--accent);
     color: var(--on-accent);
 }
 
 body.is-ios .camera-button:active,
-body.is-ios .done-button:active,
 body.is-ios .action-button.is-active:active {
     background-color: var(--accent);
     filter: brightness(0.85);
@@ -1920,14 +2113,6 @@ body.is-ios .count-label {
 body.is-ios .viewer-tools .overlay-button {
     width: 44px;
     height: 44px;
-}
-
-/* Crop: Cancel and Reset are plain text actions, as in Photos */
-body.is-ios .crop-actions .cancel-button,
-body.is-ios .crop-actions .reset-button {
-    flex: none;
-    padding: 0 12px;
-    background: transparent;
 }
 
 /* History: inset grouped list with thumbnails */
@@ -1981,15 +2166,13 @@ body.is-ios .history-meta {
     font-size: 15px;
 }
 
-body.is-ios .history-delete,
-body.is-ios .history-share {
+body.is-ios .history-more {
     background: transparent;
     box-shadow: none;
     color: var(--text-tertiary);
 }
 
-body.is-ios .history-delete:active,
-body.is-ios .history-share:active {
+body.is-ios .history-more:active {
     background: var(--fill);
 }
 
@@ -2098,4 +2281,386 @@ body.is-ios .settings-advanced[open] .expand-icon {
     .drag-drop-area {
         min-height: 220px;
     }
+}
+
+/* =====================================================================
+ * Result screen per platform: count + switch, tools, share
+ * ===================================================================== */
+
+/* ----- macOS: segmented control and push buttons ----- */
+body.is-mac .count-text {
+    font-size: 15px;
+    color: var(--text-secondary);
+}
+
+body.is-mac #countValue {
+    font-size: 36px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+body.is-mac .segmented {
+    border: none;
+    background-color: var(--push-bg);
+    box-shadow: var(--push-shadow);
+}
+
+body.is-mac .segment {
+    height: 22px;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 400;
+}
+
+body.is-mac .segment + .segment {
+    border-left-color: var(--separator);
+}
+
+body.is-mac .process-actions .tool-button {
+    flex-direction: row;
+    height: var(--button-height);
+    min-height: 0;
+    padding: 0 14px;
+    font-size: 13px;
+}
+
+/* ----- Android: Material 3 segmented button, tonal tiles, filled share button ----- */
+body.is-android .count-text {
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 400;
+    color: var(--md-on-surface);
+}
+
+body.is-android #countValue {
+    font-size: 56px;
+    line-height: 64px;
+    font-weight: 400;
+    color: var(--md-primary);
+}
+
+body.is-android .segmented {
+    border-color: var(--md-outline);
+    border-radius: 9999px;
+}
+
+body.is-android .segment {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+    color: var(--md-on-surface);
+}
+
+body.is-android .segment + .segment {
+    border-left-color: var(--md-outline);
+}
+
+body.is-android .segment.is-selected {
+    background-color: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
+}
+
+body.is-android .segment.is-selected .segment-check {
+    display: block;
+}
+
+body.is-android .process-actions {
+    gap: 8px;
+}
+
+body.is-android .process-actions .tool-button {
+    min-height: 64px;
+    padding: 12px 8px;
+    border-radius: 16px;
+    box-shadow: none;
+    font-size: 12px;
+    line-height: 16px;
+    background-color: var(--md-surface-container-high);
+    color: var(--md-on-surface);
+}
+
+body.is-android .process-actions .tool-button.is-active {
+    background-color: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
+}
+
+body.is-android .share-result {
+    height: 56px;
+    font-size: 16px;
+    line-height: 24px;
+    background-color: var(--md-primary);
+    color: var(--md-on-primary);
+}
+
+body.is-android .share-result .btn-icon {
+    width: 24px;
+    height: 24px;
+}
+
+body.is-android .zoom-button {
+    height: 40px;
+    background: var(--md-surface-container-high);
+    color: var(--md-on-surface);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+/* ----- iOS: system segmented control, gray tiles, capsule share button ----- */
+body.is-ios {
+    --segment-selected: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+    body.is-ios {
+        --segment-selected: #636366;
+    }
+}
+
+body.is-ios .count-text {
+    font-size: 17px;
+    color: var(--text-secondary);
+}
+
+body.is-ios #countValue {
+    font-size: 44px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+body.is-ios .segmented {
+    padding: 2px;
+    border: none;
+    border-radius: 9px;
+    background-color: var(--fill);
+}
+
+body.is-ios .segment {
+    height: 32px;
+    padding: 0 14px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+body.is-ios .segment + .segment {
+    border-left: none;
+}
+
+body.is-ios .segment.is-selected {
+    background-color: var(--segment-selected);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
+body.is-ios .process-actions {
+    gap: 10px;
+}
+
+body.is-ios .process-actions .tool-button {
+    min-height: 76px;
+    padding: 12px 8px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+body.is-ios .share-result {
+    height: var(--button-height);
+    background-color: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+}
+
+body.is-ios .share-result:active {
+    background-color: var(--accent);
+    filter: brightness(0.85);
+}
+
+body.is-ios .zoom-button {
+    height: 36px;
+    font-size: 15px;
+}
+
+/* Nothing to share until a photo is open */
+body:not(.has-back) .share-result {
+    display: none !important;
+}
+
+body.is-mac .zoom-button {
+    height: 28px;
+    padding: 0 12px 0 10px;
+    font-size: 13px;
+}
+
+/* ----- History menu per platform ----- */
+body.is-mac .history-menu {
+    min-width: 150px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+body.is-mac .history-menu-item {
+    min-height: 22px;
+    border-radius: 4px;
+}
+
+body.is-mac .history-menu-item svg {
+    display: none;
+}
+
+body.is-mac .history-menu-item:hover,
+body.is-mac .history-menu-item:focus-visible {
+    background-color: var(--accent);
+    color: #ffffff;
+}
+
+body.is-android {
+    --menu-bg: var(--md-surface-container);
+    --danger: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+    body.is-android {
+        --danger: #f2b8b5;
+    }
+}
+
+body.is-android .history-menu {
+    min-width: 200px;
+    padding: 8px 0;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px 2px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+    font-size: 16px;
+}
+
+body.is-android .history-menu-item {
+    min-height: 48px;
+    padding: 0 16px;
+    border-radius: 0;
+    color: var(--md-on-surface);
+}
+
+body.is-android .history-menu-item.is-danger {
+    color: var(--danger);
+}
+
+body.is-android .history-menu-item:active {
+    background-color: color-mix(in srgb, var(--md-on-surface) 10%, transparent);
+}
+
+body.is-ios .history-menu {
+    min-width: 220px;
+    padding: 0;
+    border-radius: 14px;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(30px) saturate(1.8);
+    backdrop-filter: blur(30px) saturate(1.8);
+    box-shadow: var(--glass-shadow), 0 8px 30px rgba(0, 0, 0, 0.18);
+    font-size: 17px;
+}
+
+body.is-ios .history-menu-item {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 0;
+}
+
+body.is-ios .history-menu-item + .history-menu-item {
+    border-top: 0.5px solid var(--separator);
+}
+
+body.is-ios .history-menu-item:active {
+    background-color: var(--fill);
+}
+
+/* Crop and mask: ✕ and ✓ follow each platform's look */
+body.is-mac .edit-actions {
+    --edit-button-size: 32px;
+}
+
+body.is-mac .edit-button {
+    background-color: var(--push-bg);
+    box-shadow: var(--push-shadow);
+}
+
+body.is-mac .edit-button svg {
+    width: 18px;
+    height: 18px;
+}
+
+body.is-mac .edit-button:active {
+    background-color: var(--push-bg-active);
+}
+
+body.is-mac .edit-button.done-button {
+    color: #ffffff;
+    background-color: var(--accent);
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.2),
+        inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
+}
+
+body.is-mac .edit-actions .reset-button {
+    font-size: 13px;
+}
+
+/* Material 3 icon buttons: tonal ✕, filled ✓ */
+body.is-android .edit-actions {
+    --edit-button-size: 48px;
+}
+
+body.is-android .edit-button {
+    background-color: var(--md-surface-container-highest);
+    color: var(--md-on-surface-variant);
+}
+
+body.is-android .edit-button.done-button {
+    background-color: var(--md-primary);
+    color: var(--md-on-primary);
+}
+
+body.is-android .edit-button:active {
+    filter: none;
+}
+
+body.is-android .edit-actions .reset-button {
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+    color: var(--md-primary);
+}
+
+body.is-android .edit-actions .reset-button:disabled {
+    color: color-mix(in srgb, var(--md-on-surface) 38%, transparent);
+}
+
+/* iOS: gray ✕ and tinted ✓ circles, as in Photos */
+body.is-ios .edit-button {
+    background-color: var(--fill);
+}
+
+body.is-ios .edit-button:active {
+    background-color: var(--fill-active);
+}
+
+body.is-ios .edit-button.done-button {
+    background-color: var(--accent);
+}
+
+body.is-ios .edit-button.done-button:active {
+    background-color: var(--accent);
+    filter: brightness(0.85);
+}
+
+body.is-ios .edit-actions .reset-button {
+    font-size: 17px;
+}
+
+/* Nothing to share while the result is being edited */
+body.is-cropping .share-result,
+body.is-masking .share-result {
+    display: none !important;
 }
