@@ -274,6 +274,35 @@ xcrun devicectl device install app --device <device-id> src-tauri/gen/apple/buil
 4. The first launch needs **Settings → General → VPN & Device Management → Apple Development: … → Trust**, which
    requires an internet connection. With a free Apple ID the app has to be rebuilt and reinstalled every 7 days.
 
+### Refreshing the certificate (every 7 days)
+
+A free Apple ID signs the app with a certificate and profile that expire after 7 days. Then the app stops launching
+(*Unable to Verify App* or an instant crash). There is nothing to renew by hand: rebuild and install over the old
+copy, which keeps the app's data and history.
+
+1. Connect the iPhone, unlock it and check that it is listed as `available (paired)`:
+
+```bash
+xcrun devicectl list devices
+```
+
+2. Rebuild. Xcode signs with a fresh certificate and profile:
+
+```bash
+env APPLE_DEVELOPMENT_TEAM=<team-id> ./build_ios.sh --target device
+```
+
+3. Install over the existing app (do not delete it first):
+
+```bash
+xcrun devicectl device install app --device <device-id> src-tauri/gen/apple/build/arm64/birdscounter.ipa
+```
+
+4. If the phone still complains, trust the profile again under **Settings → General → VPN & Device Management**.
+   If the phone is not paired after an iOS update, run `xcrun devicectl manage pair --device <device-id>` and tap
+   **Trust** on the phone. A new phone must be registered in the team profile first: run `xcodebuild` once with
+   `-allowProvisioningUpdates -allowProvisioningDeviceRegistration` or run the app from Xcode once.
+
 `build_ios.sh` passes the OpenCV settings to cargo as `--config env.*`, because Tauri's Xcode build phase drops
 `OPENCV_*` environment variables. The Xcode project links `opencv2.framework` and the Swift 5.6 compatibility library.
 The app runs only on physical devices, since the OpenCV framework has no arm64 simulator slice.
