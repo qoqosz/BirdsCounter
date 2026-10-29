@@ -3,7 +3,10 @@ pub mod blob_filter;
 mod history;
 mod native;
 use blob_filter::{Bird, BlobFilter, BlobParams, Crop};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
+use tauri::ipc::InvokeBody;
 
 #[derive(serde::Serialize)]
 struct ProcessResult {
@@ -86,18 +89,50 @@ async fn open_camera() -> Result<String, String> {
     }
 }
 
-/// Counts the birds in the image, or in its `crop`; the mask covers the whole image.
-/// The frontend draws the rings, so only the detections go back. Runs off the main
-/// thread so the UI stays responsive.
+/// The photo being counted, decoded once by `load_photo` so that settings changes do not
+/// send and decode it again. Holds one photo at a time.
+#[derive(Default)]
+struct LoadedPhoto(Mutex<Option<(u64, Arc<opencv::core::Mat>)>>);
+
+/// Decodes a photo, sent as the raw request body, for `process_image`; returns its id.
+#[tauri::command]
+async fn load_photo(
+    request: tauri::ipc::Request<'_>,
+    photo: tauri::State<'_, LoadedPhoto>,
+) -> Result<u64, String> {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    let gray = match request.body() {
+        InvokeBody::Raw(bytes) => blob_filter::decode_gray(bytes)?,
+        // Platforms without raw IPC bodies send the bytes as a JSON array.
+        InvokeBody::Json(value) => {
+            let bytes: Vec<u8> =
+                serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+            blob_filter::decode_gray(&bytes)?
+        }
+    };
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    *photo.0.lock().map_err(|e| e.to_string())? = Some((id, Arc::new(gray)));
+    Ok(id)
+}
+
+/// Counts the birds in the photo `photo_id` from `load_photo`, or in its `crop`; the mask
+/// covers the whole photo. Fails with `photo-missing` once another photo was loaded. The
+/// frontend draws the rings, so only the detections go back. Runs off the main thread
+/// so the UI stays responsive.
 #[tauri::command(async)]
 fn process_image(
-    payload: Vec<u8>,
+    photo: tauri::State<'_, LoadedPhoto>,
+    photo_id: u64,
     params: BlobParams,
     mask_payload: Option<Vec<u8>>,
     crop: Option<Crop>,
 ) -> Result<ProcessResult, String> {
+    let gray = match &*photo.0.lock().map_err(|e| e.to_string())? {
+        Some((id, gray)) if *id == photo_id => Arc::clone(gray),
+        _ => return Err("photo-missing".to_string()),
+    };
     let filter = BlobFilter::new(params);
-    let birds = filter.detect(payload, mask_payload, crop)?;
+    let birds = filter.detect(&gray, mask_payload.as_deref(), crop)?;
     let count = birds.iter().map(|bird| bird.count).sum();
     Ok(ProcessResult { birds, count })
 }
@@ -161,6 +196,7 @@ pub fn run() {
             setup_macos_menu(app)?;
             let history_dir = app.path().app_data_dir()?.join("history");
             app.manage(history::History::new(history_dir));
+            app.manage(LoadedPhoto::default());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -169,6 +205,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             open_camera,
+            load_photo,
             process_image,
             history::read_image,
             history::history_list,

@@ -141,6 +141,8 @@ let autoInvertInput;
 let invertInput;
 let splitClustersInput;
 let skyOnlyInput;
+// The photo the detector holds (see countBirds): its bytes and id.
+let loadedPhoto = null;
 let isProcessing = false;
 let pendingProcess = false;
 let processTimer = null;
@@ -1969,6 +1971,28 @@ async function runProcess() {
   }
 }
 
+// Counts the birds in `bytes`. The detector keeps the last photo decoded (load_photo), so
+// it is only sent when it changes; another photo counted in between (sharing a history
+// entry) replaces it, and then it is sent again.
+async function countBirds(bytes, params, maskPayload, crop) {
+  for (let attempt = 0; ; attempt++) {
+    if (loadedPhoto?.bytes !== bytes) {
+      loadedPhoto = { bytes, id: await invoke("load_photo", bytes) };
+    }
+    try {
+      return await invoke("process_image", {
+        photoId: loadedPhoto.id,
+        params,
+        maskPayload: maskPayload ? ipcBytes(maskPayload) : null,
+        crop,
+      });
+    } catch (e) {
+      if (String(e) !== "photo-missing" || attempt > 0) throw e;
+      loadedPhoto = null;
+    }
+  }
+}
+
 async function processImage() {
   const bytes = sourceBytes;
   if (!bytes) {
@@ -1985,12 +2009,7 @@ async function processImage() {
     const params = readParamsFromUI();
     const crop = cropRect ? { ...cropRect } : null;
     const maskPayload = await buildMaskPayload();
-    const result = await invoke("process_image", {
-      payload: ipcBytes(bytes),
-      params,
-      maskPayload: maskPayload ? ipcBytes(maskPayload) : null,
-      crop,
-    });
+    const result = await countBirds(bytes, params, maskPayload, crop);
     if (session !== editSession) return;
 
     updateCount(result.count);
@@ -2580,12 +2599,7 @@ async function shareHistoryEntry(entry, item) {
         console.warn("Missing mask:", e);
       }
     }
-    const result = await invoke("process_image", {
-      payload: ipcBytes(bytes),
-      params: entry.params,
-      maskPayload: mask ? ipcBytes(mask) : null,
-      crop: entry.crop ?? null,
-    });
+    const result = await countBirds(bytes, entry.params, mask, entry.crop ?? null);
     url = URL.createObjectURL(new Blob([bytes], { type: guessMimeFromPath(entry.name ?? "") || undefined }));
     const image = await loadImage(url);
     const blob = await composeShareImage(
@@ -2607,7 +2621,8 @@ async function shareHistoryEntry(entry, item) {
 
 // ===== Helpers =====
 
-// Tauri takes bytes as a plain array; web.js takes the Uint8Array as it is.
+// Tauri takes bytes inside arguments as a plain array (load_photo takes a raw body
+// instead); web.js takes the Uint8Array as it is.
 function ipcBytes(bytes) {
   return isWeb ? bytes : Array.from(bytes);
 }

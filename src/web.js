@@ -20,8 +20,9 @@
   let worker = null;
   let nextRequestId = 1;
   const pending = new Map();
-  // Ids of the photos sent to the worker, which keeps the last one decoded.
-  const photoIds = new WeakMap();
+  // The photo main.js counts, one at a time as load_photo in lib.rs, and the one the
+  // worker keeps decoded.
+  let loadedPhoto = null;
   let nextPhotoId = 1;
   let workerPhotoId = null;
 
@@ -60,16 +61,16 @@
     return value instanceof Uint8Array ? value : Uint8Array.from(value);
   }
 
-  async function processImage({ payload, params, maskPayload, crop }) {
-    const bytes = asBytes(payload);
-    let photoId = photoIds.get(bytes);
-    if (!photoId) {
-      photoId = nextPhotoId++;
-      photoIds.set(bytes, photoId);
-    }
+  function loadPhoto(bytes) {
+    loadedPhoto = { id: nextPhotoId++, bytes: asBytes(bytes) };
+    return loadedPhoto.id;
+  }
+
+  async function processImage({ photoId, params, maskPayload, crop }) {
+    if (loadedPhoto?.id !== photoId) throw "photo-missing";
     const message = { type: "process", photoId, params, crop, mask: asBytes(maskPayload) };
     if (workerPhotoId !== photoId) {
-      message.bytes = bytes;
+      message.bytes = loadedPhoto.bytes;
     }
     try {
       const result = await askWorker(message);
@@ -78,7 +79,7 @@
     } catch (e) {
       if (e === "photo-missing") {
         workerPhotoId = null;
-        return processImage({ payload: bytes, params, maskPayload, crop });
+        return processImage({ photoId, params, maskPayload, crop });
       }
       throw e;
     }
@@ -248,6 +249,7 @@
   // ===== Commands =====
 
   const commands = {
+    load_photo: loadPhoto,
     process_image: processImage,
     web_keep_photo: keepPhoto,
     read_image: readImage,

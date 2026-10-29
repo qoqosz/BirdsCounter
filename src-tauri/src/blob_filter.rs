@@ -111,15 +111,58 @@ impl Crop {
     }
 }
 
-fn crop_mat(mat: core::Mat, rect: Option<core::Rect>) -> Result<core::Mat, String> {
+/// The crop clamped to an image of `cols` x `rows`; an error when nothing is left.
+fn crop_rect(crop: Option<Crop>, cols: i32, rows: i32) -> Result<Option<core::Rect>, String> {
+    match crop {
+        Some(crop) => Ok(Some(
+            crop.rect_within(cols, rows)
+                .ok_or("Crop is outside the image")?,
+        )),
+        None => Ok(None),
+    }
+}
+
+/// A copy of `mat` cut to `rect`; `None` when `rect` covers all of it.
+fn crop_mat(mat: &core::Mat, rect: Option<core::Rect>) -> Result<Option<core::Mat>, String> {
     match rect {
         Some(rect) if rect.width < mat.cols() || rect.height < mat.rows() => {
-            core::Mat::roi(&mat, rect)
+            core::Mat::roi(mat, rect)
                 .and_then(|roi| roi.try_clone())
+                .map(Some)
                 .map_err(|e| format!("Crop error: {}", e))
         }
-        _ => Ok(mat),
+        _ => Ok(None),
     }
+}
+
+/// Decodes a photo (EXIF-rotated) as BGR.
+fn decode_color(payload: &[u8]) -> Result<core::Mat, String> {
+    let vec = core::Vector::<u8>::from_slice(payload);
+    let image = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_COLOR)
+        .map_err(|e| format!("Failed to read image: {}", e))?;
+    if image.empty() {
+        return Err("Failed to decode image".to_string());
+    }
+    Ok(image)
+}
+
+fn to_gray(image: &core::Mat) -> Result<core::Mat, String> {
+    let mut gray = core::Mat::default();
+    imgproc::cvt_color(
+        image,
+        &mut gray,
+        imgproc::COLOR_BGR2GRAY,
+        0,
+        core::AlgorithmHint::ALGO_HINT_DEFAULT,
+    )
+    .map_err(|e| format!("Color conversion error: {}", e))?;
+    Ok(gray)
+}
+
+/// Decodes a photo to the grayscale image `BlobFilter::detect` takes, so it can be
+/// decoded once and counted with many settings.
+pub fn decode_gray(payload: &[u8]) -> Result<core::Mat, String> {
+    to_gray(&decode_color(payload)?)
 }
 
 /// A detected blob; `count` is the estimated number of birds it contains.
@@ -178,15 +221,18 @@ impl BlobFilter {
         Self { params }
     }
 
-    /// Finds the birds in `payload`, or in its `crop` region. The exclusion mask covers
-    /// the whole image, not just the crop. Positions are in pixels of the whole image.
+    /// Finds the birds in `gray` (from `decode_gray`), or in its `crop` region. The
+    /// exclusion mask covers the whole image, not just the crop. Positions are in pixels
+    /// of the whole image.
     pub fn detect(
         &self,
-        payload: Vec<u8>,
-        mask_payload: Option<Vec<u8>>,
+        gray: &core::Mat,
+        mask_payload: Option<&[u8]>,
         crop: Option<Crop>,
     ) -> Result<Vec<Bird>, String> {
-        let (_, blobs, origin) = self.run(payload, mask_payload, crop)?;
+        let crop_rect = crop_rect(crop, gray.cols(), gray.rows())?;
+        let blobs = self.run(gray, mask_payload, crop_rect)?;
+        let origin = crop_rect.map_or(core::Point::new(0, 0), |rect| rect.tl());
         Ok(blobs
             .iter()
             .map(|blob| Bird {
@@ -206,7 +252,10 @@ impl BlobFilter {
         mask_payload: Option<Vec<u8>>,
         crop: Option<Crop>,
     ) -> Result<(Vec<u8>, usize), String> {
-        let (image, blobs, _) = self.run(payload, mask_payload, crop)?;
+        let full = decode_color(&payload)?;
+        let crop_rect = crop_rect(crop, full.cols(), full.rows())?;
+        let blobs = self.run(&to_gray(&full)?, mask_payload.as_deref(), crop_rect)?;
+        let image = crop_mat(&full, crop_rect)?.unwrap_or(full);
         let annotated = annotate(&image, &blobs)?;
         let mut buf = core::Vector::new();
         let encode_params = core::Vector::new();
@@ -217,50 +266,28 @@ impl BlobFilter {
         Ok((buf.to_vec(), count))
     }
 
-    /// The (cropped) image, the blobs found in it and the crop's top left corner.
+    /// The blobs found in the `crop_rect` part of the whole grayscale image, in pixels of
+    /// that part.
     fn run(
         &self,
-        payload: Vec<u8>,
-        mask_payload: Option<Vec<u8>>,
-        crop: Option<Crop>,
-    ) -> Result<(core::Mat, Vec<Blob>, core::Point), String> {
+        full_gray: &core::Mat,
+        mask_payload: Option<&[u8]>,
+        crop_rect: Option<core::Rect>,
+    ) -> Result<Vec<Blob>, String> {
         let params = &self.params;
 
-        let vec: core::Vector<u8> = core::Vector::from_iter(payload);
-        let full = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_COLOR)
-            .map_err(|e| format!("Failed to read image: {}", e))?;
-        if full.empty() {
-            return Err("Failed to decode image".to_string());
-        }
-        let (full_cols, full_rows) = (full.cols(), full.rows());
-        let crop_rect = match crop {
-            Some(crop) => Some(
-                crop.rect_within(full_cols, full_rows)
-                    .ok_or("Crop is outside the image")?,
-            ),
-            None => None,
-        };
-        let image = crop_mat(full, crop_rect)?;
-
-        let mut gray = core::Mat::default();
-        imgproc::cvt_color(
-            &image,
-            &mut gray,
-            imgproc::COLOR_BGR2GRAY,
-            0,
-            core::AlgorithmHint::ALGO_HINT_DEFAULT,
-        )
-        .map_err(|e| format!("Color conversion error: {}", e))?;
+        let cropped = crop_mat(full_gray, crop_rect)?;
+        let gray = cropped.as_ref().unwrap_or(full_gray);
 
         let exclusion_mask = match mask_payload {
-            Some(mask_bytes) => Some(crop_mat(
-                decode_mask(mask_bytes, full_cols, full_rows)?,
-                crop_rect,
-            )?),
+            Some(mask_bytes) => {
+                let mask = decode_mask(mask_bytes, full_gray.cols(), full_gray.rows())?;
+                Some(crop_mat(&mask, crop_rect)?.unwrap_or(mask))
+            }
             None => None,
         };
         let landscape = if params.sky_only {
-            landscape_mask(&gray, odd_kernel(params.adaptive_block, 3), params.invert)?
+            landscape_mask(gray, odd_kernel(params.adaptive_block, 3), params.invert)?
         } else {
             None
         };
@@ -274,9 +301,9 @@ impl BlobFilter {
             .trim()
             .eq_ignore_ascii_case("background")
         {
-            self.detect_background(&gray, &masks)?
+            self.detect_background(gray, &masks)?
         } else {
-            self.detect_threshold(&gray, &masks)?
+            self.detect_threshold(gray, &masks)?
         };
 
         let min_radius = params.min_radius.max(0.0);
@@ -290,9 +317,7 @@ impl BlobFilter {
         if params.split_clusters {
             blobs = split_merged(blobs);
         }
-
-        let origin = crop_rect.map_or(core::Point::new(0, 0), |rect| rect.tl());
-        Ok((image, blobs, origin))
+        Ok(blobs)
     }
 
     /// Estimates the sky without birds and keeps blobs that are clearly darker than it.
@@ -1023,8 +1048,8 @@ fn invert_image(src: &core::Mat) -> Result<core::Mat, String> {
     Ok(inverted)
 }
 
-fn decode_mask(mask_bytes: Vec<u8>, width: i32, height: i32) -> Result<core::Mat, String> {
-    let vec: core::Vector<u8> = core::Vector::from_iter(mask_bytes);
+fn decode_mask(mask_bytes: &[u8], width: i32, height: i32) -> Result<core::Mat, String> {
+    let vec = core::Vector::<u8>::from_slice(mask_bytes);
     let decoded = imgcodecs::imdecode(&vec, imgcodecs::IMREAD_GRAYSCALE)
         .map_err(|e| format!("Mask decode error: {}", e))?;
     if decoded.empty() {
@@ -1360,7 +1385,7 @@ mod tests {
 
         // Detections are reported in pixels of the whole image, inside the crop.
         let found = BlobFilter::new(BlobParams::default())
-            .detect(encode(&img), None, Some(crop))
+            .detect(&decode_gray(&encode(&img)).unwrap(), None, Some(crop))
             .unwrap();
         assert_eq!(found.iter().map(|bird| bird.count).sum::<u32>(), 30);
         assert!(found.iter().all(|bird| {

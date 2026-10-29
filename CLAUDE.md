@@ -70,7 +70,10 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 **Rust (`src-tauri/src/`)**
 
 - `lib.rs` registers the Tauri commands:
-  - `process_image(payload, params, mask_payload, crop)` returns `{ birds, count }`, where `birds` lists the
+  - `load_photo` takes the photo as the raw request body (`invoke("load_photo", bytes)`), decodes it once to
+    grayscale and keeps it (one photo at a time) under the id it returns, so settings changes don't send it
+    again. `countBirds` in `main.js` sends it only when it changes, and again after `photo-missing`.
+  - `process_image(photo_id, params, mask_payload, crop)` returns `{ birds, count }`, where `birds` lists the
     detections (`x`, `y`, `radius`, `count`) in pixels of the whole photo. `crop` is a rectangle in photo pixels. The
     mask covers the whole photo (at any resolution, Rust scales it), and Rust crops it too. The frontend draws the
     rings; `BlobFilter::apply` still returns an annotated PNG for the `count` example.
@@ -141,7 +144,7 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 **Web version**
 
 - `index.html` loads `web.js` before `main.js`. Without `window.__TAURI__` it installs a stand-in with `core.invoke`
-  and sets `window.__BIRDS_WEB__` (`isWeb` in `main.js`). It handles `process_image`, the `history_*` commands and
+  and sets `window.__BIRDS_WEB__` (`isWeb` in `main.js`). It handles `load_photo` and `process_image`, the `history_*` commands and
   `read_image` (IndexedDB, with a copy of each photo under a `web:` source) and `web_keep_photo`. `main.js` passes
   bytes as `Uint8Array` there (`ipcBytes`). Desktop browsers get the default look, with no camera button.
 - `src/detector.js` ports `blob_filter.rs` to OpenCV.js 5.0. **Keep the two in sync**: constants, steps and their
