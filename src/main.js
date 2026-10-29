@@ -75,15 +75,13 @@ let countValue;
 let countSuffix;
 let backBtn;
 let birdCanvas;
-let viewResultBtn;
-let viewOriginalBtn;
+let viewRingsBtn;
 let detectBtn;
 let viewerBtn;
 let photoViewer;
 let viewerCanvas;
 let viewerMarksBtn;
 let viewerCloseBtn;
-let shareBtn;
 let viewerShareBtn;
 let maskBrushCursor;
 let historySection;
@@ -116,7 +114,7 @@ let maskContext = null;
 let maskHasPaint = false;
 let maskPngCache = null;
 let maskSnapshot = null;
-let langSelect;
+let moreBtn;
 let translations = {};
 let currentLang = DEFAULT_LANG;
 let radiusInitialized = false;
@@ -247,9 +245,6 @@ async function setLanguage(lang) {
   if (!countingAnimationTimer && countValue) {
     const parsed = Number(countValue.textContent);
     updateCount(Number.isFinite(parsed) ? parsed : 0);
-  }
-  if (langSelect) {
-    langSelect.value = currentLang;
   }
   try {
     localStorage.setItem("lang", currentLang);
@@ -462,7 +457,7 @@ function showPreview() {
   imagePreview.style.display = "block";
   if (countLabel) countLabel.style.display = "flex";
   if (processActions) processActions.style.display = "flex";
-  setSettingsOpen(false);
+  setSettingsOpen(true);
   if (backBtn) backBtn.style.display = "flex";
   document.body.classList.add("has-back");
   if (dragDropArea) dragDropArea.style.display = "none";
@@ -486,7 +481,7 @@ function resetApp() {
   closeViewer();
   if (countLabel) countLabel.style.display = "none";
   if (processActions) processActions.style.display = "none";
-  setSettingsOpen(false);
+  setSettingsOpen(true);
   if (backBtn) backBtn.style.display = "none";
   document.body.classList.remove("has-back");
   if (dragDropArea) dragDropArea.style.display = "flex";
@@ -851,15 +846,7 @@ function setSettingsOpen(open) {
 
 function setShowRings(show, persist = true) {
   showRings = show;
-  for (const [button, selected] of [
-    [viewResultBtn, show],
-    [viewOriginalBtn, !show],
-  ]) {
-    if (!button) continue;
-    button.classList.toggle("is-selected", selected);
-    button.setAttribute("aria-pressed", selected ? "true" : "false");
-  }
-  for (const button of [viewerMarksBtn]) {
+  for (const button of [viewRingsBtn, viewerMarksBtn]) {
     if (!button) continue;
     button.classList.toggle("is-off", !show);
     button.setAttribute("aria-pressed", show ? "true" : "false");
@@ -2170,6 +2157,51 @@ function toggleHistoryMenu(button, entry, item) {
     danger: true,
     run: () => deleteHistoryEntry(entry, true),
   });
+  openMenu(button, actions);
+}
+
+const LANGUAGES = [
+  ["en", "English"],
+  ["pl", "Polski"],
+];
+const LANGUAGE_ICON =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>';
+const CHECK_ICON =
+  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+
+// The header's "⋮" menu: Language (opens the list of languages) and, on iOS and Android, Share.
+function toggleHeaderMenu() {
+  const reopen = historyMenu?.anchor !== moreBtn;
+  closeHistoryMenu();
+  if (!reopen) return;
+  const languageActions = LANGUAGES.map(([code, name]) => ({
+    label: name,
+    icon: code === currentLang ? CHECK_ICON : "",
+    run: () => setLanguage(code),
+  }));
+  const actions = [
+    {
+      label: t("lang_label"),
+      icon: LANGUAGE_ICON,
+      run: () => openMenu(moreBtn, languageActions),
+    },
+  ];
+  if (canShare()) {
+    const ready = Boolean(
+      sourceImage && lastResult && sameCrop(lastResult.crop, cropRect) && !isCropping && !isMasking,
+    );
+    actions.push({
+      label: t("share"),
+      icon: SHARE_ICON,
+      disabled: !ready,
+      run: shareCurrentResult,
+    });
+  }
+  openMenu(moreBtn, actions);
+}
+
+function openMenu(button, actions) {
+  closeHistoryMenu();
 
   const menu = document.createElement("div");
   menu.className = "history-menu";
@@ -2179,6 +2211,7 @@ function toggleHistoryMenu(button, entry, item) {
     row.type = "button";
     row.className = "history-menu-item" + (action.danger ? " is-danger" : "");
     row.setAttribute("role", "menuitem");
+    row.disabled = Boolean(action.disabled);
     const label = document.createElement("span");
     label.textContent = action.label;
     row.append(label);
@@ -2381,7 +2414,7 @@ function updateShareButtons() {
   const ready = Boolean(
     sourceImage && lastResult && sameCrop(lastResult.crop, cropRect) && !isCropping && !isMasking,
   );
-  for (const button of [shareBtn, viewerShareBtn]) {
+  for (const button of [viewerShareBtn]) {
     if (button) button.disabled = !ready;
   }
 }
@@ -2467,7 +2500,7 @@ function shareFailed(e) {
 // What the editor shows now.
 async function shareCurrentResult() {
   if (!canShare() || !sourceImage || !lastResult || !sameCrop(lastResult.crop, cropRect)) return;
-  const buttons = [shareBtn, viewerShareBtn];
+  const buttons = [viewerShareBtn];
   for (const button of buttons) if (button) button.disabled = true;
   try {
     const rect = lastResult.crop ?? wholeRect(sourceImage);
@@ -2619,7 +2652,7 @@ function setupAndroid() {
   document.addEventListener("pointerdown", startRipple);
 }
 
-const RIPPLE_TARGETS = ".action-button, .icon-button, .lang-switch, .advanced-summary, .history-open";
+const RIPPLE_TARGETS = ".action-button, .icon-button, .advanced-summary, .history-open";
 
 function startRipple(e) {
   const target = e.target.closest(RIPPLE_TARGETS);
@@ -2697,15 +2730,13 @@ window.addEventListener("DOMContentLoaded", () => {
   previewImg = document.querySelector("#previewImg");
   imagePreview = document.querySelector("#imagePreview");
   birdCanvas = document.querySelector("#birdCanvas");
-  viewResultBtn = document.querySelector("#viewResultBtn");
-  viewOriginalBtn = document.querySelector("#viewOriginalBtn");
+  viewRingsBtn = document.querySelector("#viewRingsBtn");
   detectBtn = document.querySelector("#detectBtn");
   viewerBtn = document.querySelector("#viewerBtn");
   photoViewer = document.querySelector("#photoViewer");
   viewerCanvas = document.querySelector("#viewerCanvas");
   viewerMarksBtn = document.querySelector("#viewerMarksBtn");
   viewerCloseBtn = document.querySelector("#viewerCloseBtn");
-  shareBtn = document.querySelector("#shareBtn");
   viewerShareBtn = document.querySelector("#viewerShareBtn");
   maskBrushCursor = document.querySelector("#maskBrushCursor");
   countLabel = document.querySelector("#countLabel");
@@ -2735,7 +2766,7 @@ window.addEventListener("DOMContentLoaded", () => {
   historyList = document.querySelector("#historyList");
   historyClearBtn = document.querySelector("#historyClearBtn");
   backBtn = document.querySelector("#backBtn");
-  langSelect = document.querySelector("#langSelect");
+  moreBtn = document.querySelector("#moreBtn");
   minRadiusInput = document.querySelector("#minRadius");
   minRadiusValue = document.querySelector("#minRadiusValue");
   maxRadiusInput = document.querySelector("#maxRadius");
@@ -2921,12 +2952,11 @@ window.addEventListener("DOMContentLoaded", () => {
     // Shown by default
   }
   setShowRings(initialShowRings, false);
-  viewResultBtn?.addEventListener("click", () => setShowRings(true));
-  viewOriginalBtn?.addEventListener("click", () => setShowRings(false));
+  viewRingsBtn?.addEventListener("click", () => setShowRings(!showRings));
   viewerMarksBtn?.addEventListener("click", () => setShowRings(!showRings));
   detectBtn?.addEventListener("click", () => setSettingsOpen(!settingsOpen));
   viewerBtn?.addEventListener("click", openViewer);
-  for (const button of [shareBtn, viewerShareBtn]) {
+  for (const button of [viewerShareBtn]) {
     button?.addEventListener("click", shareCurrentResult);
   }
   viewerCloseBtn?.addEventListener("click", closeViewer);
@@ -2995,11 +3025,7 @@ window.addEventListener("DOMContentLoaded", () => {
     backBtn.addEventListener("click", resetApp);
   }
 
-  if (langSelect) {
-    langSelect.addEventListener("change", (e) => {
-      setLanguage(e.target.value);
-    });
-  }
+  moreBtn?.addEventListener("click", toggleHeaderMenu);
 
   const settingsControls = [
     minRadiusInput,

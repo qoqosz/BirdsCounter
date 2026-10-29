@@ -186,26 +186,6 @@ h1 {
     display: none;
 }
 
-.lang-switch {
-    flex: none;
-    position: relative;
-    display: flex;
-    align-items: center;
-}
-
-.lang-icon {
-    display: none;
-}
-
-.lang-switch select {
-    border: 1px solid var(--border);
-    background-color: var(--surface);
-    padding: 4px 8px;
-    border-radius: 8px;
-    font-size: 0.875em;
-    cursor: pointer;
-}
-
 /* ===== Layout ===== */
 .container {
     width: 100%;
@@ -464,22 +444,6 @@ body.is-masking .preview-tools {
     background: rgba(0, 0, 0, 0.75);
 }
 
-/* "Zoom" opens the full resolution viewer */
-.zoom-button {
-    width: auto;
-    gap: 8px;
-    padding: 0 16px 0 12px;
-    border-radius: 999px;
-    font: inherit;
-    font-size: 0.9375em;
-    font-weight: 600;
-}
-
-.zoom-button svg {
-    width: 20px;
-    height: 20px;
-}
-
 /* Sharing is native, so the buttons exist on iOS and Android only */
 .share-button {
     display: none;
@@ -578,50 +542,6 @@ body.viewer-open {
     font-variant-numeric: tabular-nums;
 }
 
-.segmented {
-    display: inline-flex;
-    flex: none;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-button);
-}
-
-.segment {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    height: 36px;
-    padding: 0 14px;
-    border: none;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.segment + .segment {
-    border-left: 1px solid var(--border);
-}
-
-.segment.is-selected {
-    background-color: var(--accent);
-    color: var(--on-accent);
-}
-
-.segment-check {
-    display: none;
-    width: 18px;
-    height: 18px;
-}
-
-body.is-cropping .segmented,
-body.is-masking .segmented {
-    visibility: hidden;
-}
-
 /* ===== Tools under the photo, and the share button ===== */
 .process-actions .tool-button {
     flex-direction: column;
@@ -635,33 +555,6 @@ body.is-masking .segmented {
 .tool-button .btn-icon {
     width: 24px;
     height: 24px;
-}
-
-.share-result {
-    flex: none;
-    width: 100%;
-    background-color: var(--accent);
-    color: var(--on-accent);
-}
-
-.share-result:active {
-    background-color: var(--accent);
-    filter: brightness(0.88);
-}
-
-.share-result:disabled {
-    opacity: 0.4;
-}
-
-/* The share button sits at the bottom of the screen */
-body.is-ios.has-back .container,
-body.is-android.has-back .container {
-    min-height: calc(100dvh - var(--header-height) - var(--safe-top));
-}
-
-body.is-ios .share-result,
-body.is-android .share-result {
-    margin-top: auto;
 }
 
 /* ===== Crop =====
@@ -1316,7 +1209,7 @@ body.is-mac .icon-button svg {
 }
 
 /* Native pop-up buttons */
-body.is-mac .lang-switch select,
+
 body.is-mac .settings-select {
     -webkit-appearance: auto;
     appearance: auto;
@@ -1536,32 +1429,6 @@ body.is-android .back-button .icon-arrow {
     display: block;
 }
 
-/* Language action: an icon button over the native picker */
-body.is-android .lang-switch {
-    width: 48px;
-    height: 48px;
-    justify-content: center;
-    border-radius: 50%;
-    color: var(--md-on-surface-variant);
-    overflow: hidden;
-}
-
-body.is-android .lang-icon {
-    display: block;
-    width: 24px;
-    height: 24px;
-}
-
-body.is-android .lang-switch select {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    -webkit-appearance: none;
-    appearance: none;
-}
-
 body.is-android .container {
     min-height: calc(100vh - var(--header-height) - var(--safe-top));
     padding-top: 8px;
@@ -1633,7 +1500,6 @@ body.is-android .action-button::before,
 body.is-android .edit-button::before,
 body.is-android .history-open::before,
 body.is-android .icon-button::before,
-body.is-android .lang-switch::before,
 body.is-android .advanced-summary::before {
     content: "";
     position: absolute;
@@ -1648,7 +1514,6 @@ body.is-android .action-button:active::before,
 body.is-android .edit-button:active::before,
 body.is-android .history-open:active::before,
 body.is-android .icon-button:active::before,
-body.is-android .lang-switch:active::before,
 body.is-android .advanced-summary:active::before {
     opacity: 0.1;
 }
@@ -1973,13 +1838,7 @@ body.is-ios h1 {
     text-align: center;
 }
 
-body.is-ios .lang-switch {
-    grid-column: 3;
-    justify-self: end;
-}
-
-body.is-ios .icon-button,
-body.is-ios .lang-switch select {
+body.is-ios .icon-button{
     height: 44px;
     border: none;
     border-radius: var(--radius-button);
@@ -1997,26 +1856,7 @@ body.is-ios .icon-button svg {
     height: 20px;
 }
 
-body.is-ios .lang-switch .lang-icon {
-    display: block;
-    position: absolute;
-    left: 13px;
-    width: 18px;
-    height: 18px;
-    pointer-events: none;
-    z-index: 1;
-}
-
-body.is-ios .lang-switch select {
-    -webkit-appearance: none;
-    appearance: none;
-    padding: 0 16px 0 38px;
-    font-size: 15px;
-    font-weight: 500;
-}
-
-body.is-ios .icon-button:active,
-body.is-ios .lang-switch select:active {
+body.is-ios .icon-button:active{
     background: var(--fill-active);
 }
 
@@ -2299,23 +2139,6 @@ body.is-mac #countValue {
     color: var(--text);
 }
 
-body.is-mac .segmented {
-    border: none;
-    background-color: var(--push-bg);
-    box-shadow: var(--push-shadow);
-}
-
-body.is-mac .segment {
-    height: 22px;
-    padding: 0 14px;
-    font-size: 13px;
-    font-weight: 400;
-}
-
-body.is-mac .segment + .segment {
-    border-left-color: var(--separator);
-}
-
 body.is-mac .process-actions .tool-button {
     flex-direction: row;
     height: var(--button-height);
@@ -2339,33 +2162,6 @@ body.is-android #countValue {
     color: var(--md-primary);
 }
 
-body.is-android .segmented {
-    border-color: var(--md-outline);
-    border-radius: 9999px;
-}
-
-body.is-android .segment {
-    height: 40px;
-    padding: 0 14px;
-    font-size: 14px;
-    font-weight: 500;
-    letter-spacing: 0.1px;
-    color: var(--md-on-surface);
-}
-
-body.is-android .segment + .segment {
-    border-left-color: var(--md-outline);
-}
-
-body.is-android .segment.is-selected {
-    background-color: var(--md-secondary-container);
-    color: var(--md-on-secondary-container);
-}
-
-body.is-android .segment.is-selected .segment-check {
-    display: block;
-}
-
 body.is-android .process-actions {
     gap: 8px;
 }
@@ -2384,27 +2180,6 @@ body.is-android .process-actions .tool-button {
 body.is-android .process-actions .tool-button.is-active {
     background-color: var(--md-secondary-container);
     color: var(--md-on-secondary-container);
-}
-
-body.is-android .share-result {
-    height: 56px;
-    font-size: 16px;
-    line-height: 24px;
-    background-color: var(--md-primary);
-    color: var(--md-on-primary);
-}
-
-body.is-android .share-result .btn-icon {
-    width: 24px;
-    height: 24px;
-}
-
-body.is-android .zoom-button {
-    height: 40px;
-    background: var(--md-surface-container-high);
-    color: var(--md-on-surface);
-    font-size: 14px;
-    font-weight: 500;
 }
 
 /* ----- iOS: system segmented control, gray tiles, capsule share button ----- */
@@ -2429,32 +2204,6 @@ body.is-ios #countValue {
     color: var(--text);
 }
 
-body.is-ios .segmented {
-    padding: 2px;
-    border: none;
-    border-radius: 9px;
-    background-color: var(--fill);
-}
-
-body.is-ios .segment {
-    height: 32px;
-    padding: 0 14px;
-    border-radius: 7px;
-    font-size: 13px;
-    font-weight: 500;
-}
-
-body.is-ios .segment + .segment {
-    border-left: none;
-}
-
-body.is-ios .segment.is-selected {
-    background-color: var(--segment-selected);
-    color: var(--text);
-    font-weight: 600;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
-}
-
 body.is-ios .process-actions {
     gap: 10px;
 }
@@ -2465,34 +2214,6 @@ body.is-ios .process-actions .tool-button {
     border-radius: 20px;
     font-size: 13px;
     font-weight: 500;
-}
-
-body.is-ios .share-result {
-    height: var(--button-height);
-    background-color: var(--accent);
-    color: var(--on-accent);
-    font-weight: 600;
-}
-
-body.is-ios .share-result:active {
-    background-color: var(--accent);
-    filter: brightness(0.85);
-}
-
-body.is-ios .zoom-button {
-    height: 36px;
-    font-size: 15px;
-}
-
-/* Nothing to share until a photo is open */
-body:not(.has-back) .share-result {
-    display: none !important;
-}
-
-body.is-mac .zoom-button {
-    height: 28px;
-    padding: 0 12px 0 10px;
-    font-size: 13px;
 }
 
 /* ----- History menu per platform ----- */
@@ -2659,8 +2380,31 @@ body.is-ios .edit-actions .reset-button {
     font-size: 17px;
 }
 
-/* Nothing to share while the result is being edited */
-body.is-cropping .share-result,
-body.is-masking .share-result {
-    display: none !important;
+/* ----- Header menu (Language, Share) and the rings toggle ----- */
+.more-button {
+    color: var(--text-secondary);
+}
+
+body.is-ios .more-button {
+    grid-column: 3;
+    justify-self: end;
+    color: var(--text);
+}
+
+body.is-android .more-button {
+    color: var(--md-on-surface-variant);
+}
+
+.count-label .marks-toggle {
+    color: var(--text-secondary);
+}
+
+.history-menu-item:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.history-menu-item svg:empty,
+.history-menu-item .menu-icon-gap {
+    display: none;
 }

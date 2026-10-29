@@ -88,7 +88,7 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
     `.pbxproj`) by name at runtime. `native::install` must run between `build()` and `run()` in `lib.rs`, so it
     can hook Tao's `AppDelegate`/`TaoSceneDelegate` before a quick action launches the app. On other platforms
     the commands report that they are unsupported.
-- Sharing (iOS and Android only): `shareCurrentResult` (editor and viewer buttons) and `shareHistoryEntry` (history
+- Sharing (iOS and Android only): `shareCurrentResult` (header ⋮ menu and viewer button) and `shareHistoryEntry` (history
   rows, which count again with the entry's settings) compose a JPEG with `composeShareImage` (photo, rings if shown,
   black bar with the count). iOS: `native_share_image` writes it to the temp dir and `+[BCNativeBridge shareFile:]`
   opens `UIActivityViewController`. Android: `window.Android.shareImage(base64, name)` uses the FileProvider cache path.
@@ -115,9 +115,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   and is sent as a PNG. A stroke paints only its own segment on the overlay; `renderMaskPreview` redraws all of
   it only when the view changes.
 - The editor shows a scaled-down copy of the photo (`PREVIEW_SIZE`) with the rings on `#birdCanvas`. The
-  Result / Original switch above the photo hides them (`showRings`, kept in `localStorage`). Under the photo are Crop,
-  Mask and Detection (opens the settings, folded away by default); on iOS and Android the share button sits at the
-  bottom of the screen. The full resolution viewer (`#photoViewer`, opened by
+  eye button above the photo hides them (`showRings`, kept in `localStorage`). Under the photo are Crop,
+  Mask and Detection (opens the settings, open by default). The header's ⋮ menu has Language and, on iOS and
+  Android, Share. The full resolution viewer (`#photoViewer`, opened by
   its button or a double click/tap) draws the visible part of the photo and the rings on one canvas per frame;
   pinch, drag, ctrl/⌘ + wheel and double tap zoom and pan.
 - History: each opened photo gets one entry. `queueHistorySave` updates it after each result, saves are chained
