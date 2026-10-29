@@ -493,12 +493,13 @@
         );
 
         // Hysteresis: keep only components whose strongest pixel passes the threshold.
+        // The background (label 0) is skipped, as it is never kept (see blob_filter.rs).
         const peaks = new Float32Array(labelCount);
         {
           const labelData = labels.data32S;
           for (let i = 0; i < labelData.length; i++) {
             const label = labelData[i];
-            if (significance[i] > peaks[label]) peaks[label] = significance[i];
+            if (label !== 0 && significance[i] > peaks[label]) peaks[label] = significance[i];
           }
         }
 

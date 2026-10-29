@@ -505,9 +505,13 @@ impl BlobFilter {
         let significance_data = significance
             .data_typed::<f32>()
             .map_err(|e| format!("Significance access error: {}", e))?;
+        // The background (label 0) is most of the image and is never kept; updating its
+        // peak would make every pixel write to the same place, which is several times slower.
         for (&label, &value) in label_data.iter().zip(significance_data) {
-            let peak = &mut peaks[label as usize];
-            *peak = peak.max(value);
+            if label != 0 {
+                let peak = &mut peaks[label as usize];
+                *peak = peak.max(value);
+            }
         }
 
         let mut blobs = Vec::new();
