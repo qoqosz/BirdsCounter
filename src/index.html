@@ -72,10 +72,11 @@
 
         <section id="historySection" class="history-section" hidden>
             <div class="history-header">
-                <h2 class="settings-title" data-i18n="history_title">History</h2>
+                <h2 class="settings-title history-title" data-i18n="history_title">History</h2>
                 <button id="historyClearBtn" class="text-button" type="button" data-i18n="history_clear">Clear</button>
             </div>
-            <ul id="historyList" class="history-list group"></ul>
+            <!-- One titled group per day, newest first, filled by renderHistory -->
+            <div id="historyList" class="history-days"></div>
         </section>
 
         <!-- Result header: the count, and a switch between the photo with and without the rings -->

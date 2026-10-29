@@ -52,6 +52,8 @@
   "crop_reset": "Reset",
   "crop_hint": "Drag the corners or edges to crop, or drag inside the frame to move it.",
   "history_title": "History",
+  "history_today": "Today",
+  "history_yesterday": "Yesterday",
   "history_clear": "Clear",
   "history_clear_confirm": "Remove all entries from the history? Photos taken in the app are deleted too.",
   "detection": "Detection",

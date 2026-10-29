@@ -2109,15 +2109,38 @@ async function refreshHistory() {
   renderHistory();
 }
 
-function formatDate(ms) {
+function formatTime(ms) {
   try {
-    return new Intl.DateTimeFormat(currentLang, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(ms));
+    return new Intl.DateTimeFormat(currentLang, { timeStyle: "short" }).format(new Date(ms));
   } catch (e) {
-    return new Date(ms).toLocaleString();
+    return new Date(ms).toLocaleTimeString();
   }
+}
+
+// History groups entries by the local calendar day they were last updated.
+function dayKey(ms) {
+  const date = new Date(ms);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+// "Today", "Yesterday", or the weekday and date ("Sunday, 25 October"), with the year only
+// for earlier years.
+function formatDay(ms) {
+  const date = new Date(ms);
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (dayKey(ms) === dayKey(today.getTime())) return t("history_today");
+  if (dayKey(ms) === dayKey(yesterday.getTime())) return t("history_yesterday");
+  const options = { weekday: "long", day: "numeric", month: "long" };
+  if (date.getFullYear() !== today.getFullYear()) options.year = "numeric";
+  let text;
+  try {
+    text = new Intl.DateTimeFormat(currentLang, options).format(date);
+  } catch (e) {
+    text = date.toLocaleDateString();
+  }
+  // Polish weekdays are lowercase, but this is a heading.
+  return text.charAt(0).toLocaleUpperCase(currentLang) + text.slice(1);
 }
 
 const TRASH_ICON =
@@ -2248,52 +2271,71 @@ function renderHistory() {
   if (!visible) return;
 
   const ids = new Set(historyEntries.map((entry) => entry.id));
+  // Entries come newest first, so each day's entries are already next to each other.
+  const days = [];
+  for (const entry of historyEntries) {
+    const key = dayKey(entry.updated_at);
+    if (days.at(-1)?.key !== key) days.push({ key, entries: [] });
+    days.at(-1).entries.push(entry);
+  }
+  const renderEntry = (entry) => {
+    const item = document.createElement("li");
+    item.className = "history-item";
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "history-open";
+    const thumb = document.createElement("img");
+    thumb.className = "history-thumb";
+    thumb.alt = "";
+    setHistoryThumb(thumb, entry);
+    const text = document.createElement("span");
+    text.className = "history-text";
+    const count = document.createElement("span");
+    count.className = "history-count";
+    count.textContent = `${entry.count} ${birdsSuffix(entry.count)}`;
+    const meta = document.createElement("span");
+    meta.className = "history-meta";
+    meta.textContent = formatTime(entry.updated_at);
+    const detail = document.createElement("span");
+    detail.className = "history-meta";
+    detail.textContent = entry.source ? entry.name ?? "" : t("history_unlinked");
+    text.append(count, meta);
+    if (detail.textContent) text.append(detail);
+    openButton.append(thumb, text);
+    openButton.addEventListener("click", () => openHistoryEntry(entry, item));
+
+    const moreButton = document.createElement("button");
+    moreButton.type = "button";
+    moreButton.className = "icon-button history-more";
+    if (canShare()) {
+      moreButton.setAttribute("aria-label", t("history_more"));
+      moreButton.setAttribute("aria-haspopup", "menu");
+      moreButton.setAttribute("aria-expanded", "false");
+      moreButton.innerHTML = MORE_ICON;
+      moreButton.addEventListener("click", () => toggleHistoryMenu(moreButton, entry, item));
+    } else {
+      // Delete is the only action without sharing, so it needs no menu.
+      moreButton.setAttribute("aria-label", t("history_delete"));
+      moreButton.innerHTML = TRASH_ICON;
+      moreButton.addEventListener("click", () => deleteHistoryEntry(entry, true));
+    }
+
+    item.append(openButton, moreButton);
+    return item;
+  };
   historyList.replaceChildren(
-    ...historyEntries.map((entry) => {
-      const item = document.createElement("li");
-      item.className = "history-item";
-
-      const openButton = document.createElement("button");
-      openButton.type = "button";
-      openButton.className = "history-open";
-      const thumb = document.createElement("img");
-      thumb.className = "history-thumb";
-      thumb.alt = "";
-      setHistoryThumb(thumb, entry);
-      const text = document.createElement("span");
-      text.className = "history-text";
-      const count = document.createElement("span");
-      count.className = "history-count";
-      count.textContent = `${entry.count} ${birdsSuffix(entry.count)}`;
-      const meta = document.createElement("span");
-      meta.className = "history-meta";
-      meta.textContent = formatDate(entry.updated_at);
-      const detail = document.createElement("span");
-      detail.className = "history-meta";
-      detail.textContent = entry.source ? entry.name ?? "" : t("history_unlinked");
-      text.append(count, meta);
-      if (detail.textContent) text.append(detail);
-      openButton.append(thumb, text);
-      openButton.addEventListener("click", () => openHistoryEntry(entry, item));
-
-      const moreButton = document.createElement("button");
-      moreButton.type = "button";
-      moreButton.className = "icon-button history-more";
-      if (canShare()) {
-        moreButton.setAttribute("aria-label", t("history_more"));
-        moreButton.setAttribute("aria-haspopup", "menu");
-        moreButton.setAttribute("aria-expanded", "false");
-        moreButton.innerHTML = MORE_ICON;
-        moreButton.addEventListener("click", () => toggleHistoryMenu(moreButton, entry, item));
-      } else {
-        // Delete is the only action without sharing, so it needs no menu.
-        moreButton.setAttribute("aria-label", t("history_delete"));
-        moreButton.innerHTML = TRASH_ICON;
-        moreButton.addEventListener("click", () => deleteHistoryEntry(entry, true));
-      }
-
-      item.append(openButton, moreButton);
-      return item;
+    ...days.map((day) => {
+      const section = document.createElement("section");
+      section.className = "history-day";
+      const title = document.createElement("h3");
+      title.className = "settings-title history-day-title";
+      title.textContent = formatDay(day.entries[0].updated_at);
+      const list = document.createElement("ul");
+      list.className = "history-list group";
+      list.append(...day.entries.map(renderEntry));
+      section.append(title, list);
+      return section;
     }),
   );
 

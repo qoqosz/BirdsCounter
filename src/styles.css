@@ -2408,3 +2408,53 @@ body.is-android .more-button {
 .history-menu-item .menu-icon-gap {
     display: none;
 }
+
+/* History grouped by day: the History heading above, then a titled group per day */
+.history-days {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.history-day {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.history-title {
+    font-size: 1.25em;
+    font-weight: 700;
+    text-transform: none;
+    color: var(--text);
+}
+
+body.is-mac .history-title {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+body.is-android .history-title {
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--md-on-surface);
+}
+
+body.is-android .history-days {
+    gap: 8px;
+}
+
+body.is-android .history-day-title {
+    padding-top: 12px;
+}
+
+body.is-ios .history-title {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+body.is-ios .history-days {
+    gap: 24px;
+}

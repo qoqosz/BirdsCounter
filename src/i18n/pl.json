@@ -55,6 +55,8 @@
   "crop_reset": "Przywróć",
   "crop_hint": "Przeciągnij narożniki lub krawędzie, aby wykadrować, albo przeciągnij wnętrze ramki, aby ją przesunąć.",
   "history_title": "Historia",
+  "history_today": "Dziś",
+  "history_yesterday": "Wczoraj",
   "history_clear": "Wyczyść",
   "history_clear_confirm": "Usunąć wszystkie wpisy z historii? Zdjęcia zrobione w aplikacji też zostaną usunięte.",
   "detection": "Detekcja",
