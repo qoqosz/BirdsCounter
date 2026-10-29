@@ -727,9 +727,8 @@ function updateEditingState() {
   document.body.classList.toggle("is-cropping", isCropping);
   document.body.classList.toggle("is-masking", isMasking);
   if (maskActions) maskActions.style.display = isMasking ? "flex" : "none";
-  if (isPreviewVisible && processActions) {
-    processActions.style.display = editing ? "none" : "flex";
-  }
+  if (isPreviewVisible && processActions) processActions.style.display = "flex";
+  updateSettingsVisibility();
   if (cropActions) cropActions.style.display = isCropping ? "flex" : "none";
   if (cropHint) cropHint.style.display = isCropping ? "block" : "none";
   // Rings belong to the counted crop, not to the whole photo shown while cropping.
@@ -834,13 +833,19 @@ function renderRings() {
 }
 
 // Detection settings stay folded away until the Detection button opens them.
+// Crop, Mask and Detection exclude each other: only the chosen one shows its options.
+function updateSettingsVisibility() {
+  const shown = settingsOpen && !isCropping && !isMasking;
+  if (settingsPanel) settingsPanel.style.display = shown && isPreviewVisible ? "flex" : "none";
+  if (detectBtn) {
+    detectBtn.classList.toggle("is-active", shown);
+    detectBtn.setAttribute("aria-pressed", shown ? "true" : "false");
+  }
+}
+
 function setSettingsOpen(open) {
   settingsOpen = open;
-  if (settingsPanel) settingsPanel.style.display = open && isPreviewVisible ? "flex" : "none";
-  if (detectBtn) {
-    detectBtn.classList.toggle("is-active", open);
-    detectBtn.setAttribute("aria-pressed", open ? "true" : "false");
-  }
+  updateSettingsVisibility();
   if (open && settingsPanel) {
     settingsPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
@@ -2893,7 +2898,9 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   if (cropBtn) {
-    cropBtn.addEventListener("click", enterCropMode);
+    cropBtn.addEventListener("click", () => {
+      if (!isCropping) enterCropMode();
+    });
   }
   if (cropDoneBtn) {
     cropDoneBtn.addEventListener("click", applyCrop);
@@ -3011,7 +3018,12 @@ window.addEventListener("DOMContentLoaded", () => {
   setShowRings(initialShowRings, false);
   viewRingsBtn?.addEventListener("click", () => setShowRings(!showRings));
   viewerMarksBtn?.addEventListener("click", () => setShowRings(!showRings));
-  detectBtn?.addEventListener("click", () => setSettingsOpen(!settingsOpen));
+  detectBtn?.addEventListener("click", () => {
+    if (isCropping) applyCrop();
+    else if (isMasking) exitMaskMode({ process: true });
+    else if (settingsOpen) return setSettingsOpen(false);
+    setSettingsOpen(true);
+  });
   viewerBtn?.addEventListener("click", openViewer);
   for (const button of [viewerShareBtn]) {
     button?.addEventListener("click", shareCurrentResult);
