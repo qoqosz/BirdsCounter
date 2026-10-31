@@ -23,7 +23,7 @@ are ignored and 53 birds are counted. Without the sky mask the landscape adds ov
 
 Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCounter/releases):
 
-- **Android:** `BirdsCounter_<version>_android_arm64.apk`, a signed release APK for 64-bit ARM phones.
+- **Android:** `BirdsCounter_<version>_android_arm64.apk`, a signed release APK for 64-bit ARM phones. Step-by-step install guide in Polish: [INSTALACJA.md](INSTALACJA.md).
 - **macOS (Apple silicon):** `BirdsCounter_<version>_macos_aarch64.dmg`. It uses OpenCV 5 from Homebrew
   (`brew install opencv`) and is not notarized, so open it with right-click → *Open* the first time.
 - **Windows (x64):** `BirdsCounter_<version>_windows_x64.exe`, a portable app in one file with OpenCV linked
