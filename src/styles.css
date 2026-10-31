@@ -1072,6 +1072,16 @@ body.is-cropping .crop-overlay {
     transform: rotate(180deg);
 }
 
+/* Restore defaults: the last row of Advanced */
+.settings-reset {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 16px;
+    border-top: 0.5px solid var(--separator);
+}
+
 .mask-brush-controls .settings-field {
     grid-template-columns: auto 1fr;
     border-top: none;
@@ -1354,6 +1364,11 @@ body.is-mac .advanced-summary {
     padding: 0 12px;
 }
 
+body.is-mac .settings-reset {
+    min-height: 36px;
+    padding: 0 12px;
+}
+
 body.is-mac .expand-icon {
     width: 16px;
     height: 16px;
@@ -1587,6 +1602,11 @@ body.is-android .settings-advanced-grid {
 body.is-android .settings-advanced {
     border-top: 1px solid var(--md-outline-variant);
     margin-top: 8px;
+}
+
+body.is-android .settings-reset {
+    border-top: none;
+    padding: 8px 16px 12px;
 }
 
 body.is-android .settings-field label {
@@ -2026,6 +2046,11 @@ body.is-ios .settings-field {
     min-height: 52px;
     padding: 10px 20px;
     gap: 6px 12px;
+}
+
+body.is-ios .settings-reset {
+    min-height: 44px;
+    padding: 0 20px;
 }
 
 body.is-ios .range-row {

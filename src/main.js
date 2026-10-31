@@ -141,6 +141,9 @@ let autoInvertInput;
 let invertInput;
 let splitClustersInput;
 let skyOnlyInput;
+let settingsResetBtn;
+// The settings in index.html, read at startup, for settingsResetBtn.
+let defaultParams = null;
 // The photo the detector holds (see countBirds): its bytes and id.
 let loadedPhoto = null;
 let isProcessing = false;
@@ -1949,6 +1952,15 @@ function applyParamsToUI(params) {
   syncSettingsOutputs();
 }
 
+// Back to the settings a new photo starts with, max radius included.
+function resetSettings() {
+  if (!defaultParams) return;
+  applyParamsToUI(defaultParams);
+  radiusInitialized = false;
+  updateRadiusLimits();
+  scheduleProcess();
+}
+
 function scheduleProcess() {
   if (!isPreviewVisible || !sourceBytes) return;
   if (processTimer) clearTimeout(processTimer);
@@ -2852,6 +2864,8 @@ window.addEventListener("DOMContentLoaded", () => {
   invertInput = document.querySelector("#invert");
   splitClustersInput = document.querySelector("#splitClusters");
   skyOnlyInput = document.querySelector("#skyOnly");
+  settingsResetBtn = document.querySelector("#settingsResetBtn");
+  defaultParams = readParamsFromUI();
 
   isAndroid = /Android/i.test(navigator.userAgent);
   // iPhone/iPad user agents also mention "Mac OS X"
@@ -3123,6 +3137,7 @@ window.addEventListener("DOMContentLoaded", () => {
       scheduleProcess();
     });
   });
+  settingsResetBtn?.addEventListener("click", resetSettings);
 
   updateCropButtonState(false);
   updateMaskButtonState(false);

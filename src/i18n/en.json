@@ -37,6 +37,7 @@
   "threshold_adaptive": "Adaptive",
   "threshold_otsu": "Otsu",
   "advanced_settings": "Advanced",
+  "settings_reset": "Restore defaults",
   "adaptive_block": "Local window",
   "adaptive_c": "Adaptive C",
   "sensitivity": "Threshold (× sky texture)",

@@ -40,6 +40,7 @@
   "threshold_adaptive": "Adaptacyjny",
   "threshold_otsu": "Otsu",
   "advanced_settings": "Zaawansowane",
+  "settings_reset": "Przywróć domyślne",
   "adaptive_block": "Okno lokalne",
   "adaptive_c": "Adaptacyjne C",
   "sensitivity": "Próg (× tekstura nieba)",
