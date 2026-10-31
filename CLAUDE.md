@@ -33,6 +33,12 @@ Homebrew's OpenCV, `.github/workflows/windows-exe.yml`, which builds the portabl
 attach their output to the release. `.github/workflows/web-pages.yml` builds the web version, runs its tests and
 deploys it to GitHub Pages. Don't commit APKs, EXEs or other build outputs.
 
+When creating a new release:
+
+1. Collect all the changes since the previous release (for example with `git log <previous-tag>..HEAD`).
+2. Name the release "BirdsCounter vX.Y.Z", where X.Y.Z is the actual version number.
+3. Give the release notes two sections, Changes and Downloads, like the previous releases.
+
 The `count` example is the quickest way to tune the detector on real photos. It prints the count per file and
 accepts `--method`, `--sensitivity`, `--window`, `--min-radius`, `--max-radius`, `--blur`, `--invert`, `--no-split` and
 `--whole-image` (disables the sky mask).
