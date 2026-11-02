@@ -1,11 +1,10 @@
 /*
  * Layout and components are shared; the look comes from tokens.
- * body.is-mac follows the macOS Human Interface Guidelines (system colors, native controls),
  * body.is-android follows Material 3 (dynamic color injected by MainActivity.kt),
  * body.is-ios follows the iOS Human Interface Guidelines (44 pt touch targets, capsule buttons, inset groups).
  */
 
-/* ===== Tokens: default (iOS / Windows / Linux / browser) ===== */
+/* ===== Tokens: default (iOS / browser) ===== */
 :root {
     color-scheme: light dark;
 
@@ -1110,271 +1109,6 @@ body.is-cropping .crop-overlay {
 }
 
 /* =====================================================================
- * macOS — Human Interface Guidelines
- * ===================================================================== */
-body.is-mac {
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-    --font-size: 13px;
-
-    --bg: #ececec;
-    --surface: rgba(0, 0, 0, 0.03);
-    --text: rgba(0, 0, 0, 0.85);
-    --text-secondary: rgba(0, 0, 0, 0.5);
-    --text-tertiary: rgba(0, 0, 0, 0.26);
-    --accent: #007aff;
-    --border: rgba(0, 0, 0, 0.1);
-    --separator: rgba(0, 0, 0, 0.1);
-    --group-border: rgba(0, 0, 0, 0.05);
-    --push-bg: #ffffff;
-    --push-bg-active: #e3e3e3;
-    --push-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.15);
-    --toolbar-hover: rgba(0, 0, 0, 0.06);
-
-    --header-height: 52px;
-    --header-bg-scrolled: var(--bg);
-    --radius-group: 10px;
-    --radius-button: 6px;
-    --radius-image: 8px;
-    --button-height: 24px;
-    --gap: 16px;
-}
-
-@media (prefers-color-scheme: dark) {
-    body.is-mac {
-        --bg: #282828;
-        --surface: rgba(255, 255, 255, 0.04);
-        --text: rgba(255, 255, 255, 0.85);
-        --text-secondary: rgba(255, 255, 255, 0.55);
-        --text-tertiary: rgba(255, 255, 255, 0.25);
-        --accent: #0a84ff;
-        --border: rgba(255, 255, 255, 0.12);
-        --separator: rgba(255, 255, 255, 0.1);
-        --group-border: rgba(255, 255, 255, 0.08);
-        --push-bg: rgba(255, 255, 255, 0.2);
-        --push-bg-active: rgba(255, 255, 255, 0.3);
-        --push-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.35), inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
-        --toolbar-hover: rgba(255, 255, 255, 0.08);
-    }
-}
-
-/* WebKit exposes the real AppKit colors, including the user's accent color */
-@supports (color: -apple-system-control-accent) {
-    body.is-mac {
-        --bg: -apple-system-window-background;
-        --text: -apple-system-label;
-        --text-secondary: -apple-system-secondary-label;
-        --text-tertiary: -apple-system-tertiary-label;
-        --accent: -apple-system-control-accent;
-        --separator: -apple-system-separator;
-    }
-}
-
-body.is-mac,
-body.is-mac button,
-body.is-mac summary,
-body.is-mac .toggle-label,
-body.is-mac .drag-drop-area {
-    cursor: default;
-}
-
-/* Unified toolbar under the traffic lights (titleBarStyle: Overlay) */
-body.is-mac .app-header {
-    padding-left: 86px;
-    padding-right: 12px;
-    gap: 6px;
-}
-
-body.is-mac.is-fullscreen-window .app-header {
-    padding-left: 12px;
-}
-
-body.is-mac.is-scrolled .app-header {
-    box-shadow: 0 0.5px 0 var(--separator);
-}
-
-body.is-mac h1 {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-}
-
-body.is-mac .icon-button {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    color: var(--text-secondary);
-}
-
-body.is-mac .icon-button:hover {
-    background-color: var(--toolbar-hover);
-}
-
-body.is-mac .icon-button:active {
-    color: var(--text);
-}
-
-body.is-mac .icon-button svg {
-    width: 16px;
-    height: 16px;
-}
-
-/* Native pop-up buttons */
-
-body.is-mac .settings-select {
-    -webkit-appearance: auto;
-    appearance: auto;
-    border: none;
-    background: none;
-    padding: 0;
-    font-size: 13px;
-}
-
-body.is-mac .container {
-    max-width: 640px;
-    padding: 8px 20px 24px;
-}
-
-body.is-mac .drag-drop-area {
-    background: transparent;
-    border-color: var(--text-tertiary);
-    border-radius: 12px;
-}
-
-body.is-mac .drag-drop-area.drag-over {
-    border-color: var(--accent);
-    background-color: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-body.is-mac .drag-text {
-    font-size: 15px;
-}
-
-/* Push buttons */
-body.is-mac .button-container,
-body.is-mac .process-actions {
-    gap: 10px;
-}
-
-body.is-mac .action-button {
-    flex: none;
-    min-width: 96px;
-    padding: 0 14px;
-    border: none;
-    font-weight: 400;
-    color: var(--text);
-    background-color: var(--push-bg);
-    box-shadow: var(--push-shadow);
-}
-
-body.is-mac .button-container .action-button {
-    height: 28px;
-    min-width: 140px;
-    font-size: 13px;
-}
-
-body.is-mac .action-button:active {
-    background-color: var(--push-bg-active);
-}
-
-body.is-mac .action-button.is-active,
-body.is-mac #galleryBtn {
-    color: #ffffff;
-    background-color: var(--accent);
-    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.2),
-        inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
-}
-
-body.is-mac .btn-icon {
-    display: none;
-}
-
-/* "Open Image…" is the default button, on the trailing side as in macOS dialogs */
-body.is-mac #galleryBtn {
-    order: 2;
-}
-
-body.is-mac .action-button.is-active:active,
-body.is-mac #galleryBtn:active {
-    background-color: var(--accent);
-    filter: brightness(0.88);
-}
-
-body.is-mac .camera-button:active {
-    filter: none;
-}
-
-body.is-mac .image-preview {
-    box-shadow: 0 0 0 0.5px var(--separator), 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-body.is-mac .count-label {
-    font-size: 15px;
-}
-
-body.is-mac .history-open {
-    padding: 8px 0 8px 12px;
-}
-
-body.is-mac .history-open:active {
-    background-color: var(--toolbar-hover);
-}
-
-body.is-mac .history-thumb {
-    width: 44px;
-    height: 44px;
-    border-radius: 6px;
-}
-
-body.is-mac .history-header {
-    padding-right: 2px;
-}
-
-body.is-mac .text-button {
-    font-size: 13px;
-}
-
-/* Grouped form, as in System Settings */
-body.is-mac .settings-title {
-    padding: 0 2px;
-    font-size: 13px;
-    font-weight: 600;
-    text-transform: none;
-    color: var(--text);
-}
-
-body.is-mac .group {
-    border: 0.5px solid var(--group-border);
-}
-
-body.is-mac .settings-field {
-    min-height: 36px;
-    padding: 5px 12px;
-}
-
-body.is-mac .range-row input[type="range"] {
-    accent-color: auto;
-}
-
-body.is-mac .toggle-label input[type="checkbox"] {
-    accent-color: auto;
-}
-
-body.is-mac .advanced-summary {
-    min-height: 36px;
-    padding: 0 12px;
-}
-
-body.is-mac .settings-reset {
-    min-height: 36px;
-    padding: 0 12px;
-}
-
-body.is-mac .expand-icon {
-    width: 16px;
-    height: 16px;
-}
-
-/* =====================================================================
  * Android — Material 3
  * ===================================================================== */
 body.is-android {
@@ -2135,11 +1869,11 @@ body.is-ios .settings-advanced[open] .expand-icon {
 
 /* ===== Narrow windows ===== */
 @media (max-width: 600px) {
-    body:not(.is-mac):not(.is-android) .button-container {
+    body:not(.is-android) .button-container {
         flex-direction: column;
     }
 
-    body:not(.is-mac) .settings-field {
+    body:not(.is-android) .settings-field {
         grid-template-columns: 1fr;
     }
 
@@ -2151,26 +1885,6 @@ body.is-ios .settings-advanced[open] .expand-icon {
 /* =====================================================================
  * Result screen per platform: count + switch, tools, share
  * ===================================================================== */
-
-/* ----- macOS: segmented control and push buttons ----- */
-body.is-mac .count-text {
-    font-size: 15px;
-    color: var(--text-secondary);
-}
-
-body.is-mac #countValue {
-    font-size: 36px;
-    font-weight: 600;
-    color: var(--text);
-}
-
-body.is-mac .process-actions .tool-button {
-    flex-direction: row;
-    height: var(--button-height);
-    min-height: 0;
-    padding: 0 14px;
-    font-size: 13px;
-}
 
 /* ----- Android: Material 3 segmented button, tonal tiles, filled share button ----- */
 body.is-android .count-text {
@@ -2242,26 +1956,6 @@ body.is-ios .process-actions .tool-button {
 }
 
 /* ----- History menu per platform ----- */
-body.is-mac .history-menu {
-    min-width: 150px;
-    border-radius: 6px;
-    font-size: 13px;
-}
-
-body.is-mac .history-menu-item {
-    min-height: 22px;
-    border-radius: 4px;
-}
-
-body.is-mac .history-menu-item svg {
-    display: none;
-}
-
-body.is-mac .history-menu-item:hover,
-body.is-mac .history-menu-item:focus-visible {
-    background-color: var(--accent);
-    color: #ffffff;
-}
 
 body.is-android {
     --menu-bg: var(--md-surface-container);
@@ -2320,36 +2014,6 @@ body.is-ios .history-menu-item + .history-menu-item {
 
 body.is-ios .history-menu-item:active {
     background-color: var(--fill);
-}
-
-/* Crop and mask: ✕ and ✓ follow each platform's look */
-body.is-mac .edit-actions {
-    --edit-button-size: 32px;
-}
-
-body.is-mac .edit-button {
-    background-color: var(--push-bg);
-    box-shadow: var(--push-shadow);
-}
-
-body.is-mac .edit-button svg {
-    width: 18px;
-    height: 18px;
-}
-
-body.is-mac .edit-button:active {
-    background-color: var(--push-bg-active);
-}
-
-body.is-mac .edit-button.done-button {
-    color: #ffffff;
-    background-color: var(--accent);
-    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 0.5px 1.5px rgba(0, 0, 0, 0.2),
-        inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
-}
-
-body.is-mac .edit-actions .reset-button {
-    font-size: 13px;
 }
 
 /* Material 3 icon buttons: tonal ✕, filled ✓ */
@@ -2452,11 +2116,6 @@ body.is-android .more-button {
     font-weight: 700;
     text-transform: none;
     color: var(--text);
-}
-
-body.is-mac .history-title {
-    font-size: 15px;
-    font-weight: 700;
 }
 
 body.is-android .history-title {

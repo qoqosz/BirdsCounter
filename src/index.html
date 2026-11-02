@@ -13,10 +13,10 @@
 </head>
 
 <body>
-    <header class="app-header" data-tauri-drag-region>
+    <header class="app-header">
         <button id="backBtn" class="icon-button back-button" style="display: none;" aria-label="Go back"
             data-i18n-attr="aria-label:back_aria">
-            <!-- SF Symbols-style chevron (macOS / default) -->
+            <!-- SF Symbols-style chevron (default) -->
             <svg class="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polyline points="15 18 9 12 15 6"></polyline>
@@ -26,7 +26,7 @@
                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
             </svg>
         </button>
-        <h1 data-tauri-drag-region data-i18n="app_title">Birds Counter</h1>
+        <h1 data-i18n="app_title">Birds Counter</h1>
         <!-- Language, and Share (iOS and Android) -->
         <button id="moreBtn" class="icon-button more-button" type="button" aria-haspopup="menu"
             aria-expanded="false" aria-label="More" data-i18n-attr="aria-label:history_more">
@@ -46,7 +46,7 @@
             </div>
             <p class="drag-text" data-i18n="drag_text" data-i18n-android="start_title" data-i18n-ios="start_title">Drag and drop an image here</p>
             <p class="drag-subtext" data-i18n="drag_subtext" data-i18n-android="start_subtext"
-                data-i18n-ios="start_subtext" data-i18n-web="drag_subtext_web">or use the buttons below
+                data-i18n-ios="start_subtext">or open one with the button below
             </p>
             <input type="file" id="cameraInput" accept="image/*" capture="environment"
                 style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;" />
@@ -66,7 +66,7 @@
                     <path
                         d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z" />
                 </svg>
-                <span data-i18n="load_gallery" data-i18n-mac="open_image" data-i18n-ios="choose_photo">Load from Gallery</span>
+                <span data-i18n="load_gallery" data-i18n-web="open_image" data-i18n-ios="choose_photo">Load from Gallery</span>
             </button>
         </div>
 

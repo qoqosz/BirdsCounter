@@ -5,6 +5,7 @@
 # - Android: launchers mask adaptive icons to the inner ~66 of their 108 dp, but `cargo tauri icon` fills the
 #   whole canvas with the logo, so the bird and the ring get cropped. The foreground gets the logo at 66 dp,
 #   centered on a transparent 108 dp canvas.
+# - Desktop icons: `cargo tauri icon` always writes them, but nothing uses them, so they are deleted.
 # - iOS: the Xcode asset catalog is not updated by `cargo tauri icon` (it kept Tauri's default icon). The icons
 #   from src-tauri/icons/ios are copied in, flattened onto white because iOS shows transparency as black.
 set -e
@@ -18,6 +19,8 @@ if ! command -v magick >/dev/null; then
     echo "Error: ImageMagick not found (brew install imagemagick)"
     exit 1
 fi
+
+rm -f "$ICONS"/icon.icns "$ICONS"/icon.ico "$ICONS"/[0-9]*x[0-9]*.png "$ICONS"/Square*Logo.png "$ICONS"/StoreLogo.png
 
 echo "Android adaptive icon foreground:"
 # density:scale (px per dp)

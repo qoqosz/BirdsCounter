@@ -60,7 +60,7 @@ async function decodePhoto(cv, bytes) {
       pixels = readPhotoPixels(bitmap, width, height);
       if (!pixels) throw new Error("photo-unreadable");
     }
-    // cv::cvtColor's fixed-point BGR2GRAY weights, so gray levels match the desktop app.
+    // cv::cvtColor's fixed-point BGR2GRAY weights, so gray levels match the mobile apps.
     const gray = new cv.Mat(height, width, cv.CV_8U);
     const out = gray.data;
     for (let i = 0, p = 0; i < out.length; i++, p += 4) {

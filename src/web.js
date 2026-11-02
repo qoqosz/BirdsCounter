@@ -273,16 +273,8 @@
   window.__TAURI__ = {
     core: { invoke },
     dialog: {
-      open: async () => {
-        throw "Not available on the web";
-      },
       ask: async (text) => confirm(text),
       message: async (text) => alert(text),
-    },
-    fs: {
-      readFile: async () => {
-        throw "Not available on the web";
-      },
     },
     event: { listen: async () => () => {} },
   };

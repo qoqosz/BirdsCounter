@@ -1,6 +1,5 @@
 const { invoke } = window.__TAURI__.core;
-const { open, ask, message } = window.__TAURI__.dialog;
-const { readFile } = window.__TAURI__.fs;
+const { ask, message } = window.__TAURI__.dialog;
 // In a browser, web.js stands in for Tauri (counting in a worker, history in IndexedDB).
 const isWeb = Boolean(window.__BIRDS_WEB__);
 
@@ -166,7 +165,6 @@ let tapStartTime = 0;
 let tapStartX = 0;
 let tapStartY = 0;
 let isAndroid = false;
-let isMac = false;
 let isIOS = false;
 // A desktop browser: the shared default look, with no camera button.
 let isDesktopWeb = false;
@@ -222,7 +220,6 @@ function applyTranslations() {
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const key =
       (isDesktopWeb && el.dataset.i18nWeb) ||
-      ((isMac || isDesktopWeb) && el.dataset.i18nMac) ||
       (isAndroid && el.dataset.i18nAndroid) ||
       (isIOS && el.dataset.i18nIos) ||
       el.dataset.i18n;
@@ -284,10 +281,6 @@ function showNativeError(error) {
 
 // ===== Opening photos =====
 
-function fileName(path) {
-  return path ? path.split(/[\\/]/).pop() : null;
-}
-
 function base64ToBytes(base64) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -295,34 +288,8 @@ function base64ToBytes(base64) {
   return bytes;
 }
 
-// Desktop: Tauri reports dropped files with their paths, so the history can link to them.
+// Desktop browser: dropped files come without a path; web.js keeps a copy for the history.
 function setupDragAndDrop() {
-  if (isWeb) {
-    setupWebDragAndDrop();
-    return;
-  }
-  const webview = window.__TAURI__.webview?.getCurrentWebview?.();
-  if (!webview) return;
-  webview.onDragDropEvent(async (event) => {
-    const { type, paths } = event.payload;
-    const accepting = !isCropping && !isMasking;
-    if (type === "enter" || type === "over") {
-      dragDropArea.classList.toggle("drag-over", accepting && !isPreviewVisible);
-      return;
-    }
-    dragDropArea.classList.remove("drag-over");
-    if (type !== "drop" || !accepting || !paths?.length) return;
-    const path = paths.find((p) => guessMimeFromPath(p));
-    if (!path) {
-      alert(t("alert_drop_image"));
-      return;
-    }
-    await openFilePath(path);
-  });
-}
-
-// Browser: dropped files come without a path; web.js keeps a copy for the history.
-function setupWebDragAndDrop() {
   let depth = 0;
   const accepting = () => !isCropping && !isMasking && !isPreviewVisible;
   window.addEventListener("dragenter", (e) => {
@@ -354,7 +321,7 @@ function setupWebDragAndDrop() {
   });
 }
 
-// Fallback for an Android build without the native bridge, and the browser: a file input.
+// The browser, and an Android build without the native bridge: a file input.
 function setupFileInputs() {
   cameraInput.addEventListener("change", (e) => {
     if (e.target.files.length > 0) {
@@ -381,26 +348,6 @@ function pickWebFile(camera) {
     cameraInput.removeAttribute("capture");
   }
   cameraInput.click();
-}
-
-async function openFilePath(path) {
-  const source = `file:${path}`;
-  let bytes;
-  try {
-    bytes = new Uint8Array(await invoke("read_image", { source }));
-  } catch (e) {
-    // Not a plain path (e.g. an Android content URI from the dialog)
-    try {
-      bytes = new Uint8Array(await readFile(path));
-    } catch (readError) {
-      console.error("Error reading file:", e, readError);
-      showNativeError("photo-unreadable");
-      return;
-    }
-    await openImage(bytes, guessMimeFromPath(path), { source: null, name: fileName(path), owned: false });
-    return;
-  }
-  await openImage(bytes, guessMimeFromPath(path), { source, name: fileName(path), owned: false });
 }
 
 // Shows a photo in the editor and counts it at once. `entry` restores a history entry
@@ -1767,15 +1714,6 @@ async function takePhoto() {
 
   if (isIOS) {
     await openNativePhoto("native_take_photo");
-    return;
-  }
-
-  // For Mac (and others), use the Rust command to open Photo Booth
-  try {
-    await invoke("open_camera");
-  } catch (error) {
-    console.error("Error opening camera:", error);
-    alert(t("alert_open_camera_fail"));
   }
 }
 
@@ -1784,15 +1722,15 @@ async function choosePhoto() {
     pickWebFile(false);
     return;
   }
-  if (isAndroid && window.Android && typeof window.Android.pickImage === "function") {
-    window.Android.pickImage();
-    return;
-  }
   if (isIOS) {
     await openNativePhoto("native_pick_photo");
     return;
   }
-  await openGallery();
+  if (window.Android && typeof window.Android.pickImage === "function") {
+    window.Android.pickImage();
+  } else {
+    pickWebFile(false);
+  }
 }
 
 // iOS: camera or photo library through BCNativeBridge (see native.rs).
@@ -1838,25 +1776,6 @@ function takeAndroidResult() {
   }
   const { data, mime, source, name, owned } = result.image;
   openImage(base64ToBytes(data), mime, { source, name, owned });
-}
-
-async function openGallery() {
-  try {
-    const filePath = await open({
-      multiple: false,
-      filters: [
-        {
-          name: t("file_filter_image"),
-          extensions: ["png", "jpg", "jpeg", "gif", "bmp", "webp"],
-        },
-      ],
-    });
-    if (filePath) {
-      await openFilePath(filePath);
-    }
-  } catch (error) {
-    console.error("Error opening gallery:", error);
-  }
 }
 
 // ===== Quick actions (long press on the app icon) =====
@@ -2749,28 +2668,6 @@ function startRipple(e) {
   window.addEventListener("pointercancel", release);
 }
 
-function setupMac() {
-  const { listen } = window.__TAURI__.event;
-  listen("menu-open-image", () => {
-    if (isPreviewVisible) resetApp();
-    openGallery();
-  });
-
-  // Without traffic lights in fullscreen the toolbar starts at the window edge
-  const appWindow = window.__TAURI__.window?.getCurrentWindow?.();
-  if (!appWindow) return;
-  const syncFullscreen = async () => {
-    try {
-      const fullscreen = await appWindow.isFullscreen();
-      document.body.classList.toggle("is-fullscreen-window", fullscreen);
-    } catch (e) {
-      console.warn("Failed to read fullscreen state:", e);
-    }
-  };
-  window.addEventListener("resize", syncFullscreen);
-  syncFullscreen();
-}
-
 function setupIOS() {
   const { listen } = window.__TAURI__.event;
   listen("quick-action", runQuickAction);
@@ -2872,8 +2769,6 @@ window.addEventListener("DOMContentLoaded", () => {
   isIOS =
     /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
     (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  // The macOS look needs the app's window (traffic lights, WebKit system colors).
-  isMac = !isWeb && !isIOS && /Macintosh|Mac OS X/i.test(navigator.userAgent);
   isDesktopWeb = isWeb && !isAndroid && !isIOS;
 
   if (isWeb) {
@@ -2884,9 +2779,6 @@ window.addEventListener("DOMContentLoaded", () => {
     setupAndroid();
   } else if (isIOS) {
     document.body.classList.add("is-ios");
-  } else if (isMac) {
-    document.body.classList.add("is-mac");
-    setupMac();
   }
   setupScrollState();
   if (!isWeb) {
@@ -2894,7 +2786,7 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   setupFileInputs();
 
-  if (dragDropArea && !isAndroid && !isIOS) {
+  if (dragDropArea && isDesktopWeb) {
     setupDragAndDrop();
   }
   if (dragDropArea && !isAndroid) {

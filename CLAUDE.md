@@ -4,34 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-BirdsCounter is a Tauri 2 app (macOS and Windows desktop, Android, iOS) that counts birds in a photo. A Rust backend
-does the detection with OpenCV 5. The frontend is static HTML/CSS/JS in `src/`, with no bundler and no npm. The same
-frontend is also a web page (GitHub Pages) that counts in the browser with OpenCV.js.
+BirdsCounter is a Tauri 2 app (Android, iOS) that counts birds in a photo. A Rust backend does the detection with
+OpenCV 5. The frontend is static HTML/CSS/JS in `src/`, with no bundler and no npm. The same frontend is also a web
+page (GitHub Pages) that counts in the browser with OpenCV.js. The web page is the only version for computers: there
+are no desktop apps, and `cargo test` and the `count` example are the only things that run natively on the host.
 
 ## Commands
 
-All Rust commands run from `src-tauri/`, except the build scripts and `cargo tauri dev`, which run from the repo root.
+All Rust commands run from `src-tauri/`, except the build scripts, which run from the repo root.
 
 ```bash
-cargo tauri dev                      # run the desktop app (frontend served from src/, frontendDist "../src")
 cd src-tauri && cargo test --lib     # detector unit tests (synthetic cloudy-sky scenes)
 cd src-tauri && cargo test --lib <test_name>   # run a single test in blob_filter::tests
 cd src-tauri && cargo run --release --example count -- --out annotated/ photo1.jpg photo2.jpg
 cd src-tauri && cargo clippy && cargo fmt
 ./build_android.sh --target aarch64  # release APK (also: make android); targets aarch64|armv7|x86_64|x86
 ./build_ios.sh --target sim          # iOS (sim | x86_64 | device)
-./setup_opencv_windows.ps1           # Windows: build static OpenCV into src-tauri/opencv-windows (PowerShell)
-./build_windows.ps1                  # Windows: portable x64 exe, no installer
 ./app_icons.sh                       # copy the icon into the Android/iOS projects (run after `cargo tauri icon`)
 ./build_web.sh --serve               # web version into target/web (downloads OpenCV.js), served at localhost:8000
 node --test tests/web/*.test.cjs     # web detector tests (after ./build_web.sh, which fetches OpenCV.js)
 ```
 
-Publishing a GitHub release runs `.github/workflows/macos-dmg.yml`, which builds the Apple silicon DMG against
-Homebrew's OpenCV, `.github/workflows/windows-exe.yml`, which builds the portable x64 exe, and
-`.github/workflows/android-apk.yml`, which builds the signed arm64 APK from the `ANDROID_*` repository secrets. All
-attach their output to the release. `.github/workflows/web-pages.yml` builds the web version, runs its tests and
-deploys it to GitHub Pages. Don't commit APKs, EXEs or other build outputs.
+Publishing a GitHub release runs `.github/workflows/android-apk.yml`, which builds the signed arm64 APK from the
+`ANDROID_*` repository secrets and attaches it to the release, and `.github/workflows/web-pages.yml`, which builds the
+web version, runs its tests and deploys it to GitHub Pages. Don't commit APKs or other build outputs.
 
 When creating a new release:
 
@@ -50,16 +46,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 - **OpenCV 5 only.** `contourArea` and `moments` live in the `geometry` module, which does not exist in 4.x.
   The crate features in `Cargo.toml` (`geometry`, `imgcodecs`, `imgproc`) must match `OPENCV_LINK_LIBS` in
   `build_android.sh`.
-- **Desktop (macOS):** uses the host OpenCV through pkg-config (`opencv5`). `src-tauri/.cargo/config.toml` disables
-  the `environment` probe on darwin targets, so the iOS framework variables don't leak into desktop builds.
-- **Windows:** one portable exe, everything linked statically. `setup_opencv_windows.ps1` builds OpenCV from
-  source (`BUILD_SHARED_LIBS=OFF`, `BUILD_WITH_STATIC_CRT=ON`, only the needed modules), since OpenCV's Windows
-  package is DLL-only. It also disables CMake's ASM detection, since an assembler on `PATH` (MinGW on GitHub's
-  runner) turns every library into `lib*.a`. `build_windows.ps1` passes every `.lib` of that install as `OPENCV_LINK_LIBS`, sets
-  `OPENCV_MSVC_CRT=static` for the crate's C++ wrapper, and builds with `--target x86_64-pc-windows-msvc
-  --no-bundle`. `src-tauri/.cargo/config.toml` enables `crt-static` for that target and links `libucrt.lib` in place of
-  `ucrt.lib`, because `WebView2LoaderStatic.lib` would otherwise switch the exe to the DLL Universal CRT. All three must agree on `/MT`,
-  or linking fails with runtime mismatches (LNK2038). The script checks the exe's imports with `dumpbin`.
+- **Host (tests and the `count` example):** uses the host OpenCV through pkg-config (`opencv5`).
+  `src-tauri/.cargo/config.toml` disables the `environment` probe on darwin targets, so the iOS framework variables
+  don't leak into host builds.
 - **Android:** static libs from `src-tauri/opencv-android-sdk`, downloaded by `./setup_opencv_android.sh` (the
   "16kb-page-fix" package, required by Google Play). `build_android.sh` sets the `OPENCV_*` variables.
   `src-tauri/build.rs` adds link paths and only the third-party archives the SDK actually ships, plus the NDK system
@@ -83,7 +72,6 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
     detections (`x`, `y`, `radius`, `count`) in pixels of the whole photo. `crop` is a rectangle in photo pixels. The
     mask covers the whole photo (at any resolution, Rust scales it), and Rust crops it too. The frontend draws the
     rings; `BlobFilter::apply` still returns an annotated PNG for the `count` example.
-  - `open_camera` launches Photo Booth or FaceTime on macOS, and the system camera app on Windows and Linux.
   - `history.rs`: `history_*` commands and `read_image`. The history is `history.json` plus `thumbs/` and `masks/`
     in the app data dir. Entries link to the photo through a `source` string (`file:`, `appdoc:`, `content://`
     or `photos:`, see the module docs) instead of copying it. Photos the app took (`owned`, named
@@ -101,8 +89,6 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   rows, which count again with the entry's settings) compose a JPEG with `composeShareImage` (photo, rings if shown,
   black bar with the count). iOS: `native_share_image` writes it to the temp dir and `+[BCNativeBridge shareFile:]`
   opens `UIActivityViewController`. Android: `window.Android.shareImage(base64, name)` uses the FileProvider cache path.
-- `lib.rs` also builds the native macOS menu bar. Its "Open Image…" (⌘O) emits the `menu-open-image` event to
-  the frontend.
 - `blob_filter.rs` holds the whole detector. `BlobParams` is deserialized from the JS object built in
   `readParamsFromUI()` in `main.js`, so field names must stay in sync on both sides. Threshold methods:
   - `background` (default): sky estimation and Weber contrast with texture-adaptive hysteresis.
@@ -131,20 +117,16 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   pinch, drag, ctrl/⌘ + wheel and double tap zoom and pan.
 - History: each opened photo gets one entry. `queueHistorySave` updates it after each result, saves are chained
   and keyed by `editSession`, and saves that change nothing are skipped.
-- Desktop drag and drop uses Tauri's `onDragDropEvent` (`dragDropEnabled: true`), so dropped files keep their paths.
 - Any settings change calls `scheduleProcess`, which debounces by 100 ms. Calls arriving while processing is
   running are coalesced.
-- `main.js` detects the platform from the user agent and sets `body.is-mac`, `body.is-android` or `body.is-ios`
-  (iPhone/iPad user agents also mention "Mac OS X", so iOS is checked first). `styles.css` has shared layout and
-  components driven by tokens, plus three overrides:
-  - `body.is-mac` follows the macOS HIG: WebKit `-apple-system-*` colors, native controls and a unified toolbar
-    under the traffic lights (`titleBarStyle: Overlay` in `tauri.conf.json`).
+- `main.js` detects the platform from the user agent and sets `body.is-android` or `body.is-ios`. `styles.css` has
+  shared layout and components driven by tokens, plus two overrides:
   - `body.is-android` follows Material 3: `--md-*` color tokens, plus a ripple effect, slider and switch built in CSS.
   - `body.is-ios` follows the iOS HIG: 44 pt targets, capsule buttons, inset grouped settings and native WebKit
     switches. Avoid nested `backdrop-filter` (it hides the sticky header's content in WebKit). Preview it in
     Simulator Safari, which uses the same WebKit as the app's WKWebView.
-- i18n: `src/i18n/{en,pl}.json` with `data-i18n` and `data-i18n-attr` attributes. `data-i18n-mac`,
-  `data-i18n-android` and `data-i18n-ios` give per-platform keys. Polish plural forms for the count are handled in `birdsSuffix`.
+- i18n: `src/i18n/{en,pl}.json` with `data-i18n` and `data-i18n-attr` attributes. `data-i18n-web`
+  (desktop browsers), `data-i18n-android` and `data-i18n-ios` give per-platform keys. Polish plural forms for the count are handled in `birdsSuffix`.
   Add new keys to both files.
 
 **Web version**
@@ -152,7 +134,7 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 - `index.html` loads `web.js` before `main.js`. Without `window.__TAURI__` it installs a stand-in with `core.invoke`
   and sets `window.__BIRDS_WEB__` (`isWeb` in `main.js`). It handles `load_photo` and `process_image`, the `history_*` commands and
   `read_image` (IndexedDB, with a copy of each photo under a `web:` source) and `web_keep_photo`. `main.js` passes
-  bytes as `Uint8Array` there (`ipcBytes`). Desktop browsers get the default look, with no camera button.
+  bytes as `Uint8Array` there (`ipcBytes`). Desktop browsers get the default look, with no camera button and with drag and drop.
 - `src/detector.js` ports `blob_filter.rs` to OpenCV.js 5.0. **Keep the two in sync**: constants, steps and their
   order match, and `tests/web/detector.test.cjs` mirrors the Rust tests. `detector-worker.js` runs it in a worker
   and decodes the photo with `createImageBitmap` (gray with OpenCV's fixed-point weights; scaled down over 16.7 MP

@@ -1,16 +1,14 @@
 # BirdsCounter
 
 Count the birds in a photo of a flock. BirdsCounter finds the sky, detects the birds against it, circles each one
-and tells you how many there are. It runs in your browser, and as an app on macOS, Windows, Android and iOS, where
-each platform gets its own native look.
+and tells you how many there are. It runs in your browser on any computer or phone, and as an app on Android and iOS,
+where each platform gets its own native look.
 
 <p align="center">
   <a href="https://qoqosz.github.io/BirdsCounter/"><img alt="Try it in your browser" width="316" src="https://img.shields.io/badge/%E2%96%B6%20%20Try%20it%20in%20your%20browser-2ea44f?style=for-the-badge"></a>
   <a href="https://github.com/qoqosz/BirdsCounter/releases/latest"><img alt="Download the apps" width="243" src="https://img.shields.io/badge/Download%20the%20apps-0969da?style=for-the-badge"></a>
 </p>
 <p align="center"><sub>The web version needs no install, and your photos never leave your device: they are counted in the browser.</sub></p>
-
-<p align="center"><img src="images/screenshots/macos.png" width="600" alt="BirdsCounter on macOS"></p>
 
 | Android | | iOS | |
 |:---:|:---:|:---:|:---:|
@@ -24,11 +22,6 @@ are ignored and 53 birds are counted. Without the sky mask the landscape adds ov
 Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCounter/releases):
 
 - **Android:** `BirdsCounter_<version>_android_arm64.apk`, a signed release APK for 64-bit ARM phones. Step-by-step install guide in Polish: [INSTALACJA.md](INSTALACJA.md).
-- **macOS (Apple silicon):** `BirdsCounter_<version>_macos_aarch64.dmg`. It uses OpenCV 5 from Homebrew
-  (`brew install opencv`) and is not notarized, so open it with right-click → *Open* the first time.
-- **Windows (x64):** `BirdsCounter_<version>_windows_x64.exe`, a portable app in one file with OpenCV linked
-  statically. Nothing to install, just run it. It uses the WebView2 runtime that comes with Windows 11 and current
-  Windows 10. It is not signed, so SmartScreen may ask to confirm (*More info* → *Run anyway*).
 - **iOS:** build and install from source, see [Build iOS](#build-ios).
 - **Web:** [qoqosz.github.io/BirdsCounter](https://qoqosz.github.io/BirdsCounter/), nothing to install. The photos
   are counted in the browser and never leave the device. See [Web version](#web-version).
@@ -51,8 +44,8 @@ The app loads an image, detects bird-like blobs, annotates them with circles, an
   it, or drag outside it to draw a new one. *Reset* goes back to the whole photo, and the crop can be changed
   again later. The mask is kept when the crop changes.
 - **History** lists every photo with its latest count. Opening an entry restores its settings, crop and mask.
-  Entries link to the photo instead of copying it: a file path on the desktop, the photo library on iOS (opening
-  it again asks for photo access) and Android (a persisted permission). Photos taken in the app are stored in
+  Entries link to the photo instead of copying it: the photo library on iOS (opening it again asks for photo
+  access) and Android (a persisted permission). Photos taken in the app are stored in
   its own folder (iOS: *Files → BirdsCounter → Photos*) and deleted with their entry. Only a small thumbnail is
   kept per entry.
 
@@ -126,12 +119,10 @@ Install Tauri CLI (if not installed):
 cargo install tauri-cli --version "^2"
 ```
 
-### Desktop (macOS, Linux)
+### Detector tests and the `count` example
 
 - OpenCV 5 available on host system (used by `opencv` crate probing), e.g. `brew install opencv`
 - Platform dependencies required by Tauri (WebView/runtime toolchain)
-
-Windows links OpenCV statically instead, see [Windows](#windows).
 
 ### Android
 
@@ -139,24 +130,21 @@ Windows links OpenCV statically instead, see [Windows](#windows).
 - Generated Android project already present in `src-tauri/gen/android`
 - OpenCV Android SDK folder: `src-tauri/opencv-android-sdk`
 
-### Windows
-
-- Visual Studio 2022 or newer with the *Desktop development with C++* workload, CMake and LLVM (libclang)
-- Static OpenCV at `src-tauri/opencv-windows` (built with `./setup_opencv_windows.ps1`)
-
 ### iOS (macOS only)
 
 - Xcode 27 with the iOS SDK, and an Apple ID signed in under Xcode → Settings → Accounts
 - OpenCV iOS framework at `src-tauri/opencv2.framework` (download with `./setup_opencv_ios.sh`)
 - rustup's `llvm-tools` component (listed in `rust-toolchain.toml`, installed automatically)
 
-## Run in Development (Desktop)
+## Run in Development
+
+The quickest way to try the frontend on a computer is the [web version](#web-version):
 
 ```bash
-cargo tauri dev
+./build_web.sh --serve
 ```
 
-The frontend is served from the static `src/` directory (`frontendDist: "../src"` in `tauri.conf.json`).
+The Android and iOS apps embed the static `src/` directory (`frontendDist: "../src"` in `tauri.conf.json`).
 
 ## Build Android
 
@@ -196,27 +184,6 @@ Shortcut:
 ```bash
 make android
 ```
-
-## Build Windows
-
-Run in PowerShell on Windows x64.
-
-1. Build OpenCV 5 from source as static libraries with the static C runtime (`/MT`), installed into
-   `src-tauri/opencv-windows`. OpenCV's own Windows package has only DLLs, so it can't be used. Takes about 10 minutes:
-
-```powershell
-./setup_opencv_windows.ps1
-```
-
-2. Build:
-
-```powershell
-./build_windows.ps1
-```
-
-Output: `src-tauri/target/x86_64-pc-windows-msvc/release/birdscounter.exe`. The frontend is embedded in the exe, and
-Rust is built with `crt-static` (`src-tauri/.cargo/config.toml`), so the exe needs no DLLs beyond Windows itself and
-WebView2. The script fails if `dumpbin` finds imports of the dynamic C runtime or OpenCV.
 
 ## Web version
 
@@ -315,18 +282,14 @@ The app runs only on physical devices, since the OpenCV framework has no arm64 s
 ./app_icons.sh
 ```
 
-It fixes what `cargo tauri icon` leaves out. It pads the Android adaptive icon into the launcher's safe zone, and it
-copies the iOS icons into the Xcode asset catalog.
+It fixes what `cargo tauri icon` leaves out. It pads the Android adaptive icon into the launcher's safe zone, it
+copies the iOS icons into the Xcode asset catalog, and it deletes the desktop icons, which nothing uses.
 
 ## Releases
 
-Publishing a GitHub release runs four workflows. Three build the apps and attach them to the release, and they can
-also be run by hand for an existing tag. The fourth publishes the web version.
+Publishing a GitHub release runs two workflows. One builds the Android app and attaches it to the release, and it can
+also be run by hand for an existing tag. The other publishes the web version.
 
-- [`macos-dmg.yml`](.github/workflows/macos-dmg.yml) builds the Apple silicon DMG.
-- [`windows-exe.yml`](.github/workflows/windows-exe.yml) builds the portable x64 exe with `./setup_opencv_windows.ps1`
-  (cached) and `./build_windows.ps1`. Run by hand without a tag, it builds the selected branch and uploads the exe as
-  a workflow artifact instead (Actions → the run → *Artifacts*).
 - [`android-apk.yml`](.github/workflows/android-apk.yml) builds and signs the arm64 APK with `./build_android.sh`. It
   needs the repository secrets `ANDROID_KEYSTORE_BASE64` (the keystore, base64-encoded), `ANDROID_KEY_ALIAS`,
   `ANDROID_STORE_PASSWORD` and `ANDROID_KEY_PASSWORD`.
@@ -334,25 +297,17 @@ also be run by hand for an existing tag. The fourth publishes the web version.
   and deploys it to GitHub Pages. It needs *Settings → Pages → Source: GitHub Actions*. Run by hand, it deploys the
   selected branch, if the `github-pages` environment allows it (by default only the default branch).
 
-Build outputs such as APKs and EXEs are not committed.
+Build outputs such as APKs are not committed.
 
 ## Troubleshooting
 
 - `Error: Android release signing is not configured.`
   - Configure `keystore.properties` or required `ANDROID_*` environment variables.
 
-- OpenCV link/probe failures on desktop:
+- OpenCV link/probe failures when running the tests or the `count` example:
   - Ensure host OpenCV dev libraries are installed and discoverable by `opencv` crate.
   - The project targets OpenCV 5 (`pkg-config --modversion opencv5`). OpenCV 4.x is not supported:
     `contourArea`/`moments` live in the `geometry` module, which only exists in OpenCV 5.
 
-- Windows link errors such as `LNK2038` (runtime library mismatch):
-  - OpenCV, the crate's C++ wrapper and Rust must all use the static CRT (`/MT`). Re-run
-    `./setup_opencv_windows.ps1` to rebuild OpenCV, then build with `./build_windows.ps1`, which sets
-    `OPENCV_MSVC_CRT=static` and checks the exe's imports.
-
 - iOS OpenCV link errors:
   - Verify `src-tauri/opencv2.framework` exists and is valid for selected architecture; re-run `./setup_opencv_ios.sh`.
-
-- Camera does not open on Linux desktop:
-  - `open_camera` tries `gnome-photos`, `cheese`, then `ffplay`; install one of them or use gallery input.

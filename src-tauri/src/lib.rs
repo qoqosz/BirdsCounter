@@ -19,76 +19,6 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-#[tauri::command]
-async fn open_camera() -> Result<String, String> {
-    #[cfg(target_os = "macos")]
-    {
-        use std::process::Command;
-
-        // On macOS, we'll use the native Photo Booth or Camera app
-        let output = Command::new("open")
-            .arg("-a")
-            .arg("Photo Booth")
-            .output()
-            .map_err(|e| format!("Failed to open camera app: {}", e))?;
-
-        if !output.status.success() {
-            // Fallback to FaceTime if Photo Booth is not available
-            Command::new("open")
-                .arg("-a")
-                .arg("FaceTime")
-                .output()
-                .map_err(|e| format!("Failed to open camera: {}", e))?;
-        }
-
-        return Ok("Camera opened".to_string());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        use std::process::Command;
-
-        // CREATE_NO_WINDOW: the release exe has no console, so cmd would flash one up.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-        // On Windows, open the Camera app
-        Command::new("cmd")
-            .args(&["/C", "start", "microsoft.windows.camera:"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map_err(|e| format!("Failed to open camera: {}", e))?;
-
-        return Ok("Camera opened".to_string());
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::process::Command;
-
-        // Try common camera apps on Linux
-        let apps = vec!["gnome-photos", "cheese", "ffplay"];
-
-        for app in apps {
-            if let Ok(output) = Command::new("which").arg(app).output() {
-                if output.status.success() {
-                    Command::new(app)
-                        .output()
-                        .map_err(|e| format!("Failed to open {}: {}", app, e))?;
-                    return Ok("Camera opened".to_string());
-                }
-            }
-        }
-
-        return Err("No camera application found".to_string());
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        return Err("Unsupported platform".to_string());
-    }
-}
-
 /// The photo being counted, decoded once by `load_photo` so that settings changes do not
 /// send and decode it again. Holds one photo at a time.
 #[derive(Default)]
@@ -137,63 +67,10 @@ fn process_image(
     Ok(ProcessResult { birds, count })
 }
 
-/// Native macOS menu bar; "Open Image…" (⌘O) is forwarded to the frontend.
-#[cfg(target_os = "macos")]
-fn setup_macos_menu(app: &tauri::App) -> tauri::Result<()> {
-    use tauri::Emitter;
-    use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-
-    let open_image = MenuItemBuilder::with_id("open_image", "Open Image…")
-        .accelerator("CmdOrCtrl+O")
-        .build(app)?;
-    let app_menu = SubmenuBuilder::new(app, "Birds Counter")
-        .about(Some(AboutMetadata::default()))
-        .separator()
-        .services()
-        .separator()
-        .hide()
-        .hide_others()
-        .show_all()
-        .separator()
-        .quit()
-        .build()?;
-    let file_menu = SubmenuBuilder::new(app, "File")
-        .item(&open_image)
-        .separator()
-        .close_window()
-        .build()?;
-    let edit_menu = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
-        .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
-        .build()?;
-    let view_menu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
-    let window_menu = SubmenuBuilder::new(app, "Window")
-        .minimize()
-        .maximize()
-        .build()?;
-    let menu = MenuBuilder::new(app)
-        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu])
-        .build()?;
-    app.set_menu(menu)?;
-    app.on_menu_event(|app, event| {
-        if event.id() == "open_image" {
-            let _ = app.emit("menu-open-image", ());
-        }
-    });
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            setup_macos_menu(app)?;
             let history_dir = app.path().app_data_dir()?.join("history");
             app.manage(history::History::new(history_dir));
             app.manage(LoadedPhoto::default());
@@ -201,10 +78,8 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             greet,
-            open_camera,
             load_photo,
             process_image,
             history::read_image,

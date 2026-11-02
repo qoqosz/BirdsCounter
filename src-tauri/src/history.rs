@@ -1,7 +1,7 @@
 //! Counting history: one entry per photo with its count, settings, crop and mask.
 //!
 //! Entries link to the photo instead of copying it. Each `source` is one of:
-//! - `file:<absolute path>`: a file on disk (desktop; Android camera photos)
+//! - `file:<absolute path>`: a file on disk (Android camera photos)
 //! - `appdoc:<relative path>`: a file in the app's Documents folder (iOS camera photos)
 //! - `content://…`: an Android document the app holds a persistable permission for
 //! - `photos:<local identifier>`: an asset in the iOS photo library
