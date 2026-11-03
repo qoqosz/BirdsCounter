@@ -2013,10 +2013,15 @@ function queueHistorySave() {
   historySavedKeys.set(session, key);
   maskChangedSinceSave = false;
   const maskPromise = updateMask ? buildMaskPayload() : Promise.resolve(null);
+  // A failed save must not count as done, so the next one retries.
+  const undoSaved = () => {
+    if (historySavedKeys.get(session) === key) historySavedKeys.delete(session);
+    if (updateMask) maskChangedSinceSave = true;
+  };
   historySaveChain = historySaveChain
     .then(async () => {
       const [thumb, mask] = await Promise.all([makeThumbnail(image, result), maskPromise]);
-      if (!thumb) return;
+      if (!thumb) return undoSaved();
       const saved = await invoke("history_save", {
         entry: {
           id: historyIds.get(session) ?? null,
@@ -2033,7 +2038,10 @@ function queueHistorySave() {
       });
       historyIds.set(session, saved.id);
     })
-    .catch((e) => console.error("Failed to save history:", e));
+    .catch((e) => {
+      undoSaved();
+      console.error("Failed to save history:", e);
+    });
 }
 
 // The counted part of the photo with its rings.
