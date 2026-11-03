@@ -16,11 +16,6 @@ struct ProcessResult {
     count: u32,
 }
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 /// The bytes sent as a command's raw request body. Android has no raw IPC bodies, so there
 /// they arrive as a JSON array.
 fn request_bytes<'a>(request: &'a tauri::ipc::Request<'_>) -> Result<Cow<'a, [u8]>, String> {
@@ -103,7 +98,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
             load_photo,
             process_image,
             history::read_image,
