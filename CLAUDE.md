@@ -68,7 +68,8 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   - `load_photo` takes the photo as the raw request body (`invoke("load_photo", bytes)`), decodes it once to
     grayscale and keeps it (one photo at a time) under the id it returns, so settings changes don't send it
     again. `countBirds` in `main.js` sends it only when it changes, and again after `photo-missing`.
-  - `process_image(photo_id, params, mask_payload, crop)` returns `{ birds, count }`, where `birds` lists the
+  - `process_image` takes `photoId`, `params`, `crop` and the mask in one raw body (`framedBody` in `main.js`,
+    `split_framed` in `lib.rs`) and returns `{ birds, count }`, where `birds` lists the
     detections (`x`, `y`, `radius`, `count`) in pixels of the whole photo. `crop` is a rectangle in photo pixels. The
     mask covers the whole photo (at any resolution, Rust scales it), and Rust crops it too. The frontend draws the
     rings; `BlobFilter::apply` still returns an annotated PNG for the `count` example.
@@ -103,8 +104,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 **Frontend (`src/`)**
 
 - `main.js` is a single file of global state and DOM handlers, using `window.__TAURI__` (`withGlobalTauri: true`).
-- Image bytes go to Rust as plain arrays. Every photo goes through `openImage()`, which counts it at once. Crop is
-  non-destructive: `cropRect` (photo pixels) goes to Rust, and crop mode shows the whole photo with the frame.
+- Commands that take bytes (`load_photo`, `process_image`, `history_save`, `native_share_image`) take raw request
+  bodies (`request_bytes` in `lib.rs`; Android has no raw bodies, so Tauri sends them as JSON arrays there).
+- Every photo goes through `openImage()`, which counts it at once. Crop is non-destructive: `cropRect` (photo pixels) goes to Rust, and crop mode shows the whole photo with the frame.
   The mask is painted on an offscreen canvas covering the whole photo, capped at `MASK_MAX_PIXELS` (full-resolution
   canvases made every stroke slow on iOS, which also refuses canvases over 16.7 MP), so it survives crop changes,
   and is sent as a PNG. A stroke paints only its own segment on the overlay; `renderMaskPreview` redraws all of
@@ -136,7 +138,7 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 - `index.html` loads `web.js` before `main.js`. Without `window.__TAURI__` it installs a stand-in with `core.invoke`
   and sets `window.__BIRDS_WEB__` (`isWeb` in `main.js`). It handles `load_photo` and `process_image`, the `history_*` commands and
   `read_image` (IndexedDB, with a copy of each photo under a `web:` source) and `web_keep_photo`. `main.js` passes
-  bytes as `Uint8Array` there (`ipcBytes`). Desktop browsers get the default look, with no camera button and with drag and drop.
+  arguments as they are there, with bytes as `Uint8Array`. Desktop browsers get the default look, with no camera button and with drag and drop.
 - `src/detector.js` ports `blob_filter.rs` to OpenCV.js 5.0. **Keep the two in sync**: constants, steps and their
   order match, and `tests/web/detector.test.cjs` mirrors the Rust tests. `detector-worker.js` runs it in a worker
   and decodes the photo with `createImageBitmap` (gray with OpenCV's fixed-point weights; scaled down over 16.7 MP

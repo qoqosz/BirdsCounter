@@ -362,12 +362,17 @@ pub fn set_quick_actions(app: AppHandle, items: Vec<QuickAction>) -> Result<(), 
     ios::set_quick_actions(app, items)
 }
 
-/// Opens the iOS share sheet with an image. Android shares through `MainActivity`.
+/// Opens the iOS share sheet with an image, sent as the raw request body with its file name
+/// in the `x-file-name` header. Android shares through `MainActivity`.
 #[tauri::command]
-pub fn native_share_image(app: AppHandle, bytes: Vec<u8>, name: String) -> Result<(), String> {
-    let name = std::path::Path::new(&name)
-        .file_name()
+pub fn native_share_image(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let name = request
+        .headers()
+        .get("x-file-name")
+        .and_then(|name| name.to_str().ok())
+        .and_then(|name| std::path::Path::new(name).file_name())
         .ok_or_else(|| "Invalid file name".to_string())?;
+    let bytes = crate::request_bytes(&request)?;
     // Only the latest picture is kept; the previous share has finished by now.
     let dir = std::env::temp_dir().join("BirdsCounterShare");
     let _ = std::fs::remove_dir_all(&dir);

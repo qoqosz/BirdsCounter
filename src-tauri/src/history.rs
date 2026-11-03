@@ -53,6 +53,38 @@ pub struct EntryInput {
     crop: Option<Crop>,
 }
 
+/// The JSON part of a `history_save` body.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveMeta {
+    entry: EntryInput,
+    thumb_length: usize,
+    update_mask: bool,
+}
+
+struct SaveBody<'a> {
+    entry: EntryInput,
+    update_mask: bool,
+    thumb: &'a [u8],
+    mask: Option<&'a [u8]>,
+}
+
+/// Splits a `history_save` body (see `split_framed`): after the JSON come the thumbnail and
+/// the mask, which may be empty.
+fn parse_save_body(body: &[u8]) -> Result<SaveBody<'_>, String> {
+    let (meta, rest) = crate::split_framed(body)?;
+    let meta: SaveMeta = serde_json::from_slice(meta).map_err(|e| e.to_string())?;
+    let (thumb, mask) = rest
+        .split_at_checked(meta.thumb_length)
+        .ok_or_else(|| "Invalid history save".to_string())?;
+    Ok(SaveBody {
+        entry: meta.entry,
+        update_mask: meta.update_mask,
+        thumb,
+        mask: (!mask.is_empty()).then_some(mask),
+    })
+}
+
 pub struct History {
     dir: PathBuf,
     lock: Mutex<()>,
@@ -184,16 +216,21 @@ pub async fn history_list(history: State<'_, History>) -> Result<Vec<Entry>, Str
     Ok(entries)
 }
 
-/// Creates or updates an entry. The mask file is only touched when `update_mask` is set:
-/// replaced by `mask`, or removed when `mask` is `None`.
+/// Creates or updates an entry, sent as a raw request body (see `parse_save_body`). The mask
+/// file is only touched when `update_mask` is set: replaced by `mask`, or removed when there
+/// is none.
 #[tauri::command]
 pub async fn history_save(
+    request: tauri::ipc::Request<'_>,
     history: State<'_, History>,
-    entry: EntryInput,
-    thumb: Vec<u8>,
-    mask: Option<Vec<u8>>,
-    update_mask: bool,
 ) -> Result<Entry, String> {
+    let body = crate::request_bytes(&request)?;
+    let SaveBody {
+        entry,
+        update_mask,
+        thumb,
+        mask,
+    } = parse_save_body(&body)?;
     let _guard = history.lock.lock().map_err(|e| e.to_string())?;
     let mut entries = history.load();
     let now = now_ms();
@@ -237,9 +274,9 @@ pub async fn history_save(
     stored.params = entry.params;
     stored.crop = entry.crop;
 
-    write_file(&history.thumb_path(&stored.id), &thumb)?;
+    write_file(&history.thumb_path(&stored.id), thumb)?;
     if update_mask {
-        match &mask {
+        match mask {
             Some(png) => write_file(&history.mask_path(&stored.id), png)?,
             None => {
                 let _ = std::fs::remove_file(history.mask_path(&stored.id));
@@ -294,4 +331,46 @@ pub async fn history_clear(app: AppHandle, history: State<'_, History>) -> Resul
         history.remove_files(&app, entry);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn save_body(meta: &str, files: &[u8]) -> Vec<u8> {
+        let mut body = (meta.len() as u32).to_le_bytes().to_vec();
+        body.extend_from_slice(meta.as_bytes());
+        body.extend_from_slice(files);
+        body
+    }
+
+    const ENTRY: &str = r#""entry":{"id":null,"source":null,"owned":false,"name":"Żuraw.jpg","count":3,"params":{},"crop":null}"#;
+
+    #[test]
+    fn save_body_splits_thumb_and_mask() {
+        let meta = format!(r#"{{{ENTRY},"thumbLength":2,"updateMask":true}}"#);
+        let body = save_body(&meta, &[1, 2, 3, 4, 5]);
+        let saved = parse_save_body(&body).unwrap();
+        assert_eq!(saved.entry.name.as_deref(), Some("Żuraw.jpg"));
+        assert!(saved.update_mask);
+        assert_eq!(saved.thumb, [1, 2]);
+        assert_eq!(saved.mask, Some(&[3, 4, 5][..]));
+    }
+
+    #[test]
+    fn save_body_without_mask() {
+        let meta = format!(r#"{{{ENTRY},"thumbLength":2,"updateMask":true}}"#);
+        let body = save_body(&meta, &[1, 2]);
+        let saved = parse_save_body(&body).unwrap();
+        assert_eq!(saved.thumb, [1, 2]);
+        assert_eq!(saved.mask, None);
+    }
+
+    #[test]
+    fn save_body_rejects_wrong_lengths() {
+        assert!(parse_save_body(&[1, 0]).is_err());
+        assert!(parse_save_body(&[200, 0, 0, 0, b'{']).is_err());
+        let meta = format!(r#"{{{ENTRY},"thumbLength":3,"updateMask":false}}"#);
+        assert!(parse_save_body(&save_body(&meta, &[1, 2])).is_err());
+    }
 }

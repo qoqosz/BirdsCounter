@@ -1924,12 +1924,11 @@ async function countBirds(bytes, params, maskPayload, crop) {
       loadedPhoto = { bytes, id: await invoke("load_photo", bytes) };
     }
     try {
-      return await invoke("process_image", {
-        photoId: loadedPhoto.id,
-        params,
-        maskPayload: maskPayload ? ipcBytes(maskPayload) : null,
-        crop,
-      });
+      const photoId = loadedPhoto.id;
+      return await invoke(
+        "process_image",
+        isWeb ? { photoId, params, maskPayload, crop } : framedBody({ photoId, params, crop }, maskPayload),
+      );
     } catch (e) {
       if (String(e) !== "photo-missing" || attempt > 0) throw e;
       loadedPhoto = null;
@@ -2022,20 +2021,21 @@ function queueHistorySave() {
     .then(async () => {
       const [thumb, mask] = await Promise.all([makeThumbnail(image, result), maskPromise]);
       if (!thumb) return undoSaved();
-      const saved = await invoke("history_save", {
-        entry: {
-          id: historyIds.get(session) ?? null,
-          source: info.source,
-          owned: info.owned,
-          name: info.name,
-          count: result.count,
-          params: result.params,
-          crop: result.crop,
-        },
-        thumb: ipcBytes(thumb),
-        mask: mask ? ipcBytes(mask) : null,
-        updateMask,
-      });
+      const entry = {
+        id: historyIds.get(session) ?? null,
+        source: info.source,
+        owned: info.owned,
+        name: info.name,
+        count: result.count,
+        params: result.params,
+        crop: result.crop,
+      };
+      const saved = await invoke(
+        "history_save",
+        isWeb
+          ? { entry, thumb, mask, updateMask }
+          : framedBody({ entry, thumbLength: thumb.length, updateMask }, thumb, mask),
+      );
       historyIds.set(session, saved.id);
     })
     .catch((e) => {
@@ -2501,7 +2501,7 @@ async function shareBlob(blob) {
     if (!bridge || typeof bridge.shareImage !== "function") throw "share-unsupported";
     bridge.shareImage(bytesToBase64(bytes), name);
   } else {
-    await invoke("native_share_image", { bytes: Array.from(bytes), name });
+    await invoke("native_share_image", bytes, { headers: { "x-file-name": name } });
   }
 }
 
@@ -2573,10 +2573,21 @@ async function shareHistoryEntry(entry, item) {
 
 // ===== Helpers =====
 
-// Tauri takes bytes inside arguments as a plain array (load_photo takes a raw body
-// instead); web.js takes the Uint8Array as it is.
-function ipcBytes(bytes) {
-  return isWeb ? bytes : Array.from(bytes);
+// Bytes inside Tauri arguments would go as plain arrays, so commands that take bytes and
+// arguments get one raw body, read by split_framed in lib.rs: the length of the JSON, the
+// JSON, the bytes. web.js takes the arguments as they are.
+function framedBody(meta, ...parts) {
+  const json = new TextEncoder().encode(JSON.stringify(meta));
+  const body = new Uint8Array(4 + json.length + parts.reduce((sum, part) => sum + (part?.length ?? 0), 0));
+  new DataView(body.buffer).setUint32(0, json.length, true);
+  body.set(json, 4);
+  let offset = 4 + json.length;
+  for (const part of parts) {
+    if (!part) continue;
+    body.set(part, offset);
+    offset += part.length;
+  }
+  return body;
 }
 
 function guessMimeFromPath(path) {
