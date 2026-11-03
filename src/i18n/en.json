@@ -11,6 +11,7 @@
   "open_image": "Open Image…",
   "count_prefix": "Counted",
   "count_suffix": "birds",
+  "count_suffix_one": "bird",
   "crop": "Crop",
   "mask": "Mask",
   "marks_toggle": "Show marked birds",

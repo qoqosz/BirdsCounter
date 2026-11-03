@@ -524,6 +524,7 @@ function birdsSuffix(value) {
     }
     return t("count_suffix_many");
   }
+  if (Number(value) === 1) return t("count_suffix_one");
   return t("count_suffix");
 }
 
