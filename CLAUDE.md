@@ -110,7 +110,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   and is sent as a PNG. A stroke paints only its own segment on the overlay; `renderMaskPreview` redraws all of
   it only when the view changes.
 - The editor shows a scaled-down copy of the photo (`PREVIEW_SIZE`) with the rings on `#birdCanvas`. The
-  eye button above the photo hides them (`showRings`, kept in `localStorage`). Under the photo are Crop,
+  eye button above the photo hides them (`showRings`, kept in `localStorage`). While scrolling, the header's edge
+  shrinks the count above the photo, and once it is gone `#countBelow` shows it as plain text under the photo
+  (`updateCountPosition`, `body.is-count-below`). Under the photo are Crop,
   Mask and Detection (opens the settings, open by default). The header's ⋮ menu has Language and, on iOS and
   Android, Share. The full resolution viewer (`#photoViewer`, opened by
   its button or a double click/tap) draws the visible part of the photo and the rings on one canvas per frame;

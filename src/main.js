@@ -72,6 +72,7 @@ let countLabel;
 let countPrefix;
 let countValue;
 let countSuffix;
+let countBelow;
 let backBtn;
 let birdCanvas;
 let viewRingsBtn;
@@ -408,6 +409,7 @@ function showPreview() {
   isPreviewVisible = true;
   imagePreview.style.display = "block";
   if (countLabel) countLabel.style.display = "flex";
+  if (countBelow) countBelow.style.display = "block";
   if (processActions) processActions.style.display = "flex";
   setSettingsOpen(true);
   if (backBtn) backBtn.style.display = "flex";
@@ -418,6 +420,7 @@ function showPreview() {
   setAndroidBackEnabled(true);
   updateCount(0);
   window.scrollTo(0, 0);
+  updateCountPosition();
 }
 
 function resetApp() {
@@ -432,6 +435,8 @@ function resetApp() {
   imagePreview.style.display = "none";
   closeViewer();
   if (countLabel) countLabel.style.display = "none";
+  if (countBelow) countBelow.style.display = "none";
+  updateCountPosition();
   if (processActions) processActions.style.display = "none";
   setSettingsOpen(true);
   if (backBtn) backBtn.style.display = "none";
@@ -527,6 +532,7 @@ function updateCount(value) {
   if (!countValue) return;
   countValue.textContent = String(value);
   if (countSuffix) countSuffix.textContent = birdsSuffix(value);
+  if (countBelow) countBelow.textContent = `${value} ${birdsSuffix(value)}`;
 }
 
 function stopCountingAnimation() {
@@ -548,6 +554,7 @@ function startCountingAnimation() {
 
   const render = () => {
     countValue.textContent = `${t("counting_in_progress")}${".".repeat(countingDotCount)}`;
+    if (countBelow) countBelow.textContent = countValue.textContent;
     countingDotCount = (countingDotCount % 3) + 1;
   };
 
@@ -2676,12 +2683,30 @@ function setupIOS() {
   openSharedPhoto();
 }
 
+// The header's edge squeezes the count as the page scrolls, and once nothing is left it moves
+// under the photo. This changes the layout only below the count, so it can't flicker.
+function updateCountPosition() {
+  let below = false;
+  if (isPreviewVisible && countLabel) {
+    const text = countLabel.querySelector(".count-text");
+    const label = countLabel.getBoundingClientRect();
+    const headerBottom = document.querySelector(".app-header").getBoundingClientRect().bottom;
+    const textBottom = label.top + (label.height + text.offsetHeight) / 2;
+    const scale = Math.min(Math.max((textBottom - headerBottom) / text.offsetHeight, 0), 1);
+    text.style.transform = scale < 1 ? `scale(${scale})` : "";
+    below = scale === 0;
+  }
+  document.body.classList.toggle("is-count-below", below);
+}
+
 // Toolbar / top app bar change their background once content scrolls under them
 function setupScrollState() {
   const update = () => {
     document.body.classList.toggle("is-scrolled", window.scrollY > 0);
+    updateCountPosition();
   };
   window.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", updateCountPosition);
   update();
 }
 
@@ -2714,6 +2739,7 @@ window.addEventListener("DOMContentLoaded", () => {
   countPrefix = document.querySelector("#countLabel [data-i18n='count_prefix']");
   countValue = document.querySelector("#countValue");
   countSuffix = document.querySelector("#countSuffix");
+  countBelow = document.querySelector("#countBelow");
   processActions = document.querySelector("#processActions");
   cropActions = document.querySelector("#cropActions");
   cropResetBtn = document.querySelector("#cropResetBtn");
