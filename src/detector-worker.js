@@ -103,6 +103,9 @@ async function processImage({ photoId, bytes, mask, params, crop }) {
     if (scale !== 1) {
       if (typeof scaled.min_radius === "number") scaled.min_radius *= scale;
       if (typeof scaled.max_radius === "number") scaled.max_radius *= scale;
+      if (typeof scaled.adaptive_block === "number") {
+        scaled.adaptive_block = Math.max(3, Math.round(scaled.adaptive_block * scale));
+      }
     }
     const scaledCrop = crop
       ? {
