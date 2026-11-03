@@ -53,6 +53,7 @@ let cropBtn;
 let maskBtn;
 let maskCancelBtn;
 let maskDoneBtn;
+let maskClearBtn;
 let maskActions;
 let processActions;
 let cropActions;
@@ -1119,6 +1120,7 @@ function updateMaskOverlayState() {
   if (!maskOverlay) return;
   maskOverlay.classList.toggle("is-active", isMasking);
   maskOverlay.classList.toggle("has-mask", maskHasPaint && !isMasking && !isCropping);
+  if (maskClearBtn) maskClearBtn.disabled = !maskHasPaint;
 }
 
 function updateMaskBrushValue() {
@@ -1425,6 +1427,18 @@ function cancelMaskMode() {
     maskPngCache = null;
   }
   exitMaskMode();
+}
+
+// Erases the whole mask but stays in mask mode; Cancel still brings the old one back.
+function clearMask() {
+  if (!isMasking || !maskContext || !maskBitmap) return;
+  maskContext.clearRect(0, 0, maskBitmap.width, maskBitmap.height);
+  maskHasPaint = false;
+  maskDragState = null;
+  maskPngCache = null;
+  maskChangedSinceSave = true;
+  updateMaskOverlayState();
+  renderMaskPreview();
 }
 
 function toggleMask() {
@@ -2771,6 +2785,7 @@ window.addEventListener("DOMContentLoaded", () => {
   maskBtn = document.querySelector("#maskBtn");
   maskCancelBtn = document.querySelector("#maskCancelBtn");
   maskDoneBtn = document.querySelector("#maskDoneBtn");
+  maskClearBtn = document.querySelector("#maskClearBtn");
   maskActions = document.querySelector("#maskActions");
   cropOverlay = document.querySelector("#cropOverlay");
   cropBox = document.querySelector("#cropBox");
@@ -2875,6 +2890,9 @@ window.addEventListener("DOMContentLoaded", () => {
   }
   if (maskCancelBtn) {
     maskCancelBtn.addEventListener("click", cancelMaskMode);
+  }
+  if (maskClearBtn) {
+    maskClearBtn.addEventListener("click", clearMask);
   }
   if (maskBrushInput) {
     maskBrushInput.value = String(DEFAULT_MASK_BRUSH_SIZE);
