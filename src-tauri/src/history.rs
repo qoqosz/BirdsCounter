@@ -175,13 +175,34 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     std::fs::write(path, bytes).map_err(|e| format!("History write: {e}"))
 }
 
+/// `file:` sources are only the camera photos the app saves itself: `BirdsCounter_*` files
+/// in a `Pictures` folder. Anything else is refused, so the command can't read arbitrary files.
+fn checked_photo_path(path: &Path, source: &str) -> Result<PathBuf, String> {
+    let invalid = || format!("Invalid source: {source}");
+    // Resolve `..` and symlinks before checking where the file really is.
+    let path = path.canonicalize().map_err(|_| invalid())?;
+    let owned = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with(OWNED_PHOTO_PREFIX));
+    let in_pictures = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .is_some_and(|n| n == "Pictures");
+    if owned && in_pictures {
+        Ok(path)
+    } else {
+        Err(invalid())
+    }
+}
+
 /// Resolves a `file:` or `appdoc:` source to a path on disk.
 pub fn source_path(app: &AppHandle, source: &str) -> Result<PathBuf, String> {
     if let Some(path) = source
         .strip_prefix("file://")
         .or_else(|| source.strip_prefix("file:"))
     {
-        return Ok(PathBuf::from(path));
+        return checked_photo_path(Path::new(path), source);
     }
     if let Some(relative) = source.strip_prefix("appdoc:") {
         let relative = Path::new(relative);
@@ -335,6 +356,20 @@ pub async fn history_clear(app: AppHandle, history: State<'_, History>) -> Resul
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn file_sources_are_limited_to_own_photos() {
+        let dir = std::env::temp_dir().join("bc_photo_check").join("Pictures");
+        std::fs::create_dir_all(&dir).unwrap();
+        let own = dir.join("BirdsCounter_1.jpg");
+        let other = dir.join("other.jpg");
+        std::fs::write(&own, b"x").unwrap();
+        std::fs::write(&other, b"x").unwrap();
+        assert!(checked_photo_path(&own, "file").is_ok());
+        assert!(checked_photo_path(&other, "file").is_err());
+        assert!(checked_photo_path(&dir.join("../Pictures/other.jpg"), "file").is_err());
+        assert!(checked_photo_path(Path::new("/etc/passwd"), "file").is_err());
+    }
+
     use super::*;
 
     fn save_body(meta: &str, files: &[u8]) -> Vec<u8> {
