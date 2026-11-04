@@ -110,7 +110,8 @@ the fields are still there, just blocky.
 ### Step 3: Measure how rough each area is
 
 Sky changes slowly from pixel to pixel, while trees and grass jump around. To measure this, we look at how much the
-brightness $C$ of the tiny copy changes going right ($G_x$) and going down ($G_y$), using two small patterns called *Sobel filters*:
+brightness $C$ of the tiny copy changes going right ($G_x$) and going down ($G_y$), using two small patterns called
+*Sobel filters*:
 
 $$
 G_x = \begin{bmatrix} -1 & 0 & 1 \cr -2 & 0 & 2 \cr -1 & 0 & 1 \end{bmatrix} * C
@@ -144,9 +145,10 @@ Being smooth is not enough. We use two more rules:
 1. **Sky is connected to the top of the photo.** A smooth area only counts as sky if you can walk from it to the top
    edge without leaving smooth pixels. This rules out the smooth patches in the field. Everything else is "not sky".
 2. **Small rough islands far from the land are still sky.** A sharp cloud edge or a very dense flock can look rough.
-   To find these, we grow the "not sky" areas by 15 pixels in every direction. If a grown piece reaches the edge of the
-   photo, it is landscape. If it floats alone in the middle, it is an island and it stays sky. This photo has one
-   tiny island, the orange dot in the left picture, in a patch of cloud.
+   To find these, we grow the "not sky" areas by 15 pixels of the tiny copy in every direction, which is about 93
+   pixels on the real photo. If a grown piece reaches the edge of the photo, it is landscape. If it floats alone in
+   the middle, it is an island and it stays sky. This photo has one tiny island, the orange dot in the left picture,
+   in a patch of cloud.
 
 Finally, a safety check. If less than 5% of the photo is sky, the photo is probably not a sky shot (think of birds on
 a lake), and the sky mask is not used at all. Here, 75% of the photo is sky, so we use it. The mask is then enlarged
@@ -224,7 +226,7 @@ $$
 - $c = 1$ means "black".
 
 Why divide instead of just subtracting? Because of light levels. A bird of brightness 50 on a sky of 200 has $c = 0.75$.
-On a dull evening with everything half as bright, that is 25 on 100, and $c$ is still $0.75$. The score means the same
+On a dull evening with everything half as bright, that is 25 on 100, and $c$ is still $0.75$. The number means the same
 thing in any light. Scientists call this *Weber contrast*.
 
 A real pixel in the middle of a bird, with sky $S = 173$ and photo $I = 33.6$:
@@ -268,8 +270,9 @@ doing its job.
 
 ### Step 11: Set a pass mark for every pixel
 
-Each pixel now gets its own pass mark $T$. It depends on the busyness, multiplied by the *Threshold* setting, $k = 9$.
-It is never lower than 8%, because birds are always at least that much darker than the sky:
+Each pixel now gets its own pass mark $T$. It depends on the busyness, multiplied by the *Threshold (× sky texture)*
+slider, $k = 9$. It is never lower than 8%, because the detector assumes a bird is at least that much darker than the
+sky:
 
 $$
 T = \max(0.08,\ k \times t)
@@ -318,9 +321,10 @@ the fields.
 
 ### Step 13: Remove whatever touches the landscape
 
-Now we use the sky mask from step 4. **Any connected piece that touches the "not sky" area is removed as a whole**, not
-just the part that overlaps. That way, a branch sticking out into the sky goes away together with the tree it belongs to.
-You can see this in the zoomed picture: the tree's outer leaves are red, even though some are outside the mask.
+Now we use the sky mask from step 4. **Any connected piece that touches the "not sky" area is removed as a whole**,
+not just the part that overlaps. That way, a branch sticking out into the sky goes away together with the tree it
+belongs to. You can see this in the zoomed picture: the tree's outer leaves are red, even though some are outside
+the mask.
 
 If you painted a mask by hand in the app, it is applied here too. It works differently: it only cuts off the pixels
 you painted. And if you cropped the photo, everything on this page simply runs on the cropped part.
@@ -367,8 +371,9 @@ $$
 r_{\min} \le r \le r_{\max}
 $$
 
-The minimum is 1 pixel by default. The maximum is 100 pixels in the detector itself. The app sets its slider to half
-the photo's shorter side when you open a photo, which would be 811.5 pixels here.
+The minimum is 1 pixel by default. The app sets the maximum to half the photo's shorter side when you open a photo,
+which is 811.5 pixels here. (The detector's own default, used by the `count` example, is 100 pixels. It gives the same
+53 birds on this photo.)
 
 On this photo nothing is removed, because the groups go from $r = 1.5$ to $r = 7.8$. Birds in one photo are usually
 about the same size, as the left chart shows.
@@ -391,10 +396,11 @@ into the frame. A small bird cut by the edge is fine.
 
 Here $m = 98$ pixels, so the limits are 2,450 and 294 pixels. The largest group has 191 pixels, so again nothing is
 removed, because the sky mask has already done this job. To see this rule at work, the left picture shows what would
-happen with the sky mask switched off: of 227 groups, 12 would be removed, all of them big pieces of the field and
-fence.
+happen with the sky mask switched off. Of 228 groups, 13 would be removed: the whole tree, which alone has 227,338
+pixels, and big pieces of the horizon, field and fence. The many small white pieces in the field would stay, and the
+count would be 323. That is why the sky mask is needed as well.
 
-![Which groups the size rule would remove, and how groups compare with the limits](images/18_clutter.png)
+![Which groups this rule would remove with the sky mask off, and how groups compare with the limits](images/18_clutter.png)
 
 ### Step 17: Spot birds that overlap
 
@@ -408,8 +414,9 @@ with nearby birds. For a group $G$ we do this:
 
    $$\text{distance}(G, H) \le 12 \times \sqrt{A_H}$$
 
-   The group itself counts too. Measuring in $H$'s own size means tiny specks must be very close to count, and they
-   can't make a big bird look like several.
+   The group itself counts too. Measuring in $H$'s own size means a tiny speck only counts when it is very close: a
+   4-pixel speck must be within $12 \times \sqrt{4} = 24$ pixels. So specks far away can't make a big bird look like
+   several.
 
 2. **Check there are enough of them.** With fewer than 4 neighbours we can't tell what is normal, so the group counts
    as 1 bird. Six groups in this photo are like that.
@@ -453,20 +460,21 @@ The app then draws a ring on each group: red for one bird, and orange with a num
 
 ## Where it goes wrong
 
-The detector is not perfect, and this photo shows two typical mistakes. 53 is the detector's answer, not the true number.
+The detector is not perfect, and this photo shows two typical mistakes. 53 is the detector's answer, not the true
+number.
 
 ![The missed distant flock, and the twig counted as a bird](images/21_limits.jpg)
 
 - **A far-away flock is mostly missed (left).** Just above the horizon there is a second flock of about a dozen birds
-  (counted by eye), so small and pale that only 6 small pieces of them pass the $q > 0.6$ bar, and just one of those reaches $q > 1$. So
-  only one ring lands on them.
+  (counted by eye), so small and pale that only 6 small pieces of them pass the $q > 0.6$ bar, and just one of those
+  reaches $q > 1$. So only one ring lands on them.
 - **A twig is counted as a bird (right).** It sits in a gap in the leaves and doesn't touch the rest of the tree in the
   $q > 0.6$ picture, so step 13 doesn't remove it. It is even shaped a bit like a bird.
 
-You can fix these by hand in the app. Paint a mask over the twig, or lower the *Threshold* setting to catch the far
-flock. Lowering it has a cost, though. It catches more of that flock, but it also adds rings elsewhere:
+You can fix these by hand in the app. Paint a mask over the twig, or lower the *Threshold (× sky texture)* slider to
+catch the far flock. Lowering it has a cost, though. It catches more of that flock, but it also adds rings elsewhere:
 
-| *Threshold* $k$ | Birds counted in the photo | Of those, in the far flock |
+| Slider value $k$ | Birds counted in the photo | Of those, in the far flock |
 | --- | --- | --- |
 | 9 (default) | 53 | 1 |
 | 6 | 60 | 4 |
@@ -504,9 +512,9 @@ flock. Lowering it has a cost, though. It catches more of that flock, but it als
 
 ## What about the other methods?
 
-The *Threshold* menu in the settings also offers *Adaptive* and *Otsu*. They replace steps 5 to 12 with a simpler
-recipe: blur the photo, apply a threshold that doesn't know about the sky, and clean up with an opening and a closing.
-Step 13 still runs, and then an outline drawn around each shape replaces step 14. Steps 1 to 4 and 15 to 18 stay the
-same. See the [Detection Pipeline](../README.md#detection-pipeline) section of the README.
+The *Threshold* menu in the settings, where *Sky background* is the default, also offers *Adaptive* and *Otsu*. They
+replace steps 5 to 12 with a simpler recipe: blur the photo, apply a threshold that doesn't know about the sky, and
+clean up with an opening and a closing. Step 13 still runs, and then an outline drawn around each shape replaces step
+14. Steps 1 to 4 and 15 to 18 stay the same.
 
 The web version does all of the same steps with OpenCV.js, in [`detector.js`](../src/detector.js).

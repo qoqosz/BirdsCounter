@@ -98,8 +98,7 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   non-sky areas are dropped whole by `drop_touching`, while the user's painted mask only cuts them. Its
   thresholds are the `SKY_*` constants, in units of a downscaled copy where the local window is 5 px.
 - Post-processing is shared by all methods. `drop_clutter` removes oversized and edge-touching blobs, and
-  `split_merged` counts merged birds as `round(area / flock median)`. The README's "Detection Pipeline" section has
-  the details.
+  `split_merged` counts merged birds as `round(area / flock median)`. `docs/processing.md` has the details.
 
 **Frontend (`src/`)**
 
