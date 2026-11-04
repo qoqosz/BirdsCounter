@@ -406,9 +406,9 @@ with nearby birds. For a group $G$ we do this:
 
 1. **Find its neighbours.** Another group $H$ is a neighbour if it is close, measured in $H$'s own size:
 
-   $$
+   ```math
    \text{distance}(G, H) \le 12 \times \sqrt{A_H}
-   $$
+   ```
 
    The group itself counts too. Measuring in $H$'s own size means tiny specks must be very close to count, and they
    can't make a big bird look like several.
@@ -420,9 +420,9 @@ with nearby birds. For a group $G$ we do this:
 
 4. **Divide and round.** The number of birds in the group is:
 
-   $$
+   ```math
    n = \max\!\left(1,\ \text{round}\!\left(\frac{A_G}{m_G}\right)\right)
-   $$
+   ```
 
 A real example: the circled group has an area of 185 pixels, and the median of its 12 closest neighbours is 111 pixels.
 
