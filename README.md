@@ -17,6 +17,9 @@ where each platform gets its own native look.
 The sample photo is [`images/flock.jpg`](images/flock.jpg). With *Only sky* on, the tree, the fields and the fence
 are ignored and 53 birds are counted. Without the sky mask the landscape adds over 250 false detections.
 
+Curious how the counting works? [This step-by-step guide](docs/processing.md) follows that photo through the whole
+algorithm, with a picture for each step.
+
 ## Download
 
 Get the latest build from [GitHub Releases](https://github.com/qoqosz/BirdsCounter/releases):
