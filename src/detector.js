@@ -29,6 +29,10 @@
   const SKY_MAX_TEXTURE = f(0.3);
   const SKY_REACH = 15;
   const SKY_MIN_FRACTION = 0.05;
+  const SKY_TOP_TRUSTED_FRACTION = 0.25;
+  const SKY_BLOCKER_BRIGHTNESS = 1.6;
+  const WINDOW_REFERENCE_SIDE = 2000.0;
+  const MAX_MEDIAN_WINDOW = 255;
 
   // BlobParams::default(); missing fields fall back to these, like `#[serde(default)]`.
   const DEFAULT_PARAMS = {
@@ -64,6 +68,11 @@
     return v;
   }
 
+  /** The local window in pixels of a photo of `cols` x `rows` (see scaled_window). */
+  function scaledWindow(setting, cols, rows) {
+    return oddKernel(Math.round((setting * Math.max(cols, rows)) / WINDOW_REFERENCE_SIDE), 3);
+  }
+
   function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
   }
@@ -89,37 +98,51 @@
   }
 
   /**
+   * The median area of the detections near `blob`, from the same flock; null when there are
+   * too few of them to tell (see local_area in blob_filter.rs).
+   */
+  function localArea(blob, blobs) {
+    const neighbours = [];
+    for (const other of blobs) {
+      const distance = Math.hypot(other.x - blob.x, other.y - blob.y);
+      if (distance <= SPLIT_NEIGHBOUR_DISTANCE * Math.sqrt(other.area)) {
+        neighbours.push([distance, other.area]);
+      }
+    }
+    if (neighbours.length < SPLIT_MIN_NEIGHBOURS) return null;
+    neighbours.sort((a, b) => a[0] - b[0]);
+    return median(neighbours.slice(0, SPLIT_NEIGHBOURS).map(([, area]) => area));
+  }
+
+  /**
    * Removes blobs much larger than a typical detection: anything touching the image edge
-   * (trees, roofs, lamps) above BORDER_CLUTTER_RATIO and anything at all above
-   * MAX_CLUTTER_RATIO median blobs.
+   * (trees, roofs, lamps) above BORDER_CLUTTER_RATIO median blobs, and anything else above
+   * MAX_CLUTTER_RATIO of them. Elsewhere in the image a blob is also compared with its own
+   * flock (see drop_clutter in blob_filter.rs).
    */
   function dropClutter(blobs) {
     const typical = median(blobs.map((blob) => blob.area));
     if (typical <= 0) return blobs;
+    const useLocal = blobs.length <= SPLIT_MAX_DETECTIONS;
     return blobs.filter((blob) => {
-      const ratio = blob.area / typical;
-      return ratio <= MAX_CLUTTER_RATIO && !(blob.touchesBorder && ratio > BORDER_CLUTTER_RATIO);
+      const local = useLocal ? localArea(blob, blobs) : null;
+      const reference = local === null ? typical : Math.max(local, typical);
+      return (
+        blob.area / reference <= MAX_CLUTTER_RATIO &&
+        !(blob.touchesBorder && blob.area / typical > BORDER_CLUTTER_RATIO)
+      );
     });
   }
 
   /**
    * Estimates how many birds each blob holds by comparing its area with the median area of
-   * nearby detections from the same flock (see split_merged in blob_filter.rs).
+   * nearby detections from the same flock (localArea).
    */
   function splitMerged(blobs) {
     if (blobs.length > SPLIT_MAX_DETECTIONS) return blobs;
     const counts = blobs.map((blob) => {
-      const neighbours = [];
-      for (const other of blobs) {
-        const distance = Math.hypot(other.x - blob.x, other.y - blob.y);
-        if (distance <= SPLIT_NEIGHBOUR_DISTANCE * Math.sqrt(other.area)) {
-          neighbours.push([distance, other.area]);
-        }
-      }
-      if (neighbours.length < SPLIT_MIN_NEIGHBOURS) return 1;
-      neighbours.sort((a, b) => a[0] - b[0]);
-      const reference = median(neighbours.slice(0, SPLIT_NEIGHBOURS).map(([, area]) => area));
-      if (reference <= 0) return 1;
+      const reference = localArea(blob, blobs);
+      if (reference === null || reference <= 0) return 1;
       return Math.max(Math.round(blob.area / reference), 1);
     });
     return blobs.map((blob, i) => ({ ...blob, count: counts[i] }));
@@ -285,6 +308,67 @@
     }
 
     /**
+     * Candidate sky (255): the smooth components reaching the top edge, and the largest smooth
+     * component when the top edge seems blocked (see sky_candidates in blob_filter.rs).
+     */
+    function skyCandidates(smooth, brightness, brightBirds, scope) {
+      const local = new Scope();
+      try {
+        const labels = mat(local);
+        const stats = mat(local);
+        const centroids = mat(local);
+        const labelCount = cv.connectedComponentsWithStats(smooth, labels, stats, centroids, 4, cv.CV_32S);
+        const statData = stats.data32S;
+        const width = stats.cols;
+        const selected = new Uint8Array(labelCount);
+        const areas = new Float64Array(labelCount);
+        for (let label = 1; label < labelCount; label++) {
+          selected[label] = statData[label * width + cv.CC_STAT_TOP] === 0 ? 1 : 0;
+          areas[label] = statData[label * width + cv.CC_STAT_AREA];
+        }
+        const labelData = labels.data32S;
+        const brightnessData = brightness.data32F;
+        const totals = new Float64Array(labelCount);
+        for (let i = 0; i < labelData.length; i++) totals[labelData[i]] += brightnessData[i];
+
+        let topArea = 0;
+        let topTotal = 0;
+        let largest = 0;
+        for (let label = 1; label < labelCount; label++) {
+          if (selected[label]) {
+            topArea += areas[label];
+            topTotal += totals[label];
+          }
+          if (largest === 0 || areas[label] >= areas[largest]) largest = label;
+        }
+        if (largest > 0) {
+          const area = areas[largest];
+          const total = smooth.rows * smooth.cols;
+          const muchBrighter =
+            topArea < SKY_MIN_FRACTION * total ||
+            (!brightBirds && totals[largest] / area > (SKY_BLOCKER_BRIGHTNESS * topTotal) / topArea);
+          if (
+            area >= SKY_MIN_FRACTION * total &&
+            topArea < SKY_TOP_TRUSTED_FRACTION * total &&
+            area > topArea &&
+            muchBrighter
+          ) {
+            selected[largest] = 1;
+          }
+        }
+
+        const out = zeros(scope, smooth.rows, smooth.cols);
+        const outData = out.data;
+        for (let i = 0; i < labelData.length; i++) {
+          if (selected[labelData[i]]) outData[i] = 255;
+        }
+        return out;
+      } finally {
+        local.release();
+      }
+    }
+
+    /**
      * Finds everything that is not sky (255); null when there is (almost) no sky. See
      * landscape_mask in blob_filter.rs.
      */
@@ -344,8 +428,7 @@
           }
         }
 
-        // Candidate sky: smooth components reaching the top edge.
-        const topSmooth = componentsWhere(smooth, 4, (_left, top) => top === 0, local);
+        const topSmooth = skyCandidates(smooth, closed, brightBirds, local);
         // Landscape: the rest of the image connected to its edges, together with rough
         // islands near it. Islands farther away are dense flocks or sharp cloud edges.
         const notSky = invert(topSmooth, local);
@@ -384,11 +467,36 @@
       }
     }
 
+    /** Median of `src` in a square window; see local_median in blob_filter.rs. */
+    function localMedian(src, window, scope) {
+      const out = mat(scope);
+      if (window <= MAX_MEDIAN_WINDOW) {
+        cv.medianBlur(src, out, window);
+        return out;
+      }
+      const local = new Scope();
+      try {
+        const factor = Math.floor((window + MAX_MEDIAN_WINDOW - 1) / MAX_MEDIAN_WINDOW);
+        const size = new cv.Size(
+          Math.max(Math.floor((src.cols + factor - 1) / factor), 1),
+          Math.max(Math.floor((src.rows + factor - 1) / factor), 1),
+        );
+        const small = mat(local);
+        cv.resize(src, small, size, 0, 0, cv.INTER_NEAREST);
+        const filtered = mat(local);
+        cv.medianBlur(small, filtered, oddKernel(Math.floor(window / factor), 3));
+        cv.resize(filtered, out, new cv.Size(src.cols, src.rows), 0, 0, cv.INTER_LINEAR);
+        return out;
+      } finally {
+        local.release();
+      }
+    }
+
     /**
      * Estimates the sky without birds and keeps blobs that are clearly darker than it
      * (Weber contrast against a threshold that rises with the local cloud texture).
      */
-    function detectBackground(gray, masks, params) {
+    function detectBackground(gray, masks, params, window) {
       const s = new Scope();
       try {
         const subject = params.invert ? invert(gray, s) : gray;
@@ -408,7 +516,6 @@
           cv.BORDER_REPLICATE,
           borderValue,
         );
-        const window = oddKernel(params.adaptive_block, 3);
         const background = mat(s);
         cv.morphologyEx(
           despeckled,
@@ -448,7 +555,9 @@
           const deviationData = deviation.data;
           for (let i = 0; i < contrast.length; i++) {
             const sky = backgroundData[i];
-            const signed = f(f(sky - subjectData[i]) / Math.max(sky, 1));
+            // The contrast is relative to the real sky, also when the image is flipped.
+            const reference = params.invert ? 255 - sky : sky;
+            const signed = f(f(sky - subjectData[i]) / Math.max(reference, 1));
             contrast[i] = clamp(signed, 0, 1);
             deviationData[i] = Math.round(f(f(Math.min(Math.abs(signed), deviationCap) / deviationCap) * 255));
           }
@@ -456,8 +565,7 @@
         s.free(subjectF);
         s.free(smoothBackground);
 
-        const texture = mat(s);
-        cv.medianBlur(deviation, texture, oddKernel(3 * window, 3));
+        const texture = localMedian(deviation, oddKernel(3 * window, 3), s);
         s.free(deviation);
 
         // Significance: contrast divided by the local threshold (> 1 means a detection).
@@ -550,7 +658,7 @@
     }
 
     /** Classic pipeline: global/adaptive threshold, morphology and external contours. */
-    function detectThreshold(gray, masks, params) {
+    function detectThreshold(gray, masks, params, window) {
       const s = new Scope();
       try {
         const blurK = oddKernel(params.blur, 1);
@@ -560,7 +668,7 @@
         let binary = thresholdImage(
           blurred,
           params.threshold_method,
-          params.adaptive_block,
+          window,
           params.adaptive_c,
           s,
         );
@@ -640,15 +748,15 @@
         const exclusion = mask
           ? cropMat(decodeMask(mask, full.cols, full.rows, scope), rect, scope)
           : null;
-        const landscape = params.sky_only
-          ? landscapeMask(gray, oddKernel(params.adaptive_block, 3), params.invert, scope)
-          : null;
+        // From the whole photo: cropping does not change how big a bird is in pixels.
+        const window = scaledWindow(params.adaptive_block, full.cols, full.rows);
+        const landscape = params.sky_only ? landscapeMask(gray, window, params.invert, scope) : null;
         const masks = { exclusion, landscape };
 
         let blobs =
           params.threshold_method.trim().toLowerCase() === "background"
-            ? detectBackground(gray, masks, params)
-            : detectThreshold(gray, masks, params);
+            ? detectBackground(gray, masks, params, window)
+            : detectThreshold(gray, masks, params, window);
 
         const minRadius = Math.max(params.min_radius, 0);
         const maxRadius = Math.max(params.max_radius, minRadius);
@@ -676,5 +784,5 @@
     return { detect };
   }
 
-  return { create, DEFAULT_PARAMS, dropClutter, splitMerged };
+  return { create, DEFAULT_PARAMS, dropClutter, splitMerged, scaledWindow };
 });

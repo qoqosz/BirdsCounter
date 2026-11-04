@@ -18,6 +18,13 @@ The code for all of this is in [`blob_filter.rs`](../src-tauri/src/blob_filter.r
 
 **The answer for this photo is 53 birds.** Let's see how we get there.
 
+Every step ends with a **review note**: why the step is there, what happens without it, and where it is weak. The
+numbers come from switching off one step at a time, on this photo and on synthetic scenes where the true count is known.
+On this photo more rings is not better, because its true count is unknown. It is also the only real photo tested, so
+treat the numbers as evidence and not as proof. [Known gaps](#known-gaps-and-what-was-tried) lists the gaps found and
+what happened when they were tackled. Scene numbers in the notes were measured before those fixes, unless a note says
+otherwise. The fixes don't change this photo's count at the default settings.
+
 ## The steps at a glance
 
 | Part | Steps | What happens |
@@ -84,6 +91,10 @@ $$
 
 ![The photo in grey](images/02_gray.jpg)
 
+> **Review note.** A bird is a silhouette, so brightness is enough, and one channel takes less memory. No single colour
+> channel does clearly better here: blue gives 51, green 52 and red 56, against 53 for grey. The weak point is the
+> assumption itself: a bird lighter than the sky scores zero ([gap 5](#gap-5-only-dark-or-only-light-birds)).
+
 ---
 
 ## Where is the sky?
@@ -94,7 +105,9 @@ spots that would look just like birds. These three steps can be switched off wit
 ### Step 2: Make a tiny copy and erase the birds
 
 We don't need detail to tell a sky from a field, so we shrink the photo. The *Local window* setting, $w = 31$, is
-roughly "wider than a bird is thick". We shrink by enough to make that window only 5 pixels wide:
+roughly "wider than a bird is thick". The setting is for a photo 2000 pixels on its longer side and grows with the whole
+photo, so a 4000 pixel photo uses 63. Cropping doesn't change it, because a bird stays the same size in pixels. This
+photo is exactly 2000 pixels, so here it is 31. We shrink by enough to make that window only 5 pixels wide:
 
 $$
 \text{scale} = \max\left(\frac{w}{5},\ 1\right) = \frac{31}{5} = 6.2
@@ -106,6 +119,9 @@ Then a closing with a 5 × 5 window erases the birds. Look at the right picture:
 the fields are still there, just blocky.
 
 ![The tiny copy before and after the closing](images/03_sky_erase.jpg)
+
+> **Review note.** Without the closing, a flock would look like rough texture and be taken for land. The shrinking
+> follows $w$, which is why $w$ now grows with the photo ([gap 1](#gap-1-the-window-is-in-pixels)).
 
 ### Step 3: Measure how rough each area is
 
@@ -138,12 +154,19 @@ Skies normally stay well under that, even with clouds. Trees, grass and fences g
 Notice the white patches in the field in the right picture. They are smooth too, but they are not sky. The next step
 deals with them.
 
+> **Review note.** The limit of 0.3 looks arbitrary, but it is not critical on this photo: anything from 0.2 to 0.5 gives
+> 52–53 birds. The weak point is texture finer than one pixel of the tiny copy: shrinking averages it out, so it can
+> look smooth.
+
 ### Step 4: Decide what counts as sky
 
 Being smooth is not enough. We use two more rules:
 
 1. **Sky is connected to the top of the photo.** A smooth area only counts as sky if you can walk from it to the top
    edge without leaving smooth pixels. This rules out the smooth patches in the field. Everything else is "not sky".
+   There is one exception, for when something blocks the view across the top. If smooth areas at the top cover less
+   than 25% of the photo, the largest smooth area counts as sky too, as long as it is larger than they are and at least
+   5% of the photo. It must also be at least 1.6 times brighter than they are, unless they cover less than 5%.
 2. **Small rough islands far from the land are still sky.** A sharp cloud edge or a very dense flock can look rough.
    To find these, we grow the "not sky" areas by 15 pixels of the tiny copy in every direction, which is about 93
    pixels on the real photo. If a grown piece reaches the edge of the photo, it is landscape. If it floats alone in
@@ -155,6 +178,11 @@ a lake), and the sky mask is not used at all. Here, 75% of the photo is sky, so 
 back to the size of the photo.
 
 ![The sky mask, plain and over the photo](images/05_sky_mask.jpg)
+
+> **Review note.** Rule 1 earns its place: without it this photo gives 139. Rule 2 changes nothing here, but it protects
+> dense flocks: a scene with a ball of 120 overlapping birds inside a flock gives 81 with it and 56 without it. The
+> exception to rule 1 changes nothing on this photo either, and it fixes the photos where the top is not sky
+> ([gap 4](#gap-4-the-top-of-the-photo-is-assumed-to-be-sky)).
 
 ---
 
@@ -170,6 +198,10 @@ first.
 
 ![One bird, very close up, before and after removing the bright fringe](images/06_specks.jpg)
 
+> **Review note.** There is a stronger reason than the fringes. The closing also picks up bright noise peaks, which lifts
+> the sky estimate everywhere. Without this step, a scene with uneven light finds 43 of 112 birds and a dense flock of
+> thin birds finds 0 of 420. On this photo the count barely moves (52), but 5 groups are lost and 2 appear.
+
 ### Step 6: Erase the birds
 
 This is a closing again, this time with the full window of $w = 31$ pixels. Any dark thing survives only if a
@@ -177,6 +209,11 @@ This is a closing again, this time with the full window of $w = 31$ pixels. Any 
 slowly.
 
 ![The photo after the closing: no birds, blocky sky](images/07_closing.jpg)
+
+> **Review note.** A plain blur would mix the dark birds into the sky and shrink their contrast. The closing skips them.
+> The middle of anything thicker than the window survives as "sky". A bird 50 pixels thick is still found by its rim, but
+> its area comes out at about 3,450 pixels instead of 5,500, and a solid dark mass of birds is mostly missed. See
+> [gap 1](#gap-1-the-window-is-in-pixels).
 
 ### Step 7: Smooth the sky
 
@@ -196,6 +233,8 @@ birds dip down, as if they weren't there. It also ignores the bright fringes.
 
 ![Brightness along one row of the photo, compared with the sky](images/09_row_profile.png)
 
+> **Review note.** Without the box blur this photo gives 69 instead of 53, so the blocks do matter.
+
 ---
 
 ## Find dark spots
@@ -210,6 +249,10 @@ I = \frac{1}{16} \begin{bmatrix} 1 & 2 & 1 \cr 2 & 4 & 2 \cr 1 & 2 & 1 \end{bmat
 $$
 
 ![Part of the flock before and after the small blur](images/10_blur.jpg)
+
+> **Review note.** This is a real trade-off. Without the blur this photo gives 60, and with a 5 × 5 blur it gives 50. A
+> bird one pixel thick loses about half of its contrast, and that contributes to
+> [gap 3](#gap-3-a-dense-flock-partly-hides-itself): the dense flock scene finds all 420 birds without the blur.
 
 ### Step 9: Measure how much darker each pixel is
 
@@ -240,6 +283,12 @@ $$
 The birds glow nicely. So do the tree and the fields, but the sky mask takes care of those later. Faint streaks in the
 clouds glow a bit too, and that is what the next step is for.
 
+> **Review note.** The argument is right, but the measured gain is small: subtracting gives 54 on this photo, and 109
+> instead of 112 in a scene where the sky goes from 235 to 55 and birds are 15% darker than it. It costs one division, so
+> it stays. With *Invert* the division still uses the real sky and not the flipped one
+> ([gap 5](#gap-5-only-dark-or-only-light-birds)). That is also the only case where the upper limit in $\min(\ldots, 1)$
+> acts, because otherwise $d$ cannot exceed 1.
+
 ### Step 10: Measure how busy the sky is
 
 On a clear blue sky, even a slightly dark spot is suspicious. In streaky clouds, slightly dark spots are everywhere and
@@ -261,12 +310,25 @@ Three details make this work:
 - **Why stop at 0.05?** So that very busy areas can't hide strongly contrasting birds.
 
 To keep this fast, the code limits each $\lvert d \rvert$ to $0.05 / 1.4826 \approx 0.034$ and stores it as a whole
-number from 0 to 255. OpenCV's median filter is much faster that way.
+number from 0 to 255. OpenCV's median filter is much faster that way. That filter can't use a window wider than 255
+pixels, so very large photos use a copy with fewer pixels for this step.
 
 ![The difference at each pixel, and the busyness t](images/12_texture.jpg)
 
 On the right, notice that the flock has left no trace at all. Only the clouds and the land show up. That is the median
 doing its job.
+
+> **Review note.** The median is the best defended choice in the whole process. An average-based measure changes this
+> photo by one bird (54), but finds 0 of 420 in the dense flock scene. Without the 0.05 limit, a scene with heavy cloud
+> texture finds 6 of 60 birds instead of 59. Two claims above go too far:
+>
+> - "Exactly" holds only when $d$ is centred on zero. The closing gives an upper envelope of the sky, so $d$ is shifted
+>   upwards, and $t$ is better read as the typical distance from that envelope.
+> - "No trace" holds for this flock, but not for a dense one ([gap 3](#gap-3-a-dense-flock-partly-hides-itself)).
+>
+> One suspicion did not hold up: that land inside the $93 \times 93$ square raises the pass mark and hides the flock
+> above the horizon. Leaving the land out gives 52 instead of 53 at $k = 9$, and no change (60) at $k = 6$. That flock is
+> simply too faint.
 
 ### Step 11: Set a pass mark for every pixel
 
@@ -301,6 +363,10 @@ Here are some real pixels from this photo:
 All three birds pass and both empty pixels fail, even though the tiny bird is only about half as dark as the bird on
 the busy sky. That is exactly what we wanted.
 
+> **Review note.** The floor of 0.08 changes nothing on this photo, for any value from 0.04 to 0.16. It matters on a very
+> smooth sky: a scene with faint streaks gives 32 with it and 69 without it (the true count is 30). The slider $k$ is the
+> one parameter the result really depends on, as the table in [Where it goes wrong](#where-it-goes-wrong) shows.
+
 ---
 
 ## From pixels to groups
@@ -319,6 +385,9 @@ the fields.
 
 ![All pixels with a score above 0.6](images/14_candidates.png)
 
+> **Review note.** The value is not critical: 0.5 to 0.8 gives 52–57 birds. Keeping only scores above 1 gives 59, because
+> birds break into pieces (8 new groups, 2 lost).
+
 ### Step 13: Remove whatever touches the landscape
 
 Now we use the sky mask from step 4. **Any connected piece that touches the "not sky" area is removed as a whole**,
@@ -332,6 +401,10 @@ you painted. And if you cropped the photo, everything on this page simply runs o
 After this step, 6,287 pixels remain, in 117 pieces.
 
 ![Pieces removed because they touch the landscape, in red](images/15_sky_cut.png)
+
+> **Review note.** Only cutting along the mask gives 67, because the branches stay. The cost is that a bird joined to
+> something dark goes with it: a wire across the sky takes 5 of 60 birds with it, and a faint streak reaching the ground
+> takes 8 of 38. That cost is accepted.
 
 ### Step 14: Group the pixels and demand one strong pixel
 
@@ -352,6 +425,9 @@ was only 0.73.
 This takes us from 117 pieces down to **49 groups**.
 
 ![Kept and dropped groups, with strong pixels in yellow and weak pixels in blue](images/16_groups.png)
+
+> **Review note.** Without the strict test, keeping everything above 0.6 gives 103. Together with step 12 this is what
+> separates pale wing tips from pale clouds, and no single threshold does both.
 
 ---
 
@@ -380,13 +456,17 @@ about the same size, as the left chart shows.
 
 ![The radius of each group, and circles of the same area on the birds](images/17_size.png)
 
+> **Review note.** This step removes nothing here, and setting the minimum to 0 changes nothing either. In the app it is
+> mostly a tool for the user: the default maximum, half the shorter side, does not limit anything until the slider moves.
+
 ### Step 16: Remove giant groups
 
-A "typical" group is the median of all the areas, $m$. Anything far bigger than that is not a bird. A group is removed
-if it is:
+A "typical" group is the median of all the areas, $m$. Near birds are much bigger than far ones, so a group is also
+compared with its own flock: $m_G$ is the median area of the groups near it, found as in step 17, and $m$ when it has too
+few of them. Anything far bigger than both is not a bird. A group is removed if it is:
 
 $$
-\frac{A}{m} > 25
+\frac{A}{\max(m,\ m_G)} > 25
 \qquad \text{or} \qquad
 \left(\text{it touches the photo's edge and } \frac{A}{m} > 3\right)
 $$
@@ -394,13 +474,19 @@ $$
 The second rule is stricter because large dark things at the edge are nearly always a tree, a roof or a lamp sticking
 into the frame. A small bird cut by the edge is fine.
 
-Here $m = 98$ pixels, so the limits are 2,450 and 294 pixels. The largest group has 191 pixels, so again nothing is
-removed, because the sky mask has already done this job. To see this rule at work, the left picture shows what would
-happen with the sky mask switched off. Of 228 groups, 13 would be removed: the whole tree, which alone has 227,338
+Here $m = 98$ pixels, so the limits are at least 2,450 and 294 pixels. The largest group has 191 pixels, so again nothing
+is removed, because the sky mask has already done this job. To see this rule at work, the left picture shows what would
+happen with the sky mask switched off. Of 228 groups, 9 would be removed: the whole tree, which alone has 227,338
 pixels, and big pieces of the horizon, field and fence. The many small white pieces in the field would stay, and the
-count would be 323. That is why the sky mask is needed as well.
+count would be 332. That is why the sky mask is needed as well. (The picture is from before $m_G$ was added, when 13
+groups were removed and the count was 323.)
 
 ![Which groups this rule would remove with the sky mask off, and how groups compare with the limits](images/18_clutter.png)
+
+> **Review note.** With the sky mask on it rarely acts, but it is not redundant. With the mask off, removing it gives 686
+> instead of 332. It also removes wires, which the mask can't see because the closing erases them. The edge rule still
+> compares with the whole photo, because comparing only nearby made the mask-off count worse, so near birds at the edge
+> are still at risk ([gap 2](#gap-2-steps-16-and-17-judge-size-too-simply)).
 
 ### Step 17: Spot birds that overlap
 
@@ -440,6 +526,10 @@ comparing everything with everything would be slow.)
 
 ![A merged group with lines to its 12 neighbours, and their areas](images/19_split.jpg)
 
+> **Review note.** Without this step the count is 49, so it decides 8% of the result. Area alone can't tell a large bird
+> from several small ones. On this photo two of the ratios sit right at the rounding limit of 1.5 (about 1.50 and 1.53),
+> so a small change can move the count. See [gap 2](#gap-2-steps-16-and-17-judge-size-too-simply).
+
 ---
 
 ## Finish
@@ -455,6 +545,9 @@ $$
 The app then draws a ring on each group: red for one bird, and orange with a number for several.
 
 ![The final result: 53 birds with rings](images/20_final.jpg)
+
+> **Review note.** There is nothing to question in the sum itself. It inherits every error from the earlier steps, and the
+> app shows it as one exact number, with no sign of how uncertain it is.
 
 ---
 
@@ -480,19 +573,109 @@ catch the far flock. Lowering it has a cost, though. It catches more of that flo
 | 6 | 60 | 4 |
 | 4 | 80 | 8 |
 
+## Known gaps and what was tried
+
+Every change below had to help its target scene, keep this photo at 53, and pass all the tests. A change that didn't
+was not kept, and the note says why.
+
+Scenes are synthetic, so they show how a mechanism works and not how often it fails on real photos.
+
+### Gap 1: The window is in pixels
+
+*Fixed.* $w$ was a fixed number of pixels, so the same scene gave a different count at another resolution. It now grows
+with the whole photo. The table shows this photo resized (detector default settings):
+
+| Size | 0.5× | 0.75× | 1× | 1.5× | 2× | 3× | 4× |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Before | 43 | 51 | 53 | 60 | 64 | 66 | 74 |
+| After | 53 | 53 | 53 | 53 | 53 | 55 | 58 |
+
+Resized copies have no new detail, so scenes were also drawn from scratch at each size, with 70 birds in each. Most
+counts stayed at 70–71 either way, and the fix mattered at 8000 pixels, where two of three scenes went from 73–74 to 70.
+
+- Still in pixels: the blur, the opening and the minimum radius. That is one likely reason why 3× and 4× still drift.
+- Side effects on scenes 1600 pixels wide, which now use $w = 25$: the dense flock went from 273 to 373 of 420 (better),
+  and a ball of 30 birds inside a flock went from 77 to 73 of 90 (worse).
+- Photos that aren't 2000 pixels wide can count differently from before, including entries in the history when they are
+  counted again.
+
+### Gap 2: Steps 16 and 17 judge size too simply
+
+*Partly fixed.* Step 16 compared with the whole photo, while step 17 argues that size only means something locally. It
+now uses $m_G$ away from the edge, so 8 near birds next to 60 small ones are kept: 60 of 68 became 68 of 68. The cost:
+with the sky mask off this photo goes from 323 to 332, and the *Adaptive* method from 2,130 to 2,552 (that method is far
+off on this photo either way).
+
+Tried and not kept, because each one fixes one scene and breaks another:
+
+| Change | Better | Worse |
+| --- | --- | --- |
+| At most 4 birds per group | near bird next to 5 far ones: 13 → 9 (true count 6) | ball of 30 in a flock: 73 → 64 (true count 90) |
+| Whole-photo median for groups with few neighbours | isolated ball of 30: 41 → 54 (true count 70) | this photo at $k = 4$: 80 → 135, and the smooth sky scene: 32 → 48 (true count 30) |
+| Edge limit of 5 or 8 instead of 3 | 4 merged birds at the edge: 40 → 41 (true count 44) | mask-off count of this photo: 323 → 335 at 8 |
+| Comparing with $m_G$ at the edge too | | mask-off count: 323 → 340, and the failed-mask scene: 211 → 224 |
+
+Still open: area alone can't tell one large bird from several small ones. A near bird next to a far flock is still counted
+as 8 birds, an isolated ball of 30 still counts as 1, and merged birds at the edge are still removed.
+
+### Gap 3: A dense flock partly hides itself
+
+*Not fixed.* A dense flock of thin birds raises its own busyness about three times, from 0.0067 to 0.022. With $w = 31$,
+only 273–323 of 420 birds are found, so the median is not the whole answer.
+
+Tried and not kept: measuring busyness a second time, without the pixels that already look like birds. The flock goes
+from 373 to 395 of 420, but a ball of 120 birds goes from 81 to 59 of 180. Leaving out everything above $q > 0.6$ finds
+all 420, but this photo goes from 80 to 104 at $k = 4$. It would also run the slowest step twice. Measuring only pixels
+darker than the sky finds all 420 as well, but this photo goes from 53 to 62.
+
+### Gap 4: The top of the photo is assumed to be sky
+
+*Fixed.* See the exception in [step 4](#step-4-decide-what-counts-as-sky). This photo does not change.
+
+| Scene | True count | Before | After |
+| --- | --- | --- | --- |
+| Smooth dark band across the whole top, like a roof | 60 | 0 | 60 |
+| Branches across the whole top | 60 | 211 | 60 |
+| Trees and a road, no sky | 0 | 527 | 1 |
+| Sky above a smooth dark field (control) | 20 | 20 | 20 |
+| Sky above a bright lake with boats, 30% sky (control) | 20 | 21 | 21 |
+| Sky above a bright lake with boats, 15% sky (control) | 10 | 10 | 10 |
+| Half of the top blocked (control) | 60 | 60 | 60 |
+
+The limit of 1.6 comes from these scenes: below it, the last lake scene counts the boats (48), and it is not based on real
+photos. A smooth wall less than 1.6 times darker than the sky, across the whole top, still fools the mask.
+
+### Gap 5: Only dark or only light birds
+
+*Partly fixed.* With *Invert*, the contrast is now measured against the real sky and not the flipped one, so it means the
+same in any light. Light birds on a sky going from 170 to 30 went from 72 to 101 of 112 (15% brighter than the sky) and
+from 96 to 112 of 112 (25% brighter). This photo, which has no light birds, went from 119 to 21 false detections with
+*Invert*. Default settings are not affected.
+
+Not done: counting light and dark birds at the same time. A scene with 20 of each still gives 20 either way. Looking both
+ways by default could add up to 21 false birds to this photo, so it would have to be a new setting, which is a choice
+about the app rather than a fix.
+
+### Left as they are
+
+- *Max radius* has no effect at its default in the app, but it is still useful when the user moves the slider.
+- *Adaptive* and *Otsu* add a whole second path through the code. Removing them is a choice about the app, and whether
+  anyone uses them can't be told from the code.
+- Scaling the blur, the opening and the minimum radius with the photo, as in gap 1, was not tried.
+
 ## All the numbers in one place
 
 **Settings you can change in the app**
 
 | Setting | Symbol | Default | Step | Meaning |
 | --- | --- | --- | --- | --- |
-| Local window | $w$ | 31 | 2, 6, 7, 10 | Should be wider than a bird is thick |
+| Local window | $w$ | 31 | 2, 6, 7, 10 | Should be wider than a bird is thick. For a photo 2000 pixels on its longer side, and grows with the photo |
 | Blur | | 3 | 8 | Size of the small blur |
 | Threshold (× sky texture) | $k$ | 9 | 11 | Lower it to find fainter birds, and raise it to avoid false ones |
 | Min radius, Max radius | $r_{\min}$, $r_{\max}$ | 1 and half the photo's shorter side | 15 | Size limits, in pixels |
 | Only sky | | on | 2–4, 13 | Ignore everything that isn't sky |
 | Split merged birds | | on | 17 | Count big groups as several birds |
-| Invert | | off | 2, 5 onward | For light birds on a dark background: step 2 uses an opening instead of a closing, and from step 5 on the grey photo is flipped |
+| Invert | | off | 2, 5 onward | For light birds on a dark background: step 2 uses an opening instead of a closing, and from step 5 on the grey photo is flipped, while step 9 still divides by the real sky |
 
 **Fixed values in the code**
 
@@ -501,14 +684,18 @@ catch the far flock. Lowering it has a cost, though. It catches more of that flo
 | 5 | 2 | Size of the window in the tiny copy |
 | 0.3 | 3 | Largest roughness that still counts as smooth |
 | 15 | 4 | How far "not sky" is grown to find islands, in tiny-copy pixels |
+| 25% | 4 | Smooth areas at the top covering this much are trusted to be sky |
+| 1.6 | 4 | How much brighter the largest smooth area must be than what blocks the top |
 | 5% | 4 | Least amount of sky needed to use the sky mask |
+| 2000 | 2 | Longer side of the photo that the *Local window* setting is for |
 | 3 | 5 | Size of the window that removes bright specks |
 | 1.4826 | 10 | Turns the median of differences into a standard deviation |
 | 0.05 | 10 | Largest possible busyness |
 | 0.08 | 11 | Lowest possible pass mark |
 | 0.6 | 12 | Low bar for pixels, as a fraction of the pass mark |
 | 3 and 25 | 16 | Size limits for giant groups, in median areas |
-| 12, 4 and 12 | 17 | Neighbour distance in own sizes, fewest neighbours, most neighbours used |
+| 255 | 10 | Widest window of the median filter |
+| 12, 4 and 12 | 16, 17 | Neighbour distance in own sizes, fewest neighbours, most neighbours used |
 
 ## What about the other methods?
 

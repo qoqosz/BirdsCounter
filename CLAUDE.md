@@ -94,11 +94,14 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   `readParamsFromUI()` in `main.js`, so field names must stay in sync on both sides. Threshold methods:
   - `background` (default): sky estimation and Weber contrast with texture-adaptive hysteresis.
   - `adaptive` and `otsu`: the classic pipeline.
+- The local window setting (`adaptive_block`) is for a photo 2000 px on its longer side. `scaled_window` grows it with the
+  whole photo, not the crop, so don't scale it again in callers.
 - With `sky_only` (default), `landscape_mask` runs before both methods. Candidate components that touch
   non-sky areas are dropped whole by `drop_touching`, while the user's painted mask only cuts them. Its
   thresholds are the `SKY_*` constants, in units of a downscaled copy where the local window is 5 px.
 - Post-processing is shared by all methods. `drop_clutter` removes oversized and edge-touching blobs, and
-  `split_merged` counts merged birds as `round(area / flock median)`. `docs/processing.md` has the details.
+  `split_merged` counts merged birds as `round(area / flock median)`. `docs/processing.md` has the details, and its
+  "Known gaps" section lists changes that were tried and rejected, with the numbers. Check it before retrying one.
 
 **Frontend (`src/`)**
 

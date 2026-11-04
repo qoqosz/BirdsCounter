@@ -98,14 +98,12 @@ async function processImage({ photoId, bytes, mask, params, crop }) {
   const { gray, scale } = photo;
   const maskMat = mask ? await decodeMask(cv, mask) : null;
   try {
-    // Sizes are in photo pixels, so they shrink with a scaled-down photo.
+    // Sizes are in photo pixels, so they shrink with a scaled-down photo. The detector scales
+    // the local window with the size of the image it gets.
     const scaled = { ...params };
     if (scale !== 1) {
       if (typeof scaled.min_radius === "number") scaled.min_radius *= scale;
       if (typeof scaled.max_radius === "number") scaled.max_radius *= scale;
-      if (typeof scaled.adaptive_block === "number") {
-        scaled.adaptive_block = Math.max(3, Math.round(scaled.adaptive_block * scale));
-      }
     }
     const scaledCrop = crop
       ? {

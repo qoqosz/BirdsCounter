@@ -45,6 +45,17 @@ const SKY_REACH: i32 = 15;
 /// When the detected sky covers less than this fraction of the image, the photo is
 /// not a sky shot (e.g. birds on water) and the sky mask is not applied.
 const SKY_MIN_FRACTION: f64 = 0.05;
+/// Smooth areas touching the top edge covering at least this fraction of the image are
+/// taken to be the sky. Less than that can be something blocking the view of it.
+const SKY_TOP_TRUSTED_FRACTION: f64 = 0.25;
+/// The largest smooth area counts as sky too when the top edge is blocked and it is at
+/// least this many times brighter than what blocks it (a dark roof, not a brighter lake).
+const SKY_BLOCKER_BRIGHTNESS: f64 = 1.6;
+/// The local window setting is in pixels of a photo with this longer side, and it grows
+/// with the photo, so the same scene gives the same count at any resolution.
+const WINDOW_REFERENCE_SIDE: f64 = 2000.0;
+/// OpenCV's fast median filter counts in 16 bits, so its window can't be wider than this.
+const MAX_MEDIAN_WINDOW: i32 = 255;
 
 #[derive(Clone, serde::Deserialize)]
 #[serde(default)]
@@ -286,8 +297,10 @@ impl BlobFilter {
             }
             None => None,
         };
+        // From the whole photo: cropping does not change how big a bird is in pixels.
+        let window = scaled_window(params.adaptive_block, full_gray.cols(), full_gray.rows());
         let landscape = if params.sky_only {
-            landscape_mask(gray, odd_kernel(params.adaptive_block, 3), params.invert)?
+            landscape_mask(gray, window, params.invert)?
         } else {
             None
         };
@@ -301,9 +314,9 @@ impl BlobFilter {
             .trim()
             .eq_ignore_ascii_case("background")
         {
-            self.detect_background(gray, &masks)?
+            self.detect_background(gray, &masks, window)?
         } else {
-            self.detect_threshold(gray, &masks)?
+            self.detect_threshold(gray, &masks, window)?
         };
 
         let min_radius = params.min_radius.max(0.0);
@@ -324,7 +337,12 @@ impl BlobFilter {
     /// Contrast is relative to the sky brightness (birds are silhouettes against both
     /// bright and dark clouds), and the threshold rises with the local cloud texture.
     /// Birds are assumed darker than the sky unless `invert` is set.
-    fn detect_background(&self, gray: &core::Mat, masks: &Masks) -> Result<Vec<Blob>, String> {
+    fn detect_background(
+        &self,
+        gray: &core::Mat,
+        masks: &Masks,
+        window: i32,
+    ) -> Result<Vec<Blob>, String> {
         let params = &self.params;
         let subject = if params.invert {
             invert_image(gray)?
@@ -356,7 +374,6 @@ impl BlobFilter {
             border_value,
         )
         .map_err(|e| format!("Speck removal error: {}", e))?;
-        let window = odd_kernel(params.adaptive_block, 3);
         let kernel = imgproc::get_structuring_element(
             imgproc::MORPH_RECT,
             core::Size::new(window, window),
@@ -435,17 +452,16 @@ impl BlobFilter {
                 .zip(background_data)
                 .zip(subject_data)
             {
+                // The contrast is relative to the real sky, also when the image is flipped.
                 let sky = sky as f32;
-                let signed = (sky - value) / sky.max(1.0);
+                let reference = if params.invert { 255.0 - sky } else { sky };
+                let signed = (sky - value) / reference.max(1.0);
                 *out = signed.clamp(0.0, 1.0);
                 *dev = (signed.abs().min(deviation_cap) / deviation_cap * 255.0).round() as u8;
             }
         }
 
-        let texture_window = odd_kernel(3 * window, 3);
-        let mut texture = core::Mat::default();
-        imgproc::median_blur(&deviation, &mut texture, texture_window)
-            .map_err(|e| format!("Texture median error: {}", e))?;
+        let texture = local_median(&deviation, odd_kernel(3 * window, 3))?;
 
         // Significance: contrast divided by the local threshold (> 1 means a detection).
         let sensitivity = params.sensitivity.max(0.0) as f32;
@@ -548,7 +564,12 @@ impl BlobFilter {
     }
 
     /// Classic pipeline: global/adaptive threshold, morphology and external contours.
-    fn detect_threshold(&self, gray: &core::Mat, masks: &Masks) -> Result<Vec<Blob>, String> {
+    fn detect_threshold(
+        &self,
+        gray: &core::Mat,
+        masks: &Masks,
+        window: i32,
+    ) -> Result<Vec<Blob>, String> {
         let params = &self.params;
 
         let blur_k = odd_kernel(params.blur, 1);
@@ -567,7 +588,7 @@ impl BlobFilter {
         let mut binary = threshold_image(
             &blurred,
             &params.threshold_method,
-            params.adaptive_block,
+            window,
             params.adaptive_c,
         )?;
 
@@ -673,7 +694,7 @@ impl BlobFilter {
 }
 
 /// Finds everything that is not sky (255). The sky is the smooth part of the image
-/// connected to its top edge, plus rough islands far from the rest (dense flocks,
+/// connected to its top edge (see `sky_candidates`), plus rough islands far from the rest (dense flocks,
 /// sharp cloud edges). Smoothness is the relative gradient of a downscaled copy from
 /// which birds were removed by a closing (an opening for `bright_birds`) one window
 /// wide. Returns `None` when there is (almost) no sky.
@@ -774,8 +795,7 @@ fn landscape_mask(
         }
     }
 
-    // Candidate sky: smooth components reaching the top edge.
-    let top_smooth = components_where(&smooth, 4, |_, top, _, _| top == 0)?;
+    let top_smooth = sky_candidates(&smooth, &closed, bright_birds)?;
     // Landscape: the rest of the image connected to its edges, together with rough
     // islands near it (leaves sticking out of a tree). Islands farther away are
     // dense flocks or sharp cloud edges and stay sky.
@@ -828,6 +848,94 @@ fn landscape_mask(
     imgproc::threshold(&upscaled, &mut full, 127.0, 255.0, imgproc::THRESH_BINARY)
         .map_err(|e| format!("Sky threshold error: {}", e))?;
     Ok(Some(full))
+}
+
+/// Candidate sky (255): the smooth components reaching the top edge. When those are missing
+/// or small, something may be blocking the view across the top, so the largest smooth
+/// component joins them if they are next to nothing or it is much brighter than they are.
+/// `brightness` is 32-bit float.
+fn sky_candidates(
+    smooth: &core::Mat,
+    brightness: &core::Mat,
+    bright_birds: bool,
+) -> Result<core::Mat, String> {
+    let mut labels = core::Mat::default();
+    let mut stats = core::Mat::default();
+    let mut centroids = core::Mat::default();
+    let label_count = imgproc::connected_components_with_stats(
+        smooth,
+        &mut labels,
+        &mut stats,
+        &mut centroids,
+        4,
+        core::CV_32S,
+    )
+    .map_err(|e| format!("Connected components error: {}", e))? as usize;
+
+    let mut selected = vec![false; label_count];
+    let mut areas = vec![0f64; label_count];
+    for label in 1..label_count {
+        let stat = |field: i32| -> Result<i32, String> {
+            stats
+                .at_2d::<i32>(label as i32, field)
+                .copied()
+                .map_err(|e| format!("Stats access error: {}", e))
+        };
+        selected[label] = stat(imgproc::CC_STAT_TOP)? == 0;
+        areas[label] = stat(imgproc::CC_STAT_AREA)? as f64;
+    }
+    let label_data = labels
+        .data_typed::<i32>()
+        .map_err(|e| format!("Label access error: {}", e))?;
+    let brightness_data = brightness
+        .data_typed::<f32>()
+        .map_err(|e| format!("Sky access error: {}", e))?;
+    let mut totals = vec![0f64; label_count];
+    for (&label, &value) in label_data.iter().zip(brightness_data) {
+        totals[label as usize] += value as f64;
+    }
+
+    let total = (smooth.rows() as f64) * (smooth.cols() as f64);
+    let top_area: f64 = (1..label_count)
+        .filter(|&l| selected[l])
+        .map(|l| areas[l])
+        .sum();
+    let top_total: f64 = (1..label_count)
+        .filter(|&l| selected[l])
+        .map(|l| totals[l])
+        .sum();
+    let largest = (1..label_count).max_by(|&a, &b| areas[a].total_cmp(&areas[b]));
+    if let Some(largest) = largest {
+        let area = areas[largest];
+        // Next to nothing at the top is not sky, whatever its brightness.
+        let much_brighter = top_area < SKY_MIN_FRACTION * total
+            || (!bright_birds
+                && totals[largest] / area > SKY_BLOCKER_BRIGHTNESS * top_total / top_area);
+        if area >= SKY_MIN_FRACTION * total
+            && top_area < SKY_TOP_TRUSTED_FRACTION * total
+            && area > top_area
+            && much_brighter
+        {
+            selected[largest] = true;
+        }
+    }
+
+    let mut mask = core::Mat::new_rows_cols_with_default(
+        smooth.rows(),
+        smooth.cols(),
+        core::CV_8U,
+        core::Scalar::all(0.0),
+    )
+    .map_err(|e| format!("Alloc error: {}", e))?;
+    let mask_data = mask
+        .data_bytes_mut()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    for (out, &label) in mask_data.iter_mut().zip(label_data) {
+        if selected[label as usize] {
+            *out = 255;
+        }
+    }
+    Ok(mask)
 }
 
 /// Mask (255) of the connected components of a binary image whose bounding box
@@ -887,58 +995,70 @@ fn components_where(
     Ok(mask)
 }
 
-/// Removes blobs much larger than a typical detection: anything touching the image
-/// edge (trees, roofs, lamps) above `BORDER_CLUTTER_RATIO` and anything at all above
-/// `MAX_CLUTTER_RATIO` median blobs.
+/// The median area of the detections near `blob`, from the same flock; `None` when there
+/// are too few of them to tell. A detection counts as near when it lies within
+/// `SPLIT_NEIGHBOUR_DISTANCE` of *its own* sizes, so small noise specks or a distant flock
+/// of smaller birds do not count.
+fn local_area(blob: &Blob, blobs: &[Blob]) -> Option<f64> {
+    let mut neighbours: Vec<(f64, f64)> = blobs
+        .iter()
+        .filter_map(|other| {
+            let distance = (other.center.x - blob.center.x).hypot(other.center.y - blob.center.y);
+            (distance <= SPLIT_NEIGHBOUR_DISTANCE * other.area.sqrt())
+                .then_some((distance, other.area))
+        })
+        .collect();
+    if neighbours.len() < SPLIT_MIN_NEIGHBOURS {
+        return None;
+    }
+    neighbours.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+    let mut areas: Vec<f64> = neighbours
+        .iter()
+        .take(SPLIT_NEIGHBOURS)
+        .map(|(_, area)| *area)
+        .collect();
+    Some(median(&mut areas))
+}
+
+/// Removes blobs much larger than a typical detection: anything touching the image edge
+/// (trees, roofs, lamps) above `BORDER_CLUTTER_RATIO` median blobs, and anything else above
+/// `MAX_CLUTTER_RATIO` of them. Elsewhere in the image a blob is also compared with its own
+/// flock, because near birds are much larger than far ones, and they do not make each other
+/// clutter.
 fn drop_clutter(blobs: Vec<Blob>) -> Vec<Blob> {
     let mut areas: Vec<f64> = blobs.iter().map(|blob| blob.area).collect();
     let typical = median(&mut areas);
     if typical <= 0.0 {
         return blobs;
     }
+    let local: Vec<Option<f64>> = if blobs.len() > SPLIT_MAX_DETECTIONS {
+        vec![None; blobs.len()]
+    } else {
+        blobs.iter().map(|blob| local_area(blob, &blobs)).collect()
+    };
     blobs
-        .into_iter()
-        .filter(|blob| {
-            let ratio = blob.area / typical;
-            ratio <= MAX_CLUTTER_RATIO && !(blob.touches_border && ratio > BORDER_CLUTTER_RATIO)
+        .iter()
+        .zip(local)
+        .filter(|(blob, local)| {
+            let reference = local.map_or(typical, |area| area.max(typical));
+            blob.area / reference <= MAX_CLUTTER_RATIO
+                && !(blob.touches_border && blob.area / typical > BORDER_CLUTTER_RATIO)
         })
+        .map(|(blob, _)| blob.clone())
         .collect()
 }
 
-/// Estimates how many birds each blob holds by comparing its area with the median
-/// area of nearby detections from the same flock. A detection counts as nearby when
-/// it lies within `SPLIT_NEIGHBOUR_DISTANCE` of *its own* sizes, so small noise specks
-/// or a distant flock of smaller birds do not make a single large bird look merged.
+/// Estimates how many birds each blob holds by comparing its area with the median area of
+/// nearby detections from the same flock (`local_area`).
 fn split_merged(mut blobs: Vec<Blob>) -> Vec<Blob> {
     if blobs.len() > SPLIT_MAX_DETECTIONS {
         return blobs;
     }
     let counts: Vec<u32> = blobs
         .iter()
-        .map(|blob| {
-            let mut neighbours: Vec<(f64, f64)> = blobs
-                .iter()
-                .filter_map(|other| {
-                    let distance =
-                        (other.center.x - blob.center.x).hypot(other.center.y - blob.center.y);
-                    (distance <= SPLIT_NEIGHBOUR_DISTANCE * other.area.sqrt())
-                        .then_some((distance, other.area))
-                })
-                .collect();
-            if neighbours.len() < SPLIT_MIN_NEIGHBOURS {
-                return 1;
-            }
-            neighbours.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
-            let mut areas: Vec<f64> = neighbours
-                .iter()
-                .take(SPLIT_NEIGHBOURS)
-                .map(|(_, area)| *area)
-                .collect();
-            let reference = median(&mut areas);
-            if reference <= 0.0 {
-                return 1;
-            }
-            (blob.area / reference).round().max(1.0) as u32
+        .map(|blob| match local_area(blob, &blobs) {
+            Some(reference) if reference > 0.0 => (blob.area / reference).round().max(1.0) as u32,
+            _ => 1,
         })
         .collect();
     for (blob, count) in blobs.iter_mut().zip(counts) {
@@ -1010,6 +1130,43 @@ fn odd_kernel(value: i32, min_odd: i32) -> i32 {
         v += 1;
     }
     v
+}
+
+/// The local window in pixels of a photo of `cols` x `rows`.
+fn scaled_window(setting: i32, cols: i32, rows: i32) -> i32 {
+    let scale = cols.max(rows) as f64 / WINDOW_REFERENCE_SIDE;
+    odd_kernel((setting as f64 * scale).round() as i32, 3)
+}
+
+/// Median of `src` (8-bit) in a square window. A window too wide for the median filter
+/// uses a subsampled copy, which is close enough for a slowly changing map like this.
+fn local_median(src: &core::Mat, window: i32) -> Result<core::Mat, String> {
+    let error = |e: opencv::Error| format!("Median error: {}", e);
+    let mut out = core::Mat::default();
+    if window <= MAX_MEDIAN_WINDOW {
+        imgproc::median_blur(src, &mut out, window).map_err(error)?;
+        return Ok(out);
+    }
+    let factor = (window + MAX_MEDIAN_WINDOW - 1) / MAX_MEDIAN_WINDOW;
+    let size = core::Size::new(
+        ((src.cols() + factor - 1) / factor).max(1),
+        ((src.rows() + factor - 1) / factor).max(1),
+    );
+    let mut small = core::Mat::default();
+    imgproc::resize(src, &mut small, size, 0.0, 0.0, imgproc::INTER_NEAREST).map_err(error)?;
+    let mut filtered = core::Mat::default();
+    imgproc::median_blur(&small, &mut filtered, odd_kernel(window / factor, 3)).map_err(error)?;
+    let full_size = src.size().map_err(error)?;
+    imgproc::resize(
+        &filtered,
+        &mut out,
+        full_size,
+        0.0,
+        0.0,
+        imgproc::INTER_LINEAR,
+    )
+    .map_err(error)?;
+    Ok(out)
 }
 
 fn threshold_image(
@@ -1464,6 +1621,118 @@ mod tests {
         assert!(count(encode(&img), everywhere, None) > expected);
     }
 
+    /// 80 birds below `TOP_BAND` rows, on the sky of `sky(base)`.
+    const TOP_BAND: i32 = 60;
+
+    fn draw_flock_below_band(img: &mut core::Mat) -> usize {
+        for row in 0..8 {
+            for col in 0..10 {
+                draw_bird(
+                    img,
+                    40.0 + col as f64 * 55.0,
+                    120.0 + row as f64 * 45.0,
+                    90.0,
+                );
+            }
+        }
+        80
+    }
+
+    /// Texture with patches larger than a pixel of the copy the sky mask uses.
+    fn rough_texture(rows: i32, cols: i32) -> core::Mat {
+        core::set_rng_seed(13).unwrap();
+        let mut noise =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_32F, core::Scalar::all(0.0))
+                .unwrap();
+        core::randn(&mut noise, &core::Scalar::all(0.0), &core::Scalar::all(1.0)).unwrap();
+        let mut blurred = core::Mat::default();
+        imgproc::gaussian_blur(
+            &noise,
+            &mut blurred,
+            core::Size::new(0, 0),
+            3.0,
+            3.0,
+            core::BORDER_REPLICATE,
+            core::AlgorithmHint::ALGO_HINT_DEFAULT,
+        )
+        .unwrap();
+        // Blurring leaves a standard deviation of about 1 / (2 * sqrt(pi) * 3) = 0.094.
+        let mut gray = core::Mat::default();
+        blurred
+            .convert_to(&mut gray, core::CV_8U, 45.0 / 0.094, 90.0)
+            .unwrap();
+        let mut bgr = core::Mat::default();
+        imgproc::cvt_color(
+            &gray,
+            &mut bgr,
+            imgproc::COLOR_GRAY2BGR,
+            0,
+            core::AlgorithmHint::ALGO_HINT_DEFAULT,
+        )
+        .unwrap();
+        bgr
+    }
+
+    #[test]
+    fn finds_the_sky_below_a_smooth_band_at_the_top() {
+        let mut img = sky(200.0);
+        let expected = draw_flock_below_band(&mut img);
+        imgproc::rectangle(
+            &mut img,
+            core::Rect::new(0, 0, WIDTH, TOP_BAND),
+            core::Scalar::all(70.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
+    #[test]
+    fn finds_the_sky_below_branches_at_the_top() {
+        let mut img = sky(200.0);
+        let expected = draw_flock_below_band(&mut img);
+        rough_texture(TOP_BAND, WIDTH)
+            .copy_to(&mut img.roi_mut(core::Rect::new(0, 0, WIDTH, TOP_BAND)).unwrap())
+            .unwrap();
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
+    /// When the top of the image is sky, a bigger and brighter lake below it stays out.
+    #[test]
+    fn keeps_a_bright_lake_out_when_the_top_is_sky() {
+        let mut img = sky(120.0);
+        for col in 0..10 {
+            for row in 0..2 {
+                draw_bird(
+                    &mut img,
+                    40.0 + col as f64 * 55.0,
+                    30.0 + row as f64 * 40.0,
+                    50.0,
+                );
+            }
+        }
+        let shore = 130;
+        rough_texture(30, WIDTH)
+            .copy_to(&mut img.roi_mut(core::Rect::new(0, shore, WIDTH, 30)).unwrap())
+            .unwrap();
+        let lake = core::Rect::new(0, shore + 30, WIDTH, HEIGHT - shore - 30);
+        imgproc::rectangle(
+            &mut img,
+            lake,
+            core::Scalar::all(180.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        for boat in 0..10 {
+            draw_bird(&mut img, 60.0 + boat as f64 * 70.0, 300.0, 80.0);
+        }
+        assert_eq!(count(encode(&img), BlobParams::default(), None), 20);
+    }
+
     #[test]
     fn counts_bright_birds_when_inverted() {
         let mut img = sky(70.0);
@@ -1473,6 +1742,55 @@ mod tests {
             ..BlobParams::default()
         };
         assert_eq!(count(encode(&img), params, None), expected);
+    }
+
+    /// A sky going from bright to dark, with birds 40% brighter than it. The contrast has to
+    /// be relative to the real sky: on the flipped sky the dark side looks bright.
+    #[test]
+    fn inverted_contrast_is_relative_to_the_real_sky() {
+        let mut img = core::Mat::new_rows_cols_with_default(
+            HEIGHT,
+            WIDTH,
+            core::CV_8UC3,
+            core::Scalar::all(170.0),
+        )
+        .unwrap();
+        imgproc::rectangle(
+            &mut img,
+            core::Rect::new(WIDTH / 2, 0, WIDTH / 2, HEIGHT),
+            core::Scalar::all(40.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        let mut sky = core::Mat::default();
+        imgproc::gaussian_blur(
+            &img,
+            &mut sky,
+            core::Size::new(0, 0),
+            40.0,
+            40.0,
+            core::BORDER_REPLICATE,
+            core::AlgorithmHint::ALGO_HINT_DEFAULT,
+        )
+        .unwrap();
+        let mut expected = 0;
+        for row in 0..8 {
+            for col in 0..13 {
+                let (x, y) = (40 + col * 55, 40 + row * 55);
+                let level = sky.at_2d::<core::Vec3b>(y, x).unwrap()[0] as f64;
+                draw_bird(&mut sky, x as f64, y as f64, -0.4 * level);
+                expected += 1;
+            }
+        }
+        let params = BlobParams {
+            invert: true,
+            ..BlobParams::default()
+        };
+        // A few birds on the dark side are lost in the noise, which is large relative to it.
+        let found = count(encode(&sky), params, None);
+        assert!(found + 8 >= expected && found <= expected, "{}", found);
     }
 
     #[test]
@@ -1485,6 +1803,91 @@ mod tests {
             ..BlobParams::default()
         };
         assert_eq!(count(encode(&img), params, None), expected);
+    }
+
+    #[test]
+    fn window_follows_the_photo_size() {
+        assert_eq!(scaled_window(31, 2000, 1623), 31);
+        assert_eq!(scaled_window(31, 1623, 2000), 31);
+        assert_eq!(scaled_window(31, 1000, 812), 17);
+        assert_eq!(scaled_window(31, 4000, 3000), 63);
+        assert_eq!(scaled_window(3, 100, 100), 3);
+    }
+
+    /// Radius of a circle as big as the birds in `large_photo_with_thick_birds`.
+    const THICK_BIRD_RADIUS: f64 = 31.6;
+
+    /// A 4000 px photo with birds 40 px thick. With a window of 31 px the middle of each
+    /// bird would count as sky, and only its rim would be found.
+    fn large_photo_with_thick_birds() -> core::Mat {
+        let mut img = core::Mat::default();
+        imgproc::resize(
+            &sky(200.0),
+            &mut img,
+            core::Size::new(WIDTH * 5, HEIGHT * 5),
+            0.0,
+            0.0,
+            imgproc::INTER_LINEAR,
+        )
+        .unwrap();
+        for row in 0..3 {
+            for col in 0..5 {
+                imgproc::ellipse(
+                    &mut img,
+                    core::Point::new(400 + col * 700, 400 + row * 700),
+                    core::Size::new(50, 20),
+                    0.0,
+                    0.0,
+                    360.0,
+                    core::Scalar::all(90.0),
+                    -1,
+                    imgproc::LINE_AA,
+                    0,
+                )
+                .unwrap();
+            }
+        }
+        decode_gray(&encode(&img)).unwrap()
+    }
+
+    #[test]
+    fn window_grows_with_a_large_photo() {
+        let found = BlobFilter::new(BlobParams::default())
+            .detect(&large_photo_with_thick_birds(), None, None)
+            .unwrap();
+        assert_eq!(found.len(), 15);
+        for bird in found {
+            assert!(bird.radius > 0.9 * THICK_BIRD_RADIUS, "{:?}", bird);
+        }
+    }
+
+    /// Cropping does not change how big a bird is in pixels, so it keeps the window.
+    #[test]
+    fn crop_keeps_the_window_of_the_whole_photo() {
+        let crop = Crop {
+            x: 0,
+            y: 0,
+            width: 1500,
+            height: 1500,
+        };
+        let found = BlobFilter::new(BlobParams::default())
+            .detect(&large_photo_with_thick_birds(), None, Some(crop))
+            .unwrap();
+        assert_eq!(found.len(), 4);
+        for bird in found {
+            assert!(bird.radius > 0.9 * THICK_BIRD_RADIUS, "{:?}", bird);
+        }
+    }
+
+    /// A photo so large that the window is too wide for the median filter.
+    #[test]
+    fn median_handles_a_very_wide_window() {
+        let flat =
+            core::Mat::new_rows_cols_with_default(600, 800, core::CV_8UC1, core::Scalar::all(40.0))
+                .unwrap();
+        let out = local_median(&flat, 375).unwrap();
+        assert_eq!((out.cols(), out.rows()), (800, 600));
+        assert_eq!(*out.at_2d::<u8>(300, 400).unwrap(), 40);
     }
 
     fn blob(x: f64, area: f64) -> Blob {
@@ -1517,6 +1920,27 @@ mod tests {
         blobs.extend((0..6).map(|i| blob(500.0 + i as f64 * 8.0, 4.0)));
         let counts: Vec<u32> = split_merged(blobs).iter().map(|b| b.count).collect();
         assert!(counts.iter().all(|&c| c == 1), "{:?}", counts);
+    }
+
+    /// Near birds are far larger than a big flock of far ones, but they are a flock too.
+    /// Only away from the image edge: there, large blobs are nearly always a tree or a roof.
+    #[test]
+    fn drop_clutter_keeps_a_near_flock() {
+        let mut blobs: Vec<Blob> = (0..60).map(|i| blob(i as f64 * 40.0, 30.0)).collect();
+        let near: Vec<Blob> = (0..8)
+            .map(|i| blob(4000.0 + i as f64 * 100.0, 1300.0))
+            .collect();
+        blobs.extend(near.iter().cloned());
+        let mut edge = blob(5500.0, 1300.0);
+        edge.touches_border = true;
+        blobs.push(edge);
+        let mut lone_giant = blob(9000.0, 1300.0);
+        lone_giant.center.y = 9000.0;
+        blobs.push(lone_giant);
+
+        let kept = drop_clutter(blobs);
+        assert_eq!(kept.len(), 60 + near.len());
+        assert!(kept.iter().all(|b| !b.touches_border && b.center.y == 0.0));
     }
 
     #[test]

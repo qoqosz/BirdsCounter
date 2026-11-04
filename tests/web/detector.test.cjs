@@ -221,10 +221,93 @@ test("ignores landscape below the sky", () => {
   img.delete();
 });
 
+const TOP_BAND = 60;
+
+/** 80 birds below TOP_BAND rows. */
+function drawFlockBelowBand(img) {
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 10; col++) drawBird(img, 40 + col * 55, 120 + row * 45, 90);
+  }
+  return 80;
+}
+
+/** Texture with patches larger than a pixel of the copy the sky mask uses. */
+function roughTexture(rows, cols) {
+  cv.setRNGSeed(13);
+  const noise = new cv.Mat(rows, cols, cv.CV_32F, new cv.Scalar(0));
+  cv.randn(noise, new cv.Mat(1, 1, cv.CV_64F, new cv.Scalar(0)), new cv.Mat(1, 1, cv.CV_64F, new cv.Scalar(1)));
+  const blurred = new cv.Mat();
+  cv.GaussianBlur(noise, blurred, new cv.Size(0, 0), 3, 3, cv.BORDER_REPLICATE);
+  // Blurring leaves a standard deviation of about 1 / (2 * sqrt(pi) * 3) = 0.094.
+  const out = new cv.Mat();
+  blurred.convertTo(out, cv.CV_8U, 45 / 0.094, 90);
+  noise.delete();
+  blurred.delete();
+  return out;
+}
+
+function paste(img, patch, x, y) {
+  const roi = img.roi(new cv.Rect(x, y, patch.cols, patch.rows));
+  patch.copyTo(roi);
+  roi.delete();
+  patch.delete();
+}
+
+test("finds the sky below a smooth band at the top", () => {
+  const img = sky(200);
+  const expected = drawFlockBelowBand(img);
+  cv.rectangle(img, new cv.Point(0, 0), new cv.Point(WIDTH - 1, TOP_BAND - 1), new cv.Scalar(70), -1, cv.LINE_8, 0);
+  assert.equal(count(img), expected);
+  img.delete();
+});
+
+test("finds the sky below branches at the top", () => {
+  const img = sky(200);
+  const expected = drawFlockBelowBand(img);
+  paste(img, roughTexture(TOP_BAND, WIDTH), 0, 0);
+  assert.equal(count(img), expected);
+  img.delete();
+});
+
+test("keeps a bright lake out when the top is sky", () => {
+  const img = sky(120);
+  for (let col = 0; col < 10; col++) {
+    for (let row = 0; row < 2; row++) drawBird(img, 40 + col * 55, 30 + row * 40, 50);
+  }
+  const shore = 130;
+  paste(img, roughTexture(30, WIDTH), 0, shore);
+  cv.rectangle(img, new cv.Point(0, shore + 30), new cv.Point(WIDTH - 1, HEIGHT - 1), new cv.Scalar(180), -1, cv.LINE_8, 0);
+  for (let boat = 0; boat < 10; boat++) drawBird(img, 60 + boat * 70, 300, 80);
+  assert.equal(count(img), 20);
+  img.delete();
+});
+
 test("counts bright birds when inverted", () => {
   const img = sky(70);
   const expected = drawFlock(img, 8, -90);
   assert.equal(count(img, { invert: true }), expected);
+  img.delete();
+});
+
+test("inverted contrast is relative to the real sky", () => {
+  const flat = new cv.Mat(HEIGHT, WIDTH, cv.CV_8U, new cv.Scalar(170));
+  cv.rectangle(flat, new cv.Point(WIDTH / 2, 0), new cv.Point(WIDTH - 1, HEIGHT - 1), new cv.Scalar(40), -1, cv.LINE_8, 0);
+  const img = new cv.Mat();
+  cv.GaussianBlur(flat, img, new cv.Size(0, 0), 40, 40, cv.BORDER_REPLICATE);
+  flat.delete();
+  let expected = 0;
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 13; col++) {
+      const x = 40 + col * 55;
+      const y = 40 + row * 55;
+      drawBird(img, x, y, -0.4 * skyAt(img, x, y));
+      expected++;
+    }
+  }
+  // Some birds on the dark side are lost in the noise, which is large relative to it (and
+  // larger than in the Rust test, where noise is added to three channels and then averaged).
+  const found = count(img, { invert: true });
+  assert.ok(found + 16 >= expected && found <= expected, `${found}`);
   img.delete();
 });
 
@@ -239,6 +322,55 @@ test("otsu method runs", () => {
   const img = sky(200);
   drawFlock(img, 8, 90);
   assert.ok(count(img, { threshold_method: "otsu" }) >= 0);
+  img.delete();
+});
+
+test("window follows the photo size", () => {
+  assert.equal(BirdDetector.scaledWindow(31, 2000, 1623), 31);
+  assert.equal(BirdDetector.scaledWindow(31, 1623, 2000), 31);
+  assert.equal(BirdDetector.scaledWindow(31, 1000, 812), 17);
+  assert.equal(BirdDetector.scaledWindow(31, 4000, 3000), 63);
+  assert.equal(BirdDetector.scaledWindow(3, 100, 100), 3);
+});
+
+// Radius of a circle as big as the birds in largePhotoWithThickBirds.
+const THICK_BIRD_RADIUS = 31.6;
+
+/** A 4000 px photo with birds 40 px thick (see the Rust test). */
+function largePhotoWithThickBirds() {
+  const base = sky(200);
+  const img = new cv.Mat();
+  cv.resize(base, img, new cv.Size(WIDTH * 5, HEIGHT * 5), 0, 0, cv.INTER_LINEAR);
+  base.delete();
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 5; col++) {
+      const center = new cv.Point(400 + col * 700, 400 + row * 700);
+      cv.ellipse(img, center, new cv.Size(50, 20), 0, 0, 360, new cv.Scalar(90), -1, cv.LINE_AA, 0);
+    }
+  }
+  return img;
+}
+
+test("window grows with a large photo", () => {
+  const img = largePhotoWithThickBirds();
+  const found = detect(img);
+  assert.equal(found.birds.length, 15);
+  assert.ok(found.birds.every((bird) => bird.radius > 0.9 * THICK_BIRD_RADIUS));
+  img.delete();
+});
+
+test("crop keeps the window of the whole photo", () => {
+  const img = largePhotoWithThickBirds();
+  const found = detect(img, {}, null, { x: 0, y: 0, width: 1500, height: 1500 });
+  assert.equal(found.birds.length, 4);
+  assert.ok(found.birds.every((bird) => bird.radius > 0.9 * THICK_BIRD_RADIUS));
+  img.delete();
+});
+
+test("very large photo gets past the limit of the median filter", () => {
+  // 8000 px: the busyness window is 3 x 125 = 375 px.
+  const img = new cv.Mat(1000, 8000, cv.CV_8U, new cv.Scalar(180));
+  assert.equal(detect(img).count, 0);
   img.delete();
 });
 
@@ -265,6 +397,17 @@ test("split ignores distant small specks", () => {
   const blobs = [blob(0, 80), blob(40, 90)];
   for (let i = 0; i < 6; i++) blobs.push(blob(500 + i * 8, 4));
   assert.ok(BirdDetector.splitMerged(blobs).every((b) => b.count === 1));
+});
+
+test("drop clutter keeps a near flock", () => {
+  const blobs = [];
+  for (let i = 0; i < 60; i++) blobs.push(blob(i * 40, 30));
+  for (let i = 0; i < 8; i++) blobs.push(blob(4000 + i * 100, 1300));
+  blobs.push(blob(5500, 1300, true)); // large blobs at the edge are trees or roofs
+  blobs.push({ ...blob(9000, 1300), y: 9000 }); // a lone giant
+  const kept = BirdDetector.dropClutter(blobs);
+  assert.equal(kept.length, 68);
+  assert.ok(kept.every((b) => !b.touchesBorder && b.y === 0));
 });
 
 test("drop clutter removes oversized and edge blobs", () => {
