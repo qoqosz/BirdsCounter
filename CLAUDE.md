@@ -104,7 +104,8 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 
 - `main.js` is a single file of global state and DOM handlers, using `window.__TAURI__` (`withGlobalTauri: true`).
 - Commands that take bytes (`load_photo`, `process_image`, `history_save`, `native_share_image`) take raw request
-  bodies (`request_bytes` in `lib.rs`; Android has no raw bodies, so Tauri sends them as JSON arrays there).
+  bodies (`request_bytes` in `lib.rs`). Android has no raw bodies and Tauri would send JSON arrays there, which are
+  very slow, so `ipcBytes` in `main.js` sends base64 instead.
 - Every photo goes through `openImage()`, which counts it at once. Crop is non-destructive: `cropRect` (photo pixels) goes to Rust, and crop mode shows the whole photo with the frame.
   The mask is painted on an offscreen canvas covering the whole photo, capped at `MASK_MAX_PIXELS` (full-resolution
   canvases made every stroke slow on iOS, which also refuses canvases over 16.7 MP), so it survives crop changes,

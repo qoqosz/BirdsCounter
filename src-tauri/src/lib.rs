@@ -2,6 +2,7 @@
 pub mod blob_filter;
 mod history;
 mod native;
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use blob_filter::{Bird, BlobFilter, BlobParams, Crop};
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -17,13 +18,20 @@ struct ProcessResult {
 }
 
 /// The bytes sent as a command's raw request body. Android has no raw IPC bodies, so there
-/// they arrive as a JSON array.
+/// `ipcBytes` in `main.js` sends them as base64.
 fn request_bytes<'a>(request: &'a tauri::ipc::Request<'_>) -> Result<Cow<'a, [u8]>, String> {
     match request.body() {
         InvokeBody::Raw(bytes) => Ok(Cow::Borrowed(bytes)),
-        InvokeBody::Json(value) => Vec::<u8>::deserialize(value)
-            .map(Cow::Owned)
-            .map_err(|e| e.to_string()),
+        InvokeBody::Json(value) => json_bytes(value).map(Cow::Owned),
+    }
+}
+
+/// Bytes from a JSON body: base64, or the plain array Tauri sends when it falls back to
+/// `postMessage` on the other platforms.
+fn json_bytes(value: &serde_json::Value) -> Result<Vec<u8>, String> {
+    match value {
+        serde_json::Value::String(base64) => BASE64.decode(base64).map_err(|e| e.to_string()),
+        _ => Vec::<u8>::deserialize(value).map_err(|e| e.to_string()),
     }
 }
 
@@ -150,6 +158,15 @@ mod tests {
         assert!(!meta.params.sky_only);
         assert!(meta.crop.is_none());
         assert_eq!(mask, [1, 2, 3]);
+    }
+
+    #[test]
+    fn json_bodies_carry_base64_or_an_array() {
+        let bytes = [0, 1, 254, 255];
+        assert_eq!(json_bytes(&serde_json::json!("AAH+/w==")).unwrap(), bytes);
+        assert_eq!(json_bytes(&serde_json::json!(bytes)).unwrap(), bytes);
+        assert!(json_bytes(&serde_json::json!("not base64!")).is_err());
+        assert!(json_bytes(&serde_json::json!({ "bytes": 1 })).is_err());
     }
 
     #[test]

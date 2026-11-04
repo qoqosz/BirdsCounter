@@ -1935,7 +1935,7 @@ async function runProcess() {
 async function countBirds(bytes, params, maskPayload, crop) {
   for (let attempt = 0; ; attempt++) {
     if (loadedPhoto?.bytes !== bytes) {
-      loadedPhoto = { bytes, id: await invoke("load_photo", bytes) };
+      loadedPhoto = { bytes, id: await invoke("load_photo", ipcBytes(bytes)) };
     }
     try {
       const photoId = loadedPhoto.id;
@@ -2500,6 +2500,7 @@ async function composeShareImage(image, rect, birds, count) {
 }
 
 function bytesToBase64(bytes) {
+  if (typeof bytes.toBase64 === "function") return bytes.toBase64();
   let binary = "";
   for (let i = 0; i < bytes.length; i += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -2590,6 +2591,13 @@ async function shareHistoryEntry(entry, item) {
 // Bytes inside Tauri arguments would go as plain arrays, so commands that take bytes and
 // arguments get one raw body, read by split_framed in lib.rs: the length of the JSON, the
 // JSON, the bytes. web.js takes the arguments as they are.
+// Android's WebView does not show request bodies to native code, so Tauri would send bytes
+// as a JSON array there, which takes seconds and hundreds of MB for a photo. They go as
+// base64 instead (request_bytes in lib.rs). The Android browser uses web.js, so not there.
+function ipcBytes(bytes) {
+  return isAndroid && !isWeb ? bytesToBase64(bytes) : bytes;
+}
+
 function framedBody(meta, ...parts) {
   const json = new TextEncoder().encode(JSON.stringify(meta));
   const body = new Uint8Array(4 + json.length + parts.reduce((sum, part) => sum + (part?.length ?? 0), 0));
@@ -2601,7 +2609,7 @@ function framedBody(meta, ...parts) {
     body.set(part, offset);
     offset += part.length;
   }
-  return body;
+  return ipcBytes(body);
 }
 
 function guessMimeFromPath(path) {
