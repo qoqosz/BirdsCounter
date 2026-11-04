@@ -79,7 +79,7 @@ Birds are dark whatever colour the sky is, so colour is not needed. Each pixel b
 the standard weights (our eyes are most sensitive to green):
 
 $$
-\text{grey} = 0.299\,R + 0.587\,G + 0.114\,B
+\text{grey} = 0.299 \cdot R + 0.587 \cdot G + 0.114 \cdot B
 $$
 
 ![The photo in grey](images/02_gray.jpg)
@@ -97,7 +97,7 @@ We don't need detail to tell a sky from a field, so we shrink the photo. The *Lo
 roughly "wider than a bird is thick". We shrink by enough to make that window only 5 pixels wide:
 
 $$
-\text{scale} = \max\!\left(\frac{w}{5},\ 1\right) = \frac{31}{5} = 6.2
+\text{scale} = \max\left(\frac{w}{5},\ 1\right) = \frac{31}{5} = 6.2
 \qquad\Rightarrow\qquad
 \frac{2000}{6.2} \times \frac{1623}{6.2} \approx 323 \times 262 \text{ pixels}
 $$
@@ -113,9 +113,9 @@ Sky changes slowly from pixel to pixel, while trees and grass jump around. To me
 brightness $C$ of the tiny copy changes going right ($G_x$) and going down ($G_y$), using two small patterns called *Sobel filters*:
 
 $$
-G_x = \begin{bmatrix} -1 & 0 & 1 \\ -2 & 0 & 2 \\ -1 & 0 & 1 \end{bmatrix} * C
+G_x = \begin{bmatrix} -1 & 0 & 1 \cr -2 & 0 & 2 \cr -1 & 0 & 1 \end{bmatrix} * C
 \qquad
-G_y = \begin{bmatrix} -1 & -2 & -1 \\ 0 & 0 & 0 \\ 1 & 2 & 1 \end{bmatrix} * C
+G_y = \begin{bmatrix} -1 & -2 & -1 \cr 0 & 0 & 0 \cr 1 & 2 & 1 \end{bmatrix} * C
 $$
 
 Put the two together, and divide by the brightness so that dark and bright areas are treated alike:
@@ -204,7 +204,7 @@ Single noisy pixels shouldn't count as anything, so we blur the grey photo very 
 default). Each pixel becomes a weighted average of itself and its 8 neighbours, with the middle counting the most:
 
 $$
-I = \frac{1}{16} \begin{bmatrix} 1 & 2 & 1 \\ 2 & 4 & 2 \\ 1 & 2 & 1 \end{bmatrix} * \text{grey}
+I = \frac{1}{16} \begin{bmatrix} 1 & 2 & 1 \cr 2 & 4 & 2 \cr 1 & 2 & 1 \end{bmatrix} * \text{grey}
 $$
 
 ![Part of the flock before and after the small blur](images/10_blur.jpg)
@@ -247,7 +247,7 @@ Take the size of the difference, $\lvert d \rvert$, for all pixels in a big $3w 
 the pixel, and pick the **median** (the middle value when sorted):
 
 $$
-t = \min\!\left(1.4826 \times \underset{q \in 93 \times 93 \text{ around } p}{\text{median}} \lvert d(q) \rvert,\ \ 0.05\right)
+t = \min\left(1.4826 \times \underset{q \in 93 \times 93 \text{ around } p}{\text{median}} \lvert d(q) \rvert,\ \ 0.05\right)
 $$
 
 Three details make this work:
@@ -406,9 +406,7 @@ with nearby birds. For a group $G$ we do this:
 
 1. **Find its neighbours.** Another group $H$ is a neighbour if it is close, measured in $H$'s own size:
 
-   ```math
-   \text{distance}(G, H) \le 12 \times \sqrt{A_H}
-   ```
+   $$\text{distance}(G, H) \le 12 \times \sqrt{A_H}$$
 
    The group itself counts too. Measuring in $H$'s own size means tiny specks must be very close to count, and they
    can't make a big bird look like several.
@@ -420,14 +418,12 @@ with nearby birds. For a group $G$ we do this:
 
 4. **Divide and round.** The number of birds in the group is:
 
-   ```math
-   n = \max\!\left(1,\ \text{round}\!\left(\frac{A_G}{m_G}\right)\right)
-   ```
+   $$n = \max\left(1,\ \text{round}\left(\frac{A_G}{m_G}\right)\right)$$
 
 A real example: the circled group has an area of 185 pixels, and the median of its 12 closest neighbours is 111 pixels.
 
 $$
-n = \text{round}\!\left(\frac{185}{111}\right) = \text{round}(1.67) = 2
+n = \text{round}\left(\frac{185}{111}\right) = \text{round}(1.67) = 2
 $$
 
 Zoomed in, you can see that it really is two birds, one over the other. Four groups in this photo count as 2 birds.
