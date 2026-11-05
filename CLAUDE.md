@@ -107,10 +107,11 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   `fill_below_land` marks everything under the ground too (water), and `drop_linked` also drops candidates linked to
   the landscape across small gaps (leaves and twigs, which the mask's closing erases).
 - Post-processing is shared by all methods. `absorb_fragments` drops wing tips next to a larger blob of at most
-  `FRAGMENT_MAX_BIRDS` local birds (not a clump of a dense flock), `drop_dots`
+  `FRAGMENT_MAX_BIRDS` single birds (not a clump of a dense flock), `drop_dots`
   drops tiny compact dots (mostly insects) when a photo also has larger birds, `drop_clutter` removes oversized and
   edge-touching blobs, and
-  `split_merged` counts merged birds as `round(area / flock median)`. `docs/processing.md` has the details, and its
+  `split_merged` counts merged birds as `round(area / single bird)`, where a single bird (`single_area`) is the median
+  of the neighbours, or a lower quantile when they are crowded (dense flocks are mostly clumps). `docs/processing.md` has the details, and its
   "Known gaps" section lists changes that were tried and rejected, with the numbers. Check it before retrying one.
 
 **Frontend (`src/`)**

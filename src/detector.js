@@ -23,6 +23,9 @@
   const SPLIT_NEIGHBOUR_DISTANCE = 12.0;
   const SPLIT_MIN_NEIGHBOURS = 4;
   const SPLIT_MAX_DETECTIONS = 4000;
+  const SPLIT_CROWDED_COVERAGE = 0.2;
+  const SPLIT_PACKED_COVERAGE = 0.3;
+  const SPLIT_PACKED_QUANTILE = 0.2;
   const BORDER_CLUTTER_RATIO = 3.0;
   const MAX_CLUTTER_RATIO = 25.0;
   const SKY_MASK_WINDOW = 5;
@@ -37,7 +40,7 @@
   const LANDSCAPE_GAP_RATIO = 0.25;
   const LANDSCAPE_LINK_SENSITIVITY = f(9.0);
   const LANDSCAPE_REACH_WINDOWS = 8.0;
-  const LANDSCAPE_CUT_WINDOWS = 3.0;
+  const LANDSCAPE_CUT_WINDOWS = 1.0;
   const FRAGMENT_RATIO = 0.12;
   const FRAGMENT_MAX_BIRDS = 3.0;
   const DOT_MAX_AREA = 20.0;
@@ -107,11 +110,21 @@
     return values.length % 2 === 0 ? (values[mid - 1] + values[mid]) / 2 : values[mid];
   }
 
+  /** The `q` quantile of `values`, interpolated between neighbouring values (see quantile). */
+  function quantile(values, q) {
+    if (values.length === 0) return 0;
+    values.sort((a, b) => a - b);
+    const position = clamp(q, 0, 1) * (values.length - 1);
+    const low = Math.floor(position);
+    const high = Math.ceil(position);
+    return values[low] + (values[high] - values[low]) * (position - low);
+  }
+
   /**
-   * The median area of the detections near `blob`, from the same flock; null when there are
-   * too few of them to tell (see local_area in blob_filter.rs).
+   * The SPLIT_NEIGHBOURS detections nearest to `blob` as [distance, area], nearest first; null
+   * when there are too few of them to tell (see neighbours in blob_filter.rs).
    */
-  function localArea(blob, blobs) {
+  function neighboursOf(blob, blobs) {
     const neighbours = [];
     for (const other of blobs) {
       const distance = Math.hypot(other.x - blob.x, other.y - blob.y);
@@ -121,7 +134,34 @@
     }
     if (neighbours.length < SPLIT_MIN_NEIGHBOURS) return null;
     neighbours.sort((a, b) => a[0] - b[0]);
-    return median(neighbours.slice(0, SPLIT_NEIGHBOURS).map(([, area]) => area));
+    return neighbours.slice(0, SPLIT_NEIGHBOURS);
+  }
+
+  /** The median area of the detections near `blob` (see local_area). */
+  function localArea(blob, blobs) {
+    const neighbours = neighboursOf(blob, blobs);
+    return neighbours === null ? null : median(neighbours.map(([, area]) => area));
+  }
+
+  /**
+   * The area of a single bird near `blob`: the median of its neighbours, or a lower quantile when
+   * they are crowded (see single_area).
+   */
+  function singleArea(blob, blobs) {
+    const neighbours = neighboursOf(blob, blobs);
+    if (neighbours === null) return null;
+    const radius = neighbours[neighbours.length - 1][0];
+    const areas = neighbours.map(([, area]) => area);
+    let crowding = 0;
+    if (radius > 0) {
+      const coverage = areas.reduce((sum, area) => sum + area, 0) / (Math.PI * radius * radius);
+      crowding = clamp(
+        (coverage - SPLIT_CROWDED_COVERAGE) / (SPLIT_PACKED_COVERAGE - SPLIT_CROWDED_COVERAGE),
+        0,
+        1,
+      );
+    }
+    return quantile(areas, 0.5 - crowding * (0.5 - SPLIT_PACKED_QUANTILE));
   }
 
   /**
@@ -162,7 +202,7 @@
     const single = new Map();
     const isSingle = (large) => {
       if (!single.has(large)) {
-        const area = localArea(large, blobs);
+        const area = singleArea(large, blobs);
         single.set(large, area === null || large.area <= FRAGMENT_MAX_BIRDS * area);
       }
       return single.get(large);
@@ -200,7 +240,7 @@
   function splitMerged(blobs) {
     if (blobs.length > SPLIT_MAX_DETECTIONS) return blobs;
     const counts = blobs.map((blob) => {
-      const reference = localArea(blob, blobs);
+      const reference = singleArea(blob, blobs);
       if (reference === null || reference <= 0) return 1;
       return Math.max(Math.round(blob.area / reference), 1);
     });

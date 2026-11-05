@@ -431,6 +431,16 @@ test("split merged uses local bird size", () => {
   );
 });
 
+test("split merged uses single birds in a crowded flock", () => {
+  // A packed flock: single birds and clumps of four, 4 pixels apart.
+  const blobs = Array.from({ length: 12 }, (_, i) => ({
+    ...blob((i % 4) * 4, i % 2 === 0 ? 10 : 40),
+    y: Math.floor(i / 4) * 4,
+  }));
+  const total = BirdDetector.splitMerged(blobs).reduce((sum, b) => sum + b.count, 0);
+  assert.equal(total, 6 + 6 * 4);
+});
+
 test("split ignores distant small specks", () => {
   const blobs = [blob(0, 80), blob(40, 90)];
   for (let i = 0; i < 6; i++) blobs.push(blob(500 + i * 8, 4));

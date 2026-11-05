@@ -28,6 +28,13 @@ const SPLIT_MIN_NEIGHBOURS: usize = 4;
 /// Above this many detections splitting is skipped to keep the neighbour search cheap
 /// (such images are dominated by texture, not flocks).
 const SPLIT_MAX_DETECTIONS: usize = 4000;
+/// Above this coverage (area of the neighbours over the disk they lie in) a flock is so crowded
+/// that many of its detections are merged birds, so the median is no longer a single bird.
+const SPLIT_CROWDED_COVERAGE: f64 = 0.2;
+/// At this coverage and above, a single bird is the `SPLIT_PACKED_QUANTILE` of the neighbours'
+/// areas instead of their median; in between, the quantile goes down linearly.
+const SPLIT_PACKED_COVERAGE: f64 = 0.3;
+const SPLIT_PACKED_QUANTILE: f64 = 0.2;
 /// Blobs touching the image edge that are larger than this many median blobs are
 /// clutter (trees, roofs, lamps) rather than birds.
 const BORDER_CLUTTER_RATIO: f64 = 3.0;
@@ -68,11 +75,11 @@ const LANDSCAPE_LINK_SENSITIVITY: f32 = 9.0;
 const LANDSCAPE_REACH_WINDOWS: f64 = 8.0;
 /// A candidate reaching farther is a dense flock merged into one candidate, and it loses only its
 /// pixels within this many local windows of the landscape.
-const LANDSCAPE_CUT_WINDOWS: f64 = 3.0;
+const LANDSCAPE_CUT_WINDOWS: f64 = 1.0;
 /// A blob smaller than this fraction of a much larger one right next to it is a piece of it,
 /// such as a wing tip. Right next to it means within the larger blob's radius of its bounds.
 const FRAGMENT_RATIO: f64 = 0.12;
-/// Only a blob of at most this many local birds (`local_area`) has wing tips: in a dense flock, a
+/// Only a blob of at most this many local birds (`single_area`) has wing tips: in a dense flock, a
 /// clump of merged birds is much larger than the single birds next to it.
 const FRAGMENT_MAX_BIRDS: f64 = 3.0;
 /// Compact dots smaller than this, for a photo with a longer side of `MAX_WORKING_SIDE`, are
@@ -1206,10 +1213,40 @@ fn components_touching(binary: &core::Mat, seeds: &core::Mat) -> Result<core::Ma
 }
 
 /// The median area of the detections near `blob`, from the same flock; `None` when there
-/// are too few of them to tell. A detection counts as near when it lies within
-/// `SPLIT_NEIGHBOUR_DISTANCE` of *its own* sizes, so small noise specks or a distant flock
-/// of smaller birds do not count.
+/// are too few of them to tell (see `neighbours`).
 fn local_area(blob: &Blob, blobs: &[Blob]) -> Option<f64> {
+    let mut areas: Vec<f64> = neighbours(blob, blobs)?
+        .iter()
+        .map(|(_, area)| *area)
+        .collect();
+    Some(median(&mut areas))
+}
+
+/// The area of a single bird near `blob`: the median area of its neighbours, or a lower quantile
+/// of them when they are crowded (`SPLIT_CROWDED_COVERAGE`). `None` when there are too few
+/// neighbours to tell.
+fn single_area(blob: &Blob, blobs: &[Blob]) -> Option<f64> {
+    let neighbours = neighbours(blob, blobs)?;
+    let radius = neighbours.last().map_or(0.0, |(distance, _)| *distance);
+    let mut areas: Vec<f64> = neighbours.iter().map(|(_, area)| *area).collect();
+    let crowding = if radius > 0.0 {
+        let coverage = areas.iter().sum::<f64>() / (std::f64::consts::PI * radius * radius);
+        ((coverage - SPLIT_CROWDED_COVERAGE) / (SPLIT_PACKED_COVERAGE - SPLIT_CROWDED_COVERAGE))
+            .clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    Some(quantile(
+        &mut areas,
+        0.5 - crowding * (0.5 - SPLIT_PACKED_QUANTILE),
+    ))
+}
+
+/// The `SPLIT_NEIGHBOURS` detections nearest to `blob` (itself included) as (distance, area),
+/// nearest first; `None` when there are fewer than `SPLIT_MIN_NEIGHBOURS`. A detection counts as
+/// near when it lies within `SPLIT_NEIGHBOUR_DISTANCE` of *its own* sizes, so small noise specks
+/// or a distant flock of smaller birds do not count.
+fn neighbours(blob: &Blob, blobs: &[Blob]) -> Option<Vec<(f64, f64)>> {
     let mut neighbours: Vec<(f64, f64)> = blobs
         .iter()
         .filter_map(|other| {
@@ -1222,12 +1259,8 @@ fn local_area(blob: &Blob, blobs: &[Blob]) -> Option<f64> {
         return None;
     }
     neighbours.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
-    let mut areas: Vec<f64> = neighbours
-        .iter()
-        .take(SPLIT_NEIGHBOURS)
-        .map(|(_, area)| *area)
-        .collect();
-    Some(median(&mut areas))
+    neighbours.truncate(SPLIT_NEIGHBOURS);
+    Some(neighbours)
 }
 
 /// Removes tiny pieces right next to a much larger blob, like wing tips cut off from a bird. The
@@ -1256,7 +1289,8 @@ fn absorb_fragments(blobs: Vec<Blob>) -> Vec<Blob> {
                 continue;
             }
             let is_single = *single[large_index].get_or_insert_with(|| {
-                local_area(large, &blobs).is_none_or(|area| large.area <= FRAGMENT_MAX_BIRDS * area)
+                single_area(large, &blobs)
+                    .is_none_or(|area| large.area <= FRAGMENT_MAX_BIRDS * area)
             });
             if is_single {
                 keep[index] = false;
@@ -1317,15 +1351,15 @@ fn drop_clutter(blobs: Vec<Blob>) -> Vec<Blob> {
         .collect()
 }
 
-/// Estimates how many birds each blob holds by comparing its area with the median area of
-/// nearby detections from the same flock (`local_area`).
+/// Estimates how many birds each blob holds by comparing its area with the area of a single bird
+/// of the same flock nearby (`single_area`).
 fn split_merged(mut blobs: Vec<Blob>) -> Vec<Blob> {
     if blobs.len() > SPLIT_MAX_DETECTIONS {
         return blobs;
     }
     let counts: Vec<u32> = blobs
         .iter()
-        .map(|blob| match local_area(blob, &blobs) {
+        .map(|blob| match single_area(blob, &blobs) {
             Some(reference) if reference > 0.0 => (blob.area / reference).round().max(1.0) as u32,
             _ => 1,
         })
@@ -1334,6 +1368,17 @@ fn split_merged(mut blobs: Vec<Blob>) -> Vec<Blob> {
         blob.count = count;
     }
     blobs
+}
+
+/// The `q` quantile of `values` (0.5 is the median), interpolated between neighbouring values.
+fn quantile(values: &mut [f64], q: f64) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_unstable_by(f64::total_cmp);
+    let position = q.clamp(0.0, 1.0) * (values.len() - 1) as f64;
+    let (low, high) = (position.floor() as usize, position.ceil() as usize);
+    values[low] + (values[high] - values[low]) * (position - low as f64)
 }
 
 fn median(values: &mut [f64]) -> f64 {
@@ -2309,6 +2354,19 @@ mod tests {
         let counts: Vec<u32> = split_merged(blobs).iter().map(|b| b.count).collect();
         assert_eq!(counts.len(), 27);
         assert_eq!(counts.iter().sum::<u32>(), 24 + 3 + 2 + 1);
+    }
+
+    #[test]
+    fn split_merged_uses_single_birds_in_a_crowded_flock() {
+        // A packed flock: single birds and clumps of four, 4 pixels apart.
+        let crowded: Vec<Blob> = (0..12)
+            .map(|i| Blob {
+                center: core::Point2d::new((i % 4) as f64 * 4.0, (i / 4) as f64 * 4.0),
+                ..blob(0.0, if i % 2 == 0 { 10.0 } else { 40.0 })
+            })
+            .collect();
+        let total: u32 = split_merged(crowded).iter().map(|b| b.count).sum();
+        assert_eq!(total, 6 + 6 * 4);
     }
 
     #[test]
