@@ -282,6 +282,39 @@ test("keeps a bright lake out when the top is sky", () => {
   img.delete();
 });
 
+/** Twigs with small gaps between their pieces, growing from the ground at `horizon`. */
+function drawBush(img, horizon) {
+  for (let stem = 0; stem < 9; stem++) {
+    const x = 600 + stem * 20;
+    for (let y = horizon; y > horizon - 90; y -= 11) {
+      cv.line(img, new cv.Point(x + (y % 3), y), new cv.Point(x + 3, y - 6), new cv.Scalar(70), 1, cv.LINE_8, 0);
+    }
+  }
+}
+
+test("drops twigs linked to a bush", () => {
+  const img = sky(200);
+  const expected = drawFlock(img, 5, 90);
+  const horizon = 400;
+  paste(img, roughTexture(HEIGHT - horizon, WIDTH), 0, horizon);
+  drawBush(img, horizon);
+  assert.equal(count(img), expected);
+  img.delete();
+});
+
+test("ignores water below the land", () => {
+  const img = sky(200);
+  const expected = drawFlock(img, 3, 90);
+  // A headland from the left edge, with water below it and to its right.
+  paste(img, roughTexture(50, 560), 0, 250);
+  cv.rectangle(img, new cv.Point(0, 300), new cv.Point(WIDTH - 1, HEIGHT - 1), new cv.Scalar(175), -1, cv.LINE_8, 0);
+  for (let wave = 0; wave < 9; wave++) {
+    cv.ellipse(img, new cv.Point(60 + wave * 50, 380), new cv.Size(10, 2), 0, 0, 360, new cv.Scalar(120), -1, cv.LINE_AA, 0);
+  }
+  assert.equal(count(img), expected);
+  img.delete();
+});
+
 test("counts bright birds when inverted", () => {
   const img = sky(70);
   const expected = drawFlock(img, 8, -90);
@@ -356,6 +389,12 @@ test("window grows with a large photo", () => {
   const found = detect(img);
   assert.equal(found.birds.length, 15);
   assert.ok(found.birds.every((bird) => bird.radius > 0.9 * THICK_BIRD_RADIUS));
+  // Counted on a smaller copy, but the positions are in pixels of the photo.
+  for (const bird of found.birds) {
+    const col = Math.round((bird.x - 400) / 700);
+    const row = Math.round((bird.y - 400) / 700);
+    assert.ok(Math.hypot(bird.x - (400 + col * 700), bird.y - (400 + row * 700)) < 3, `${bird.x},${bird.y}`);
+  }
   img.delete();
 });
 
@@ -367,8 +406,7 @@ test("crop keeps the window of the whole photo", () => {
   img.delete();
 });
 
-test("very large photo gets past the limit of the median filter", () => {
-  // 8000 px: the busyness window is 3 x 125 = 375 px.
+test("very large photo is counted on a smaller copy", () => {
   const img = new cv.Mat(1000, 8000, cv.CV_8U, new cv.Scalar(180));
   assert.equal(detect(img).count, 0);
   img.delete();
@@ -408,6 +446,27 @@ test("drop clutter keeps a near flock", () => {
   const kept = BirdDetector.dropClutter(blobs);
   assert.equal(kept.length, 68);
   assert.ok(kept.every((b) => !b.touchesBorder && b.y === 0));
+});
+
+test("absorb fragments merges wing tips", () => {
+  const bird = { x: 100, y: 100, area: 300, left: 90, top: 95, width: 20, height: 10 };
+  const tip = { x: 113, y: 100, area: 6, left: 112, top: 99, width: 2, height: 2 };
+  const speck = { x: 200, y: 100, area: 6, left: 199, top: 99, width: 2, height: 2 };
+  const neighbour = { x: 118, y: 100, area: 200, left: 111, top: 95, width: 14, height: 10 };
+  const kept = BirdDetector.absorbFragments([bird, tip, speck, neighbour]);
+  assert.deepEqual(kept, [bird, speck, neighbour]);
+});
+
+test("drop dots keeps birds and flocks of tiny birds", () => {
+  const box = (area, width, height) => ({ x: 0, y: 0, area, left: 0, top: 0, width, height });
+  const birds = Array.from({ length: 10 }, () => box(250, 30, 12));
+  const dots = Array.from({ length: 5 }, () => box(9, 3, 3));
+  const thinBird = box(15, 10, 2);
+  assert.equal(BirdDetector.dropDots([...birds, ...dots, thinBird], 2048).length, 11);
+  // In a smaller photo the same dots are relatively larger.
+  assert.equal(BirdDetector.dropDots([...birds, ...dots], 1024).length, 15);
+  const tinyFlock = Array.from({ length: 12 }, () => box(10, 4, 3));
+  assert.equal(BirdDetector.dropDots(tinyFlock, 2048).length, 12);
 });
 
 test("drop clutter removes oversized and edge blobs", () => {

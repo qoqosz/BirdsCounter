@@ -15,7 +15,7 @@ where each platform gets its own native look.
 | <img src="images/screenshots/android_start.png" width="200" alt="Android start screen"> | <img src="images/screenshots/android_result.png" width="200" alt="Android result"> | <img src="images/screenshots/ios_start.png" width="200" alt="iOS start screen"> | <img src="images/screenshots/ios_result.png" width="200" alt="iOS result"> |
 
 The sample photo is [`images/flock.jpg`](images/flock.jpg). With *Only sky* on, the tree, the fields and the fence
-are ignored and 53 birds are counted. Without the sky mask the landscape adds over 250 false detections.
+are ignored and 50 birds are counted (49 by hand, leaving out a faint far flock at the horizon). Without the sky mask the landscape adds about 60 false detections.
 
 Curious how the counting works? [This step-by-step guide](docs/processing.md) follows that photo through the whole
 algorithm, with a picture for each step.

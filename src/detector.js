@@ -33,6 +33,13 @@
   const SKY_BLOCKER_BRIGHTNESS = 1.6;
   const WINDOW_REFERENCE_SIDE = 2000.0;
   const MAX_MEDIAN_WINDOW = 255;
+  const MAX_WORKING_SIDE = 2048;
+  const LANDSCAPE_GAP_RATIO = 0.25;
+  const LANDSCAPE_LINK_SENSITIVITY = f(9.0);
+  const FRAGMENT_RATIO = 0.12;
+  const DOT_MAX_AREA = 20.0;
+  const DOT_MAX_SIDE = 7.0;
+  const DOT_MEDIAN_RATIO = 0.5;
 
   // BlobParams::default(); missing fields fall back to these, like `#[serde(default)]`.
   const DEFAULT_PARAMS = {
@@ -132,6 +139,45 @@
         !(blob.touchesBorder && blob.area / typical > BORDER_CLUTTER_RATIO)
       );
     });
+  }
+
+  /** Removes tiny pieces right next to a much larger blob (see absorb_fragments). */
+  function absorbFragments(blobs) {
+    if (blobs.length > SPLIT_MAX_DETECTIONS) return blobs;
+    return blobs.filter(
+      (blob) =>
+        !blobs.some((large) => {
+          if (blob.area >= FRAGMENT_RATIO * large.area) return false;
+          const right = large.left + large.width;
+          const bottom = large.top + large.height;
+          const dx = Math.max(large.left - blob.x, blob.x - right, 0);
+          const dy = Math.max(large.top - blob.y, blob.y - bottom, 0);
+          return Math.hypot(dx, dy) <= blobRadius(large);
+        }),
+    );
+  }
+
+  /**
+   * Removes tiny compact dots when the photo also has larger birds (see drop_dots).
+   * `wholeSide` is the longer side of the whole photo in pixels of the blobs.
+   */
+  function dropDots(blobs, wholeSide) {
+    const typical = median(blobs.map((blob) => blob.area));
+    const size = wholeSide / MAX_WORKING_SIDE;
+    const maxArea = Math.min(DOT_MAX_AREA * size * size, DOT_MEDIAN_RATIO * typical);
+    const maxSide = DOT_MAX_SIDE * size;
+    return blobs.filter(
+      (blob) => blob.area >= maxArea || Math.max(blob.width, blob.height) > maxSide,
+    );
+  }
+
+  /** The scale of the working copy of a part of a photo (see working_scale). */
+  function workingScale(cols, rows) {
+    return Math.min(MAX_WORKING_SIDE / Math.max(cols, rows), 1);
+  }
+
+  function scaledSide(side, scale) {
+    return Math.max(Math.round(side * scale), 1);
   }
 
   /**
@@ -264,6 +310,72 @@
       if (masks.landscape) out = dropTouching(out, masks.landscape, scope);
       if (masks.exclusion) out = applyExclusionMask(out, masks.exclusion, scope);
       return out;
+    }
+
+    /** A copy of `src` scaled by `scale`; `src` itself when that changes nothing. */
+    function shrink(src, scale, interpolation, scope) {
+      if (scale >= 1) return src;
+      const out = mat(scope);
+      cv.resize(
+        src,
+        out,
+        new cv.Size(scaledSide(src.cols, scale), scaledSide(src.rows, scale)),
+        0,
+        0,
+        interpolation,
+      );
+      return out;
+    }
+
+    /** `landscape` with everything below the ground marked too (see fill_below_land). */
+    function fillBelowLand(landscape, scope) {
+      const local = new Scope();
+      try {
+        const rows = landscape.rows;
+        const ground = componentsWhere(
+          landscape,
+          8,
+          (left, top, width, height) => top > 0 && 2 * (top + height) >= rows,
+          local,
+        );
+        const out = scope.add(landscape.clone());
+        const cols = landscape.cols;
+        const groundData = ground.data;
+        const outData = out.data;
+        const below = new Uint8Array(cols);
+        for (let i = 0; i < outData.length; i++) {
+          const col = i % cols;
+          if (groundData[i] > 0) below[col] = 1;
+          if (below[col]) outData[i] = 255;
+        }
+        return out;
+      } finally {
+        local.release();
+      }
+    }
+
+    /** Removes what `links` connects to the landscape across small gaps (see drop_linked). */
+    function dropLinked(binary, links, landscape, window, scope) {
+      const local = new Scope();
+      try {
+        const gap = Math.round(window * LANDSCAPE_GAP_RATIO);
+        const grown = mat(local);
+        cv.dilate(
+          links,
+          grown,
+          kernel(local, cv.MORPH_RECT, 2 * gap + 1),
+          anchor(),
+          1,
+          cv.BORDER_CONSTANT,
+          cv.morphologyDefaultBorderValue(),
+        );
+        const free = dropTouching(grown, landscape, local);
+        const out = mat(scope);
+        cv.bitwise_and(binary, free, out);
+        return out;
+      } finally {
+        local.release();
+      }
     }
 
     /** Mask (255) of the connected components whose bounding box satisfies `keep`. */
@@ -456,9 +568,10 @@
         const landscapePixels = cv.countNonZero(landscape);
         const total = cols * rows;
         if (total - landscapePixels < SKY_MIN_FRACTION * total) return null;
+        const filled = fillBelowLand(landscape, local);
 
         const upscaled = mat(local);
-        cv.resize(landscape, upscaled, new cv.Size(gray.cols, gray.rows), 0, 0, cv.INTER_LINEAR);
+        cv.resize(filled, upscaled, new cv.Size(gray.cols, gray.rows), 0, 0, cv.INTER_LINEAR);
         const full = mat(scope);
         cv.threshold(upscaled, full, 127, 255, cv.THRESH_BINARY);
         return full;
@@ -574,19 +687,25 @@
         const minContrast = f(MIN_CONTRAST);
         const significance = new Float32Array(rows * cols);
         let candidates = zeros(s, rows, cols);
+        const links = zeros(s, rows, cols);
         {
           const textureData = texture.data;
           const candidateData = candidates.data;
+          const linkData = links.data;
           const scale = f(sensitivity * textureScale);
+          const linkScale = f(LANDSCAPE_LINK_SENSITIVITY * textureScale);
           for (let i = 0; i < significance.length; i++) {
             const threshold = Math.max(f(scale * textureData[i]), minContrast);
             const q = f(contrast[i] / threshold);
             significance[i] = q;
             if (q > LOW_THRESHOLD_RATIO) candidateData[i] = 255;
+            const linkThreshold = Math.max(f(linkScale * textureData[i]), minContrast);
+            if (contrast[i] > f(linkThreshold * LOW_THRESHOLD_RATIO)) linkData[i] = 255;
           }
         }
         s.free(texture);
         candidates = applyMasks(candidates, masks, s);
+        if (masks.landscape) candidates = dropLinked(candidates, links, masks.landscape, window, s);
 
         const labels = mat(s);
         const stats = mat(s);
@@ -620,17 +739,20 @@
           const row = label * statWidth;
           const left = statData[row + cv.CC_STAT_LEFT];
           const top = statData[row + cv.CC_STAT_TOP];
+          const width = statData[row + cv.CC_STAT_WIDTH];
+          const height = statData[row + cv.CC_STAT_HEIGHT];
           const touchesBorder =
-            left === 0 ||
-            top === 0 ||
-            left + statData[row + cv.CC_STAT_WIDTH] >= cols ||
-            top + statData[row + cv.CC_STAT_HEIGHT] >= rows;
+            left === 0 || top === 0 || left + width >= cols || top + height >= rows;
           blobs.push({
             x: centroidData[label * 2],
             y: centroidData[label * 2 + 1],
             area: statData[row + cv.CC_STAT_AREA],
             count: 1,
             touchesBorder,
+            left,
+            top,
+            width,
+            height,
           });
         }
         return blobs;
@@ -719,6 +841,10 @@
                 bounds.y === 0 ||
                 bounds.x + bounds.width >= cleaned.cols ||
                 bounds.y + bounds.height >= cleaned.rows,
+              left: bounds.x,
+              top: bounds.y,
+              width: bounds.width,
+              height: bounds.height,
             });
           } finally {
             contour.delete();
@@ -744,12 +870,23 @@
           rect = rectWithin(crop, full.cols, full.rows);
           if (!rect) throw new Error("Crop is outside the image");
         }
-        const gray = cropMat(full, rect, scope);
-        const exclusion = mask
-          ? cropMat(decodeMask(mask, full.cols, full.rows, scope), rect, scope)
-          : null;
+        const region = cropMat(full, rect, scope);
+        // All the detection steps work on this copy; blobs go back to pixels of `region` below.
+        const scale = workingScale(region.cols, region.rows);
+        const gray = shrink(region, scale, cv.INTER_AREA, scope);
+        let exclusion = null;
+        if (mask) {
+          const cropped = cropMat(decodeMask(mask, full.cols, full.rows, scope), rect, scope);
+          exclusion = cropped;
+          if (scale < 1) {
+            exclusion = mat(scope);
+            cv.threshold(shrink(cropped, scale, cv.INTER_LINEAR, scope), exclusion, 0, 255, cv.THRESH_BINARY);
+          }
+        }
         // From the whole photo: cropping does not change how big a bird is in pixels.
-        const window = scaledWindow(params.adaptive_block, full.cols, full.rows);
+        const wholeCols = scaledSide(full.cols, scale);
+        const wholeRows = scaledSide(full.rows, scale);
+        const window = scaledWindow(params.adaptive_block, wholeCols, wholeRows);
         const landscape = params.sky_only ? landscapeMask(gray, window, params.invert, scope) : null;
         const masks = { exclusion, landscape };
 
@@ -757,6 +894,15 @@
           params.threshold_method.trim().toLowerCase() === "background"
             ? detectBackground(gray, masks, params, window)
             : detectThreshold(gray, masks, params, window);
+
+        blobs = absorbFragments(blobs);
+        blobs = dropDots(blobs, Math.max(wholeCols, wholeRows));
+        blobs = blobs.map((blob) => ({
+          ...blob,
+          x: blob.x / scale,
+          y: blob.y / scale,
+          area: blob.area / (scale * scale),
+        }));
 
         const minRadius = Math.max(params.min_radius, 0);
         const maxRadius = Math.max(params.max_radius, minRadius);
@@ -784,5 +930,13 @@
     return { detect };
   }
 
-  return { create, DEFAULT_PARAMS, dropClutter, splitMerged, scaledWindow };
+  return {
+    create,
+    DEFAULT_PARAMS,
+    dropClutter,
+    splitMerged,
+    absorbFragments,
+    dropDots,
+    scaledWindow,
+  };
 });

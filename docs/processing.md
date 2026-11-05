@@ -16,13 +16,18 @@ The code for all of this is in [`blob_filter.rs`](../src-tauri/src/blob_filter.r
 
 ![The starting photo, whole and zoomed in on part of the flock](images/01_photo.jpg)
 
-**The answer for this photo is 53 birds.** Let's see how we get there.
+**The detector's answer for this photo is 53 birds.** Counted by hand, it has 49, not counting a faint far
+flock just above the horizon. Let's see how the detector gets there.
 
 Every step ends with a **review note**: why the step is there, what happens without it, and where it is weak. The
 numbers come from switching off one step at a time, on this photo and on synthetic scenes where the true count is known.
-On this photo more rings is not better, because its true count is unknown. It is also the only real photo tested, so
-treat the numbers as evidence and not as proof. [Known gaps](#known-gaps-and-what-was-tried) lists the weak points that
+On this photo more rings is not better: the hand count of 49 is the target. When this page was written it was the only
+real photo tested, so treat the numbers as evidence and not as proof. [Known gaps](#known-gaps-and-what-was-tried) lists the weak points that
 remain and the changes that were tried and rejected.
+
+> **Added later.** The pictures and numbers on this page come from version 0.12.1. Four steps were added after it, to
+> fix what eight more real photos showed. They are described in
+> [Added after the walkthrough](#added-after-the-walkthrough). With them this photo gives 50 birds instead of 53, against 49 counted by hand.
 
 ## The steps at a glance
 
@@ -560,8 +565,8 @@ The app then draws a ring on each group: red for one bird, and orange with a num
 
 ## Where it goes wrong
 
-The detector is not perfect, and this photo shows two typical mistakes. 53 is the detector's answer, not the true
-number.
+The detector is not perfect, and this photo shows two typical mistakes. 53 is the detector's answer, and the true
+number, counted by hand, is 49 without the far flock described below.
 
 ![The missed distant flock, and the twig counted as a bird](images/21_limits.jpg)
 
@@ -580,9 +585,71 @@ catch the far flock. Lowering it has a cost, though. It catches more of that flo
 | 6 | 60 | 4 |
 | 4 | 80 | 8 |
 
+## Added after the walkthrough
+
+Eight more real photos ([`images/birds`](../images/birds)) showed problems the photo above doesn't have. These four
+steps fix them. The working copy comes before step 1, the ground is added to the sky mask in step 4, twigs are removed
+right after step 13, and wing tips and dots right after step 14.
+
+### A working copy of at most 2048 pixels
+
+A photo or crop whose longer side is over 2048 pixels is counted on a shrunk copy. The results are scaled back to
+pixels of the photo. Phone photos of 12 to 50 megapixels took up to 1 second on a laptop and 2 seconds in the browser.
+Now they take about 0.1 and 0.5 seconds. The sample photos are about this size already, and they find every bird of
+20 pixels or more. Copies shrunk to 1536 pixels lose only 1 bird of 308, but at 1024 they lose 10. A crop keeps more
+detail, because only the cropped part is shrunk.
+
+### Twigs linked to a tree
+
+The closing in step 2 erases thin leaves and twigs, so a bush against the sky looks like sky. Its leaves become dozens
+of small groups that don't touch the landscape. In one photo they made up 70 of 142 birds, some counted as "5" or
+"6". Now a group is also removed when it is linked to the landscape across gaps of up to a quarter of the local window,
+through pixels that pass the low bar of step 12. That bar uses the default sensitivity, $k = 9$, and not the slider.
+Otherwise, at a low setting, cloud texture would link the whole sky to the ground. The gaps are bridged with a square,
+because OpenCV.js grows a disk ten times slower.
+
+### Nothing under the ground
+
+When the far shore of a lake is too thin for the sky mask, the water is smooth and looks like sky. Waves then count as
+birds. Now everything below the ground is "not sky" too. The ground is a landscape area that reaches into the lower half
+of the photo but not its top edge. Branches hanging from the top don't count, and neither does the lower edge of
+something blocking the view across the top.
+
+### Wing tips and dots
+
+- **Wing tips.** A group smaller than 12% of a much larger one, within that group's radius of it, is a piece of it,
+  usually a wing tip. Before, it counted as another bird.
+- **Dots.** Tiny, compact dots are scattered over the sky in some photos, with no bird shape. They are more often
+  insects than birds, so they are no longer counted. A dot here is smaller than 20 pixels and at most 7 pixels long, for
+  a photo 2048 pixels on its longer side, and smaller than half the median group. A thin faint bird is just as small,
+  but longer, and a photo of only tiny birds keeps them all.
+
+### What changed
+
+The counts of the eight photos, judged by eye from enlarged crops of every detection:
+
+| Photo | Before | Now | What was wrong |
+| --- | --- | --- | --- |
+| 01 | 12 | 7 | 3 waves on a lake, 2 dots |
+| 02 | 53 | 51 | 2 clumps of leaves |
+| 03 | 26 | 26 | Nothing |
+| 04 | 77 | 51 | 22 dots, 3 wing tips |
+| 05 | 54 | 52 | 2 dots |
+| 06 | 56 | 40 | 7 leaves of a tree, 9 dots |
+| 07 | 142 | 58 | 70 leaves of a bush, 13 dots |
+| 08 | 83 | 79 | 3 wing tips |
+
+The steps were tuned on these photos, so the numbers are better than a new photo can expect. Counts now barely move
+with the sensitivity slider: from $k = 7$ to $k = 11$, most photos change by 3 birds or less, where photo 07 went from
+143 to 115 before. So the default of 9 suits all of them, and none needs its own setting.
+
+The photo on this page gives 50, against 49 counted by hand without the far flock. The twig from [Where it goes wrong](#where-it-goes-wrong) is gone, but so are two real
+birds. One is the only ring on the far flock, a 7 pixel dot. The other is a small bird, clearly V-shaped but only 19
+pixels. Without the sky mask, it now gives 112 instead of 332.
+
 ## Known gaps and what was tried
 
-These are the weak points that remain. A change was kept only if it helped its target scene, kept this photo at 53, and
+These are the weak points that remain. A change was kept only if it helped its target scene, kept this photo at 53 (before the [additions](#added-after-the-walkthrough), which bring it to 50), and
 passed all the tests. The ones that didn't are listed here, so nobody has to try them again. In the tables, an arrow goes
 from the current result to the result with the change.
 
@@ -631,6 +698,20 @@ Light and dark birds still can't be counted together: a scene with 20 of each gi
 default could add up to 21 false birds to this photo, so it would have to be a new setting, which is a choice about the
 app rather than a fix.
 
+### Gap 4: Birds next to the landscape
+
+*New.* A bird within a quarter of the local window of a tree or bush is removed with it, and the sky mask is coarse
+near the horizon. One bird just above the horizon in sample photo 06 is missed because of it. A far flock is lost in
+two ways: its birds are too faint (photo 05 has about 15–20 birds that get one ring), and when one is found it may be a
+dot.
+
+Tried and rejected:
+
+| Change | Better | Worse |
+| --- | --- | --- |
+| Counting dark cores inside a group, instead of area | chains of birds joined by their thin wings | splits most single birds with two-tone wings |
+| A sensitivity chosen per photo, where the count changes least | nothing, once the four steps above were added | |
+
 ### Left as they are
 
 - *Max radius* has no effect at its default in the app, but it is still useful when the user moves the slider.
@@ -671,6 +752,10 @@ app rather than a fix.
 | 3 and 25 | 16 | Size limits for giant groups, in median areas |
 | 255 | 10 | Widest window of the median filter |
 | 12, 4 and 12 | 16, 17 | Neighbour distance in own sizes, fewest neighbours, most neighbours used |
+| 2048 | Added | Longest side of the working copy, and the photo size the dot limits are for |
+| 0.25 and 9 | Added | Gap to the landscape, in local windows, and the sensitivity of the links across it |
+| 12% | Added | Largest wing tip, as a fraction of the group next to it |
+| 20, 7 and 0.5 | Added | Largest dot area and length in pixels, and fraction of the median group |
 
 ## What about the other methods?
 

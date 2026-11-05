@@ -54,6 +54,27 @@ const SKY_BLOCKER_BRIGHTNESS: f64 = 1.6;
 /// The local window setting is in pixels of a photo with this longer side, and it grows
 /// with the photo, so the same scene gives the same count at any resolution.
 const WINDOW_REFERENCE_SIDE: f64 = 2000.0;
+/// Longer side of the copy the detector works on, in pixels. Larger photos and crops are
+/// shrunk to it, which keeps counting fast. Birds in photos of this size are found reliably.
+const MAX_WORKING_SIDE: i32 = 2048;
+/// Candidates linked to the landscape across gaps of up to this fraction of the local window
+/// are vegetation: the sky mask erases thin leaves and twigs, so it can't see them itself.
+const LANDSCAPE_GAP_RATIO: f64 = 0.25;
+/// The links to the landscape use this sensitivity, not the slider's: at a low setting, cloud
+/// texture would connect the whole sky to the ground.
+const LANDSCAPE_LINK_SENSITIVITY: f32 = 9.0;
+/// A blob smaller than this fraction of a much larger one right next to it is a piece of it,
+/// such as a wing tip. Right next to it means within the larger blob's radius of its bounds.
+const FRAGMENT_RATIO: f64 = 0.12;
+/// Compact dots smaller than this, for a photo with a longer side of `MAX_WORKING_SIDE`, are
+/// not counted when the photo also has larger birds (see `drop_dots`).
+const DOT_MAX_AREA: f64 = 20.0;
+/// Longest bounding box side of such a dot, for the same photo size. Thin faint birds are as
+/// small but longer.
+const DOT_MAX_SIDE: f64 = 7.0;
+/// Such a dot is also smaller than this fraction of the median detection, so a flock of tiny
+/// birds is kept.
+const DOT_MEDIAN_RATIO: f64 = 0.5;
 /// OpenCV's fast median filter counts in 16 bits, so its window can't be wider than this.
 const MAX_MEDIAN_WINDOW: i32 = 255;
 
@@ -183,6 +204,7 @@ struct Blob {
     area: f64,
     count: u32,
     touches_border: bool,
+    bounds: core::Rect,
 }
 
 impl Blob {
@@ -288,17 +310,28 @@ impl BlobFilter {
         let params = &self.params;
 
         let cropped = crop_mat(full_gray, crop_rect)?;
-        let gray = cropped.as_ref().unwrap_or(full_gray);
+        let region = cropped.as_ref().unwrap_or(full_gray);
+
+        // All the detection steps work on this copy; blobs go back to pixels of `region` below.
+        let scale = working_scale(region.cols(), region.rows());
+        let shrunk = shrink(region, scale, imgproc::INTER_AREA)?;
+        let gray = shrunk.as_ref().unwrap_or(region);
 
         let exclusion_mask = match mask_payload {
             Some(mask_bytes) => {
                 let mask = decode_mask(mask_bytes, full_gray.cols(), full_gray.rows())?;
-                Some(crop_mat(&mask, crop_rect)?.unwrap_or(mask))
+                let mask = crop_mat(&mask, crop_rect)?.unwrap_or(mask);
+                Some(match shrink(&mask, scale, imgproc::INTER_LINEAR)? {
+                    Some(small) => binarize(&small)?,
+                    None => mask,
+                })
             }
             None => None,
         };
         // From the whole photo: cropping does not change how big a bird is in pixels.
-        let window = scaled_window(params.adaptive_block, full_gray.cols(), full_gray.rows());
+        let whole_cols = scaled_side(full_gray.cols(), scale);
+        let whole_rows = scaled_side(full_gray.rows(), scale);
+        let window = scaled_window(params.adaptive_block, whole_cols, whole_rows);
         let landscape = if params.sky_only {
             landscape_mask(gray, window, params.invert)?
         } else {
@@ -318,6 +351,13 @@ impl BlobFilter {
         } else {
             self.detect_threshold(gray, &masks, window)?
         };
+
+        blobs = absorb_fragments(blobs);
+        blobs = drop_dots(blobs, whole_cols.max(whole_rows));
+        for blob in &mut blobs {
+            blob.center = core::Point2d::new(blob.center.x / scale, blob.center.y / scale);
+            blob.area /= scale * scale;
+        }
 
         let min_radius = params.min_radius.max(0.0);
         let max_radius = params.max_radius.max(min_radius);
@@ -471,6 +511,9 @@ impl BlobFilter {
         let mut candidates =
             core::Mat::new_rows_cols_with_default(rows, cols, core::CV_8U, core::Scalar::all(0.0))
                 .map_err(|e| format!("Alloc error: {}", e))?;
+        let mut links =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_8U, core::Scalar::all(0.0))
+                .map_err(|e| format!("Alloc error: {}", e))?;
         {
             let contrast_data = contrast
                 .data_typed::<f32>()
@@ -496,8 +539,23 @@ impl BlobFilter {
             for (out, &q) in candidate_data.iter_mut().zip(significance_data.iter()) {
                 *out = if q > LOW_THRESHOLD_RATIO { 255 } else { 0 };
             }
+            let link_data = links
+                .data_bytes_mut()
+                .map_err(|e| format!("Link access error: {}", e))?;
+            let link_scale = LANDSCAPE_LINK_SENSITIVITY * texture_scale;
+            for ((out, &c), &t) in link_data.iter_mut().zip(contrast_data).zip(texture_data) {
+                let threshold = (link_scale * t as f32).max(MIN_CONTRAST as f32);
+                *out = if c > threshold * LOW_THRESHOLD_RATIO {
+                    255
+                } else {
+                    0
+                };
+            }
         }
         candidates = masks.apply(candidates)?;
+        if let Some(landscape) = masks.landscape {
+            candidates = drop_linked(&candidates, &links, landscape, window)?;
+        }
 
         let mut labels = core::Mat::default();
         let mut stats = core::Mat::default();
@@ -558,6 +616,12 @@ impl BlobFilter {
                 area: stat(imgproc::CC_STAT_AREA)? as f64,
                 count: 1,
                 touches_border,
+                bounds: core::Rect::new(
+                    left,
+                    top,
+                    stat(imgproc::CC_STAT_WIDTH)?,
+                    stat(imgproc::CC_STAT_HEIGHT)?,
+                ),
             });
         }
         Ok(blobs)
@@ -687,6 +751,7 @@ impl BlobFilter {
                 area,
                 count: 1,
                 touches_border,
+                bounds,
             });
         }
         Ok(blobs)
@@ -833,6 +898,8 @@ fn landscape_mask(
         return Ok(None);
     }
 
+    let landscape = fill_below_land(&landscape)?;
+
     let mut upscaled = core::Mat::default();
     let full_size = gray.size().map_err(|e| format!("Size error: {}", e))?;
     imgproc::resize(
@@ -848,6 +915,72 @@ fn landscape_mask(
     imgproc::threshold(&upscaled, &mut full, 127.0, 255.0, imgproc::THRESH_BINARY)
         .map_err(|e| format!("Sky threshold error: {}", e))?;
     Ok(Some(full))
+}
+
+/// `landscape` with everything below the ground marked too: sky can't be under it, and what
+/// looks like it there is water or a smooth field. Ground reaches down into the lower half of
+/// the image but not up to its top edge, unlike branches hanging in front of the sky or the
+/// lower edge of something blocking the view across the top.
+fn fill_below_land(landscape: &core::Mat) -> Result<core::Mat, String> {
+    let rows = landscape.rows();
+    let ground = components_where(landscape, 8, |_, top, _, height| {
+        top > 0 && 2 * (top + height) >= rows
+    })?;
+    let mut out = landscape
+        .try_clone()
+        .map_err(|e| format!("Mask clone error: {}", e))?;
+    let cols = landscape.cols() as usize;
+    let ground_data = ground
+        .data_bytes()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    let out_data = out
+        .data_bytes_mut()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    let mut below = vec![false; cols];
+    for (ground_row, out_row) in ground_data.chunks(cols).zip(out_data.chunks_mut(cols)) {
+        for ((flag, &value), out) in below.iter_mut().zip(ground_row).zip(out_row) {
+            *flag |= value > 0;
+            if *flag {
+                *out = 255;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Removes from `binary` what `links` connects to the landscape across small gaps. Twigs and
+/// leaves stay in `binary` as separate pieces, but they lead down to the tree they grow on.
+fn drop_linked(
+    binary: &core::Mat,
+    links: &core::Mat,
+    landscape: &core::Mat,
+    window: i32,
+) -> Result<core::Mat, String> {
+    let gap = (window as f64 * LANDSCAPE_GAP_RATIO).round() as i32;
+    // A square, not a disk: OpenCV.js dilates with a disk ten times slower.
+    let kernel = imgproc::get_structuring_element(
+        imgproc::MORPH_RECT,
+        core::Size::new(2 * gap + 1, 2 * gap + 1),
+        core::Point::new(-1, -1),
+    )
+    .map_err(|e| format!("Kernel error: {}", e))?;
+    let mut grown = core::Mat::default();
+    imgproc::dilate(
+        links,
+        &mut grown,
+        &kernel,
+        core::Point::new(-1, -1),
+        1,
+        core::BORDER_CONSTANT,
+        imgproc::morphology_default_border_value()
+            .map_err(|e| format!("Border value error: {}", e))?,
+    )
+    .map_err(|e| format!("Dilate error: {}", e))?;
+    let free = drop_touching(&grown, landscape)?;
+    let mut out = core::Mat::default();
+    core::bitwise_and(binary, &free, &mut out, &core::no_array())
+        .map_err(|e| format!("Mask combine error: {}", e))?;
+    Ok(out)
 }
 
 /// Candidate sky (255): the smooth components reaching the top edge. When those are missing
@@ -1020,6 +1153,52 @@ fn local_area(blob: &Blob, blobs: &[Blob]) -> Option<f64> {
     Some(median(&mut areas))
 }
 
+/// Removes tiny pieces right next to a much larger blob, like wing tips cut off from a bird.
+fn absorb_fragments(blobs: Vec<Blob>) -> Vec<Blob> {
+    if blobs.len() > SPLIT_MAX_DETECTIONS {
+        return blobs;
+    }
+    let keep: Vec<bool> = blobs
+        .iter()
+        .map(|blob| {
+            !blobs.iter().any(|large| {
+                if blob.area >= FRAGMENT_RATIO * large.area {
+                    return false;
+                }
+                let (left, top) = (large.bounds.x as f64, large.bounds.y as f64);
+                let right = left + large.bounds.width as f64;
+                let bottom = top + large.bounds.height as f64;
+                let dx = (left - blob.center.x).max(blob.center.x - right).max(0.0);
+                let dy = (top - blob.center.y).max(blob.center.y - bottom).max(0.0);
+                dx.hypot(dy) <= large.radius()
+            })
+        })
+        .collect();
+    blobs
+        .into_iter()
+        .zip(keep)
+        .filter(|(_, keep)| *keep)
+        .map(|(blob, _)| blob)
+        .collect()
+}
+
+/// Removes tiny compact dots when the photo also has larger birds: scattered over the sky
+/// without any bird shape, they are more often insects than birds. `whole_side` is the longer
+/// side of the whole photo in pixels of the blobs. A photo of only tiny birds keeps them all.
+fn drop_dots(blobs: Vec<Blob>, whole_side: i32) -> Vec<Blob> {
+    let mut areas: Vec<f64> = blobs.iter().map(|blob| blob.area).collect();
+    let typical = median(&mut areas);
+    let size = whole_side as f64 / MAX_WORKING_SIDE as f64;
+    let max_area = (DOT_MAX_AREA * size * size).min(DOT_MEDIAN_RATIO * typical);
+    let max_side = DOT_MAX_SIDE * size;
+    blobs
+        .into_iter()
+        .filter(|blob| {
+            blob.area >= max_area || blob.bounds.width.max(blob.bounds.height) as f64 > max_side
+        })
+        .collect()
+}
+
 /// Removes blobs much larger than a typical detection: anything touching the image edge
 /// (trees, roofs, lamps) above `BORDER_CLUTTER_RATIO` median blobs, and anything else above
 /// `MAX_CLUTTER_RATIO` of them. Elsewhere in the image a blob is also compared with its own
@@ -1136,6 +1315,38 @@ fn odd_kernel(value: i32, min_odd: i32) -> i32 {
 fn scaled_window(setting: i32, cols: i32, rows: i32) -> i32 {
     let scale = cols.max(rows) as f64 / WINDOW_REFERENCE_SIDE;
     odd_kernel((setting as f64 * scale).round() as i32, 3)
+}
+
+/// The scale of the working copy of a part of a photo of `cols` x `rows` (1 when it fits).
+fn working_scale(cols: i32, rows: i32) -> f64 {
+    (MAX_WORKING_SIDE as f64 / cols.max(rows) as f64).min(1.0)
+}
+
+fn scaled_side(side: i32, scale: f64) -> i32 {
+    ((side as f64 * scale).round() as i32).max(1)
+}
+
+/// A copy of `src` scaled by `scale`; `None` when that changes nothing.
+fn shrink(src: &core::Mat, scale: f64, interpolation: i32) -> Result<Option<core::Mat>, String> {
+    if scale >= 1.0 {
+        return Ok(None);
+    }
+    let size = core::Size::new(
+        scaled_side(src.cols(), scale),
+        scaled_side(src.rows(), scale),
+    );
+    let mut out = core::Mat::default();
+    imgproc::resize(src, &mut out, size, 0.0, 0.0, interpolation)
+        .map_err(|e| format!("Resize error: {}", e))?;
+    Ok(Some(out))
+}
+
+/// 255 wherever `src` is not 0.
+fn binarize(src: &core::Mat) -> Result<core::Mat, String> {
+    let mut out = core::Mat::default();
+    imgproc::threshold(src, &mut out, 0.0, 255.0, imgproc::THRESH_BINARY)
+        .map_err(|e| format!("Threshold error: {}", e))?;
+    Ok(out)
 }
 
 /// Median of `src` (8-bit) in a square window. A window too wide for the median filter
@@ -1699,6 +1910,78 @@ mod tests {
         assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
     }
 
+    /// Twigs with small gaps between their pieces, growing from the ground at `horizon`.
+    fn draw_bush(img: &mut core::Mat, horizon: i32) {
+        for stem in 0..9 {
+            let x = 600 + stem * 20;
+            let mut y = horizon;
+            while y > horizon - 90 {
+                imgproc::line(
+                    img,
+                    core::Point::new(x + y % 3, y),
+                    core::Point::new(x + 3, y - 6),
+                    core::Scalar::all(70.0),
+                    1,
+                    imgproc::LINE_8,
+                    0,
+                )
+                .unwrap();
+                y -= 11;
+            }
+        }
+    }
+
+    #[test]
+    fn drops_twigs_linked_to_a_bush() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 5, 90.0, &[]);
+        let horizon = 400;
+        rough_texture(HEIGHT - horizon, WIDTH)
+            .copy_to(
+                &mut img
+                    .roi_mut(core::Rect::new(0, horizon, WIDTH, HEIGHT - horizon))
+                    .unwrap(),
+            )
+            .unwrap();
+        draw_bush(&mut img, horizon);
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
+    #[test]
+    fn ignores_water_below_the_land() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 3, 90.0, &[]);
+        // A headland from the left edge, with water below it and to its right.
+        imgproc::rectangle(
+            &mut img,
+            core::Rect::new(0, 300, WIDTH, HEIGHT - 300),
+            core::Scalar::all(175.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        rough_texture(50, 560)
+            .copy_to(&mut img.roi_mut(core::Rect::new(0, 250, 560, 50)).unwrap())
+            .unwrap();
+        for wave in 0..9 {
+            imgproc::ellipse(
+                &mut img,
+                core::Point::new(60 + wave * 50, 380),
+                core::Size::new(10, 2),
+                0.0,
+                0.0,
+                360.0,
+                core::Scalar::all(120.0),
+                -1,
+                imgproc::LINE_AA,
+                0,
+            )
+            .unwrap();
+        }
+        assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
+    }
+
     /// When the top of the image is sky, a bigger and brighter lake below it stays out.
     #[test]
     fn keeps_a_bright_lake_out_when_the_top_is_sky() {
@@ -1858,6 +2141,11 @@ mod tests {
         assert_eq!(found.len(), 15);
         for bird in found {
             assert!(bird.radius > 0.9 * THICK_BIRD_RADIUS, "{:?}", bird);
+            // Counted on a smaller copy, but the positions are in pixels of the photo.
+            let col = ((bird.x - 400.0) / 700.0).round();
+            let row = ((bird.y - 400.0) / 700.0).round();
+            let offset = (bird.x - (400.0 + col * 700.0)).hypot(bird.y - (400.0 + row * 700.0));
+            assert!(offset < 3.0, "{:?}", bird);
         }
     }
 
@@ -1896,6 +2184,7 @@ mod tests {
             area,
             count: 1,
             touches_border: false,
+            bounds: core::Rect::new(x as i32, 0, 1, 1),
         }
     }
 
@@ -1941,6 +2230,43 @@ mod tests {
         let kept = drop_clutter(blobs);
         assert_eq!(kept.len(), 60 + near.len());
         assert!(kept.iter().all(|b| !b.touches_border && b.center.y == 0.0));
+    }
+
+    fn boxed(x: f64, area: f64, bounds: (i32, i32, i32, i32)) -> Blob {
+        Blob {
+            center: core::Point2d::new(x, 100.0),
+            bounds: core::Rect::new(bounds.0, bounds.1, bounds.2, bounds.3),
+            ..blob(x, area)
+        }
+    }
+
+    #[test]
+    fn absorb_fragments_merges_wing_tips() {
+        let blobs = vec![
+            boxed(100.0, 300.0, (90, 95, 20, 10)),  // a bird
+            boxed(113.0, 6.0, (112, 99, 2, 2)),     // its wing tip
+            boxed(200.0, 6.0, (199, 99, 2, 2)),     // a speck far away
+            boxed(118.0, 200.0, (111, 95, 14, 10)), // a neighbour of similar size
+        ];
+        let kept: Vec<f64> = absorb_fragments(blobs).iter().map(|b| b.center.x).collect();
+        assert_eq!(kept, vec![100.0, 200.0, 118.0]);
+    }
+
+    #[test]
+    fn drop_dots_keeps_birds_and_flocks_of_tiny_birds() {
+        let birds: Vec<Blob> = (0..10).map(|_| boxed(0.0, 250.0, (0, 0, 30, 12))).collect();
+        let dots: Vec<Blob> = (0..5).map(|_| boxed(0.0, 9.0, (0, 0, 3, 3))).collect();
+        let thin_bird = boxed(0.0, 15.0, (0, 0, 10, 2));
+        let mut all = birds.clone();
+        all.extend(dots.iter().cloned());
+        all.push(thin_bird);
+        assert_eq!(drop_dots(all, 2048).len(), 11);
+        // In a smaller photo the same dots are relatively larger.
+        let mut all = birds.clone();
+        all.extend(dots.iter().cloned());
+        assert_eq!(drop_dots(all, 1024).len(), 15);
+        let tiny_flock: Vec<Blob> = (0..12).map(|_| boxed(0.0, 10.0, (0, 0, 4, 3))).collect();
+        assert_eq!(drop_dots(tiny_flock, 2048).len(), 12);
     }
 
     #[test]
