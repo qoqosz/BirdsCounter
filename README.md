@@ -48,7 +48,8 @@ the formulas.
 - **Crop** shows the whole photo with the crop frame. Drag a corner or an edge to resize it, drag inside to move
   it, or drag outside it to draw a new one. *Reset* goes back to the whole photo, and the crop can be changed
   again later. The mask is kept when the crop changes.
-- **History** lists every photo with its latest count. Opening an entry restores its settings, crop and mask.
+- **Settings belong to one photo.** A new photo starts from the defaults, and changes apply only to that photo.
+- **History** lists every photo with its latest count. Opening an entry restores its last settings, crop and mask.
   Entries link to the photo instead of copying it: the photo library on iOS (opening it again asks for photo
   access) and Android (a persisted permission). Photos taken in the app are stored in
   its own folder (iOS: *Files → BirdsCounter → Photos*) and deleted with their entry. Only a small thumbnail is

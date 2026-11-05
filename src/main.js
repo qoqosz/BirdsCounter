@@ -386,19 +386,19 @@ async function openImage(bytes, mime, info, entry = null, maskBytes = null) {
   maskChangedSinceSave = false;
   cropRect = entry?.crop ? clampCrop(entry.crop) : null;
 
+  // Settings belong to one photo: every photo starts from the defaults, and a history
+  // entry then gets its own back. Before the await below, so that a count already
+  // scheduled can't use the previous photo's settings on this one.
+  applyDefaultParams();
+  if (entry) {
+    applyParamsToUI(entry.params);
+  }
+
   resetCropUI();
   clearMaskData();
   resetMaskUI();
   if (maskBytes) {
     await restoreMask(maskBytes);
-  }
-
-  // New photos start with the largest bird size the photo allows; history entries
-  // get their own settings back.
-  radiusInitialized = Boolean(entry);
-  updateRadiusLimits();
-  if (entry) {
-    applyParamsToUI(entry.params);
   }
 
   showPreview();
@@ -1893,12 +1893,15 @@ function applyParamsToUI(params) {
   syncSettingsOutputs();
 }
 
-// Back to the settings a new photo starts with, max radius included.
-function resetSettings() {
-  if (!defaultParams) return;
+// The settings a new photo starts with, including the largest bird size it allows.
+function applyDefaultParams() {
   applyParamsToUI(defaultParams);
   radiusInitialized = false;
   updateRadiusLimits();
+}
+
+function resetSettings() {
+  applyDefaultParams();
   scheduleProcess();
 }
 
@@ -1994,10 +1997,15 @@ function scheduleHistorySave() {
   }, HISTORY_SAVE_DELAY);
 }
 
+// Before leaving a photo. Settings that are still being counted are saved too, next to the
+// previous count, which is replaced when the entry is opened and counts again.
 function flushHistorySave() {
   if (historySaveTimer) {
     clearTimeout(historySaveTimer);
     historySaveTimer = null;
+  }
+  if (lastResult) {
+    lastResult = { ...lastResult, params: readParamsFromUI() };
     queueHistorySave();
   }
   return historySaveChain;
