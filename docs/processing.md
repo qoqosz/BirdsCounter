@@ -26,8 +26,9 @@ real photo tested, so treat the numbers as evidence and not as proof. [Known gap
 remain and the changes that were tried and rejected.
 
 > **Added later.** The pictures and numbers on this page come from version 0.12.1. Four steps were added after it, to
-> fix what eight more real photos showed. They are described in
-> [Added after the walkthrough](#added-after-the-walkthrough). With them this photo gives 50 birds instead of 53, against 49 counted by hand.
+> fix what eight more real photos showed, and three steps were changed later for photos of dense flocks. They are
+> described in [Added after the walkthrough](#added-after-the-walkthrough). With them this photo gives 50 birds instead
+> of 53, against 49 counted by hand.
 
 ## The steps at a glance
 
@@ -178,7 +179,8 @@ Being smooth is not enough. We use two more rules:
    To find these, we grow the "not sky" areas by 15 pixels of the tiny copy in every direction, which is about 93
    pixels on the real photo. If a grown piece reaches the edge of the photo, it is landscape. If it floats alone in
    the middle, it is an island and it stays sky. This photo has one tiny island, the orange dot in the left picture,
-   in a patch of cloud.
+   in a patch of cloud. *Changed later:* a grown piece is landscape only when it holds "not sky" that reaches the edge
+   itself, so an island near the edge but far from any land stays sky ([dense flocks](#dense-flocks)).
 
 Finally, a safety check. If less than 5% of the photo is sky, the photo is probably not a sky shot (think of birds on
 a lake), and the sky mask is not used at all. Here, 75% of the photo is sky, so we use it. The mask is then enlarged
@@ -418,6 +420,9 @@ After this step, 6,287 pixels remain, in 117 pieces.
 > **Review note.** Only cutting along the mask gives 67, because the branches stay. The cost is that a bird joined to
 > something dark goes with it: a wire across the sky takes 5 of 60 birds with it, and a faint streak reaching the ground
 > takes 8 of 38. That cost is accepted.
+>
+> *Changed later:* a piece reaching more than 8 local windows from the landscape is not a tree. It is a dense flock
+> grown into one piece, and it loses only its pixels within 3 windows of the landscape ([dense flocks](#dense-flocks)).
 
 ### Step 14: Group the pixels and demand one strong pixel
 
@@ -588,7 +593,7 @@ catch the far flock. Lowering it has a cost, though. It catches more of that flo
 ## Added after the walkthrough
 
 Eight more real photos ([`images/birds`](../images/birds)) showed problems the photo above doesn't have. These four
-steps fix them. The working copy comes before step 1, the ground is added to the sky mask in step 4, twigs are removed
+steps fix them, and [dense flocks](#dense-flocks) describes three later changes for flocks of hundreds or thousands. The working copy comes before step 1, the ground is added to the sky mask in step 4, twigs are removed
 right after step 13, and wing tips and dots right after step 14.
 
 ### A working copy of at most 2048 pixels
@@ -645,7 +650,40 @@ with the sensitivity slider: from $k = 7$ to $k = 11$, most photos change by 3 b
 
 The photo on this page gives 50, against 49 counted by hand without the far flock. The twig from [Where it goes wrong](#where-it-goes-wrong) is gone, but so are two real
 birds. One is the only ring on the far flock, a 7 pixel dot. The other is a small bird, clearly V-shaped but only 19
-pixels. Without the sky mask, it now gives 112 instead of 332.
+pixels. Without the sky mask, it now gives 112 instead of 332 (305 since the [dense flock](#dense-flocks) changes).
+
+### Dense flocks
+
+Eight more photos, of flocks of hundreds or thousands of birds, went badly. They are stock and press photos, so they
+are not in the repository. Three steps lost most of a dense flock:
+
+- **Step 4 took a flock for land.** A dense flock looks rough even after the closing. When it flew low over smooth
+  water, it was close enough to the bottom edge for its grown piece to reach it, so it became landscape. Now a grown
+  piece is landscape only when it holds "not sky" that reaches the edge itself, so it has to be near real land.
+- **Step 13 dropped whole flocks.** In a dense flock the $q > 0.6$ pixels join a whole flock into one piece. When the
+  bottom of the flock touched a mountain or the water, the piece went, with up to a thousand birds. Now a piece that
+  touches the landscape and stays within 8 local windows of it is still removed whole, like a tree or a bush, and the
+  twig links of [Twigs linked to a tree](#twigs-linked-to-a-tree) work the same way. A piece reaching farther is a flock, and
+  it loses only its pixels within 3 windows of the landscape. On all the sample photos, removing only the pixels within
+  3 windows already gives the same counts as before. The limit of 8 is there for the bush in the tests, which is 6
+  windows tall.
+- **Wing tips swallowed birds.** A clump of 20 merged birds is so large that a single bird next to it looked like its
+  wing tip. Now only a group of at most 3 local birds (the median of its neighbours, as in step 17) can have wing tips.
+
+| Photo | Before | Now | What is still wrong, judged by eye |
+| --- | --- | --- | --- |
+| Storks over a coast, 4608 px | 769 | 809 | Black wings and white bodies fall apart, so many single storks count as 2 or 3 ([gap 1](#gap-1-steps-16-and-17-judge-size-too-simply)) |
+| Lapwings and starlings over clouds, 2560 px | 3843 | 4109 | Lapwings count as 2 to 5, next to the smaller starlings (gap 1) |
+| Geese at sunset over reeds, 1500 px | 233 | 242 | Near geese count as 2 next to far ones (gap 1), the far flock at the horizon is mostly missed ([gap 4](#gap-4-birds-next-to-the-landscape)) |
+| Snow geese over a mountain and a lake, 3072 px | 201 | 1110 | The lower, densest part is still partly missed: the geese are white with dark wing tips ([gap 2](#gap-2-a-dense-flock-partly-hides-itself), [gap 3](#gap-3-only-dark-or-only-light-birds)) |
+| Dense flock filling a small photo, 640 px | 1863 | 1889 | The densest band in the middle is missed (gap 2) |
+| Starlings low over water, 739 px | 37 | 1279 | The core of the flock is partly missed (gap 2), and about 35 waves count, because the photo has no land and all the water looks like sky |
+| Knots over a mudflat, 1300 px | 28 | 414 | The flock's centre reaches the mudflat and is taken for land (gap 4) |
+| Cranes over a meadow with trees, 1200 px | 117 | 117 | A few cranes next to the trees are missed (gap 4) |
+
+The sample photos and the photo on this page give the same counts as before. At $k = 7$ they still do, and at
+$k = 11$ one photo gains 1 bird. The time doesn't change either. The zones of 3 and 8 windows are grown on the tiny copy of step 2, because growing them on the
+photo took 2 to 3 seconds in the browser.
 
 ## Known gaps and what was tried
 
@@ -673,6 +711,7 @@ Tried and rejected, because each one fixes one thing and breaks another:
 | Whole-photo median for groups with few neighbours | isolated ball of 30: 41 → 54 (true count 70) | this photo at $k = 4$: 80 → 135, and the smooth sky scene: 32 → 48 (true count 30) |
 | Edge limit of 5 or 8 instead of 3 | 4 merged birds at the edge: 40 → 41 (true count 44) | mask-off count of this photo: 332 → 340 at 5, and 351 at 8 |
 | Comparing with $m_G$ at the edge too | nothing in the scenes | mask-off count of this photo: 332 → 340 |
+| The 75th percentile of the neighbours in step 17 instead of the median, for near birds next to far ones | storks over a coast: 769 → 646 | sample photo 04: 51 → 44, and this photo: 50 → 46 (measured before the dense flock changes) |
 
 ### Gap 2: A dense flock partly hides itself
 
@@ -687,6 +726,10 @@ Tried and rejected:
 | Measuring busyness a second time, without pixels above $q > 1$ | dense flock: 373 → 395 of 420 | ball of 120 birds: 81 → 59 (true count 180), and the slowest step runs twice |
 | The same, without pixels above $q > 0.6$ | dense flock: 373 → 420 of 420 | this photo at $k = 4$: 80 → 104, and the ball of 120 as above |
 | Measuring only pixels darker than the sky | dense flock: 373 → 420 of 420 | this photo: 53 → 62 |
+| A largest busyness of 0.03 instead of 0.05 | dense flock filling a small photo: 1889 → 2911 | starlings low over water: 1279 → 1221, because the flock joins into larger pieces, and sample photo 01: 7 → 11 |
+
+The dense flock photos of [dense flocks](#dense-flocks) show this gap at its worst: in the middle of a flock of knots
+or snow geese, birds cover more than half of the window, and the busyness reaches its largest value of 0.05.
 
 ### Gap 3: Only dark or only light birds
 
@@ -711,6 +754,7 @@ Tried and rejected:
 | --- | --- | --- |
 | Counting dark cores inside a group, instead of area | chains of birds joined by their thin wings | splits most single birds with two-tone wings |
 | A sensitivity chosen per photo, where the count changes least | nothing, once the four steps above were added | |
+| A closing of the photo before shrinking it for step 2, so a dense flock looks smooth | starlings low over water are found, but only with a closing 3 tiny-copy pixels wide | storks over a coast: 769 → 309, because clumps of storks became land and took their neighbours with them (measured before the dense flock changes) |
 
 ### Left as they are
 
@@ -755,6 +799,8 @@ Tried and rejected:
 | 2048 | Added | Longest side of the working copy, and the photo size the dot limits are for |
 | 0.25 and 9 | Added | Gap to the landscape, in local windows, and the sensitivity of the links across it |
 | 12% | Added | Largest wing tip, as a fraction of the group next to it |
+| 3 | Added | Largest group with wing tips, in local birds |
+| 3 and 8 | Added | A piece touching the landscape loses its pixels within 3 local windows of it, or all of them if it stays within 8 |
 | 20, 7 and 0.5 | Added | Largest dot area and length in pixels, and fraction of the median group |
 
 ## What about the other methods?

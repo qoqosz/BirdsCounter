@@ -63,9 +63,18 @@ const LANDSCAPE_GAP_RATIO: f64 = 0.25;
 /// The links to the landscape use this sensitivity, not the slider's: at a low setting, cloud
 /// texture would connect the whole sky to the ground.
 const LANDSCAPE_LINK_SENSITIVITY: f32 = 9.0;
+/// A candidate touching the landscape, or linked to it, is dropped whole when it lies within this
+/// many local windows of it, like a tree top or a bush.
+const LANDSCAPE_REACH_WINDOWS: f64 = 8.0;
+/// A candidate reaching farther is a dense flock merged into one candidate, and it loses only its
+/// pixels within this many local windows of the landscape.
+const LANDSCAPE_CUT_WINDOWS: f64 = 3.0;
 /// A blob smaller than this fraction of a much larger one right next to it is a piece of it,
 /// such as a wing tip. Right next to it means within the larger blob's radius of its bounds.
 const FRAGMENT_RATIO: f64 = 0.12;
+/// Only a blob of at most this many local birds (`local_area`) has wing tips: in a dense flock, a
+/// clump of merged birds is much larger than the single birds next to it.
+const FRAGMENT_MAX_BIRDS: f64 = 3.0;
 /// Compact dots smaller than this, for a photo with a longer side of `MAX_WORKING_SIDE`, are
 /// not counted when the photo also has larger birds (see `drop_dots`).
 const DOT_MAX_AREA: f64 = 20.0;
@@ -227,15 +236,25 @@ struct Masks<'a> {
     /// Painted by the user (255 = excluded); detections are cut along it.
     exclusion: Option<&'a core::Mat>,
     /// Everything but the sky (255). Detections touching it are trees, roofs or the
-    /// horizon reaching into the sky, so they are dropped as a whole.
+    /// horizon reaching into the sky, so they are dropped (see `drop_touching`).
     landscape: Option<&'a core::Mat>,
+    /// The zones around `landscape`.
+    reach: Option<&'a Reach>,
+}
+
+/// Zones around the landscape (255), see `drop_touching`.
+struct Reach {
+    /// Within `LANDSCAPE_CUT_WINDOWS` of it.
+    near: core::Mat,
+    /// Within `LANDSCAPE_REACH_WINDOWS` of it.
+    far: core::Mat,
 }
 
 impl Masks<'_> {
     fn apply(&self, binary: core::Mat) -> Result<core::Mat, String> {
         let mut out = binary;
-        if let Some(landscape) = self.landscape {
-            out = drop_touching(&out, landscape)?;
+        if let (Some(landscape), Some(reach)) = (self.landscape, self.reach) {
+            out = drop_touching(&out, landscape, reach)?;
         }
         if let Some(exclusion) = self.exclusion {
             out = apply_exclusion_mask(&out, exclusion)?;
@@ -339,7 +358,8 @@ impl BlobFilter {
         };
         let masks = Masks {
             exclusion: exclusion_mask.as_ref(),
-            landscape: landscape.as_ref(),
+            landscape: landscape.as_ref().map(|(mask, _)| mask),
+            reach: landscape.as_ref().map(|(_, reach)| reach),
         };
 
         let mut blobs = if params
@@ -553,8 +573,8 @@ impl BlobFilter {
             }
         }
         candidates = masks.apply(candidates)?;
-        if let Some(landscape) = masks.landscape {
-            candidates = drop_linked(&candidates, &links, landscape, window)?;
+        if let (Some(landscape), Some(reach)) = (masks.landscape, masks.reach) {
+            candidates = drop_linked(&candidates, &links, landscape, reach, window)?;
         }
 
         let mut labels = core::Mat::default();
@@ -762,12 +782,13 @@ impl BlobFilter {
 /// connected to its top edge (see `sky_candidates`), plus rough islands far from the rest (dense flocks,
 /// sharp cloud edges). Smoothness is the relative gradient of a downscaled copy from
 /// which birds were removed by a closing (an opening for `bright_birds`) one window
-/// wide. Returns `None` when there is (almost) no sky.
+/// wide. Returns `None` when there is (almost) no sky, and the zones around the landscape with
+/// the mask (grown on the small copy, which is much faster).
 fn landscape_mask(
     gray: &core::Mat,
     window: i32,
     bright_birds: bool,
-) -> Result<Option<core::Mat>, String> {
+) -> Result<Option<(core::Mat, Reach)>, String> {
     let scale = (window as f64 / SKY_MASK_WINDOW as f64).max(1.0);
     let size = core::Size::new(
         ((gray.cols() as f64 / scale).round() as i32).max(1),
@@ -863,7 +884,8 @@ fn landscape_mask(
     let top_smooth = sky_candidates(&smooth, &closed, bright_birds)?;
     // Landscape: the rest of the image connected to its edges, together with rough
     // islands near it (leaves sticking out of a tree). Islands farther away are
-    // dense flocks or sharp cloud edges and stay sky.
+    // dense flocks or sharp cloud edges and stay sky, also when they are near the edge
+    // of the photo (a flock low over smooth water).
     let not_sky = invert_image(&top_smooth)?;
     let reach = 2 * SKY_REACH + 1;
     let reach_kernel = imgproc::get_structuring_element(
@@ -884,9 +906,10 @@ fn landscape_mask(
     )
     .map_err(|e| format!("Sky dilate error: {}", e))?;
     let (cols, rows) = (size.width, size.height);
-    let landscape_zone = components_where(&grown, 8, |left, top, width, height| {
+    let edge_land = components_where(&not_sky, 8, |left, top, width, height| {
         left == 0 || top == 0 || left + width >= cols || top + height >= rows
     })?;
+    let landscape_zone = components_touching(&grown, &edge_land)?;
     let mut landscape = core::Mat::default();
     core::bitwise_and(&not_sky, &landscape_zone, &mut landscape, &core::no_array())
         .map_err(|e| format!("Mask combine error: {}", e))?;
@@ -899,22 +922,34 @@ fn landscape_mask(
     }
 
     let landscape = fill_below_land(&landscape)?;
+    let windows = |count: f64| (window as f64 * count / scale).round() as i32;
+    let near = grow(&landscape, windows(LANDSCAPE_CUT_WINDOWS))?;
+    let far = grow(&landscape, windows(LANDSCAPE_REACH_WINDOWS))?;
 
-    let mut upscaled = core::Mat::default();
     let full_size = gray.size().map_err(|e| format!("Size error: {}", e))?;
-    imgproc::resize(
-        &landscape,
-        &mut upscaled,
-        full_size,
-        0.0,
-        0.0,
-        imgproc::INTER_LINEAR,
-    )
-    .map_err(|e| format!("Sky resize error: {}", e))?;
-    let mut full = core::Mat::default();
-    imgproc::threshold(&upscaled, &mut full, 127.0, 255.0, imgproc::THRESH_BINARY)
-        .map_err(|e| format!("Sky threshold error: {}", e))?;
-    Ok(Some(full))
+    let upscale = |mask: &core::Mat| -> Result<core::Mat, String> {
+        let mut upscaled = core::Mat::default();
+        imgproc::resize(
+            mask,
+            &mut upscaled,
+            full_size,
+            0.0,
+            0.0,
+            imgproc::INTER_LINEAR,
+        )
+        .map_err(|e| format!("Sky resize error: {}", e))?;
+        let mut full = core::Mat::default();
+        imgproc::threshold(&upscaled, &mut full, 127.0, 255.0, imgproc::THRESH_BINARY)
+            .map_err(|e| format!("Sky threshold error: {}", e))?;
+        Ok(full)
+    };
+    Ok(Some((
+        upscale(&landscape)?,
+        Reach {
+            near: upscale(&near)?,
+            far: upscale(&far)?,
+        },
+    )))
 }
 
 /// `landscape` with everything below the ground marked too: sky can't be under it, and what
@@ -948,25 +983,36 @@ fn fill_below_land(landscape: &core::Mat) -> Result<core::Mat, String> {
     Ok(out)
 }
 
-/// Removes from `binary` what `links` connects to the landscape across small gaps. Twigs and
-/// leaves stay in `binary` as separate pieces, but they lead down to the tree they grow on.
+/// Removes from `binary` what `links` connects to the landscape across small gaps (as
+/// `drop_touching` does). Twigs and leaves stay in `binary` as separate pieces, but they lead down
+/// to the tree they grow on.
 fn drop_linked(
     binary: &core::Mat,
     links: &core::Mat,
     landscape: &core::Mat,
+    reach: &Reach,
     window: i32,
 ) -> Result<core::Mat, String> {
-    let gap = (window as f64 * LANDSCAPE_GAP_RATIO).round() as i32;
-    // A square, not a disk: OpenCV.js dilates with a disk ten times slower.
+    let grown = grow(links, (window as f64 * LANDSCAPE_GAP_RATIO).round() as i32)?;
+    let free = drop_touching(&grown, landscape, reach)?;
+    let mut out = core::Mat::default();
+    core::bitwise_and(binary, &free, &mut out, &core::no_array())
+        .map_err(|e| format!("Mask combine error: {}", e))?;
+    Ok(out)
+}
+
+/// `mask` grown by `reach` pixels in every direction. A square, not a disk: OpenCV.js dilates
+/// with a disk ten times slower.
+fn grow(mask: &core::Mat, reach: i32) -> Result<core::Mat, String> {
     let kernel = imgproc::get_structuring_element(
         imgproc::MORPH_RECT,
-        core::Size::new(2 * gap + 1, 2 * gap + 1),
+        core::Size::new(2 * reach + 1, 2 * reach + 1),
         core::Point::new(-1, -1),
     )
     .map_err(|e| format!("Kernel error: {}", e))?;
     let mut grown = core::Mat::default();
     imgproc::dilate(
-        links,
+        mask,
         &mut grown,
         &kernel,
         core::Point::new(-1, -1),
@@ -976,11 +1022,7 @@ fn drop_linked(
             .map_err(|e| format!("Border value error: {}", e))?,
     )
     .map_err(|e| format!("Dilate error: {}", e))?;
-    let free = drop_touching(&grown, landscape)?;
-    let mut out = core::Mat::default();
-    core::bitwise_and(binary, &free, &mut out, &core::no_array())
-        .map_err(|e| format!("Mask combine error: {}", e))?;
-    Ok(out)
+    Ok(grown)
 }
 
 /// Candidate sky (255): the smooth components reaching the top edge. When those are missing
@@ -1128,6 +1170,41 @@ fn components_where(
     Ok(mask)
 }
 
+/// Mask (255) of the connected components of a binary image that share a pixel with `seeds`.
+fn components_touching(binary: &core::Mat, seeds: &core::Mat) -> Result<core::Mat, String> {
+    let mut labels = core::Mat::default();
+    let label_count = imgproc::connected_components(binary, &mut labels, 8, core::CV_32S)
+        .map_err(|e| format!("Connected components error: {}", e))? as usize;
+    let label_data = labels
+        .data_typed::<i32>()
+        .map_err(|e| format!("Label access error: {}", e))?;
+    let seed_data = seeds
+        .data_bytes()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    let mut selected = vec![false; label_count];
+    for (&label, &seed) in label_data.iter().zip(seed_data) {
+        if seed > 0 && label > 0 {
+            selected[label as usize] = true;
+        }
+    }
+    let mut mask = core::Mat::new_rows_cols_with_default(
+        binary.rows(),
+        binary.cols(),
+        core::CV_8U,
+        core::Scalar::all(0.0),
+    )
+    .map_err(|e| format!("Alloc error: {}", e))?;
+    let mask_data = mask
+        .data_bytes_mut()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    for (out, &label) in mask_data.iter_mut().zip(label_data) {
+        if selected[label as usize] {
+            *out = 255;
+        }
+    }
+    Ok(mask)
+}
+
 /// The median area of the detections near `blob`, from the same flock; `None` when there
 /// are too few of them to tell. A detection counts as near when it lies within
 /// `SPLIT_NEIGHBOUR_DISTANCE` of *its own* sizes, so small noise specks or a distant flock
@@ -1153,27 +1230,40 @@ fn local_area(blob: &Blob, blobs: &[Blob]) -> Option<f64> {
     Some(median(&mut areas))
 }
 
-/// Removes tiny pieces right next to a much larger blob, like wing tips cut off from a bird.
+/// Removes tiny pieces right next to a much larger blob, like wing tips cut off from a bird. The
+/// larger blob must be a bird or two (`FRAGMENT_MAX_BIRDS`), not a clump of a dense flock.
 fn absorb_fragments(blobs: Vec<Blob>) -> Vec<Blob> {
     if blobs.len() > SPLIT_MAX_DETECTIONS {
         return blobs;
     }
-    let keep: Vec<bool> = blobs
-        .iter()
-        .map(|blob| {
-            !blobs.iter().any(|large| {
-                if blob.area >= FRAGMENT_RATIO * large.area {
-                    return false;
-                }
-                let (left, top) = (large.bounds.x as f64, large.bounds.y as f64);
-                let right = left + large.bounds.width as f64;
-                let bottom = top + large.bounds.height as f64;
-                let dx = (left - blob.center.x).max(blob.center.x - right).max(0.0);
-                let dy = (top - blob.center.y).max(blob.center.y - bottom).max(0.0);
-                dx.hypot(dy) <= large.radius()
-            })
-        })
-        .collect();
+    let near = |blob: &Blob, large: &Blob| {
+        if blob.area >= FRAGMENT_RATIO * large.area {
+            return false;
+        }
+        let (left, top) = (large.bounds.x as f64, large.bounds.y as f64);
+        let right = left + large.bounds.width as f64;
+        let bottom = top + large.bounds.height as f64;
+        let dx = (left - blob.center.x).max(blob.center.x - right).max(0.0);
+        let dy = (top - blob.center.y).max(blob.center.y - bottom).max(0.0);
+        dx.hypot(dy) <= large.radius()
+    };
+    // Whether each blob can have wing tips, worked out only for blobs next to a fragment.
+    let mut single: Vec<Option<bool>> = vec![None; blobs.len()];
+    let mut keep = vec![true; blobs.len()];
+    for (index, blob) in blobs.iter().enumerate() {
+        for (large_index, large) in blobs.iter().enumerate() {
+            if !near(blob, large) {
+                continue;
+            }
+            let is_single = *single[large_index].get_or_insert_with(|| {
+                local_area(large, &blobs).is_none_or(|area| large.area <= FRAGMENT_MAX_BIRDS * area)
+            });
+            if is_single {
+                keep[index] = false;
+                break;
+            }
+        }
+    }
     blobs
         .into_iter()
         .zip(keep)
@@ -1458,7 +1548,13 @@ fn decode_mask(mask_bytes: &[u8], width: i32, height: i32) -> Result<core::Mat, 
 }
 
 /// Removes the connected components of `binary` that overlap `forbidden`.
-fn drop_touching(binary: &core::Mat, forbidden: &core::Mat) -> Result<core::Mat, String> {
+/// Removes from `binary` every component that touches `forbidden` and stays within `reach.far`.
+/// Of one that reaches farther, only the pixels within `reach.near` are removed.
+fn drop_touching(
+    binary: &core::Mat,
+    forbidden: &core::Mat,
+    reach: &Reach,
+) -> Result<core::Mat, String> {
     let mut labels = core::Mat::default();
     let label_count = imgproc::connected_components(binary, &mut labels, 8, core::CV_32S)
         .map_err(|e| format!("Connected components error: {}", e))? as usize;
@@ -1468,10 +1564,18 @@ fn drop_touching(binary: &core::Mat, forbidden: &core::Mat) -> Result<core::Mat,
     let forbidden_data = forbidden
         .data_bytes()
         .map_err(|e| format!("Mask access error: {}", e))?;
+    let far_data = reach
+        .far
+        .data_bytes()
+        .map_err(|e| format!("Mask access error: {}", e))?;
     let mut touching = vec![false; label_count];
-    for (&label, &excluded) in label_data.iter().zip(forbidden_data) {
+    let mut escapes = vec![false; label_count];
+    for ((&label, &excluded), &far) in label_data.iter().zip(forbidden_data).zip(far_data) {
         if excluded > 0 {
             touching[label as usize] = true;
+        }
+        if far == 0 {
+            escapes[label as usize] = true;
         }
     }
     let mut out = core::Mat::new_rows_cols_with_default(
@@ -1484,8 +1588,13 @@ fn drop_touching(binary: &core::Mat, forbidden: &core::Mat) -> Result<core::Mat,
     let out_data = out
         .data_bytes_mut()
         .map_err(|e| format!("Mask access error: {}", e))?;
-    for (value, &label) in out_data.iter_mut().zip(label_data) {
-        if label > 0 && !touching[label as usize] {
+    let near_data = reach
+        .near
+        .data_bytes()
+        .map_err(|e| format!("Mask access error: {}", e))?;
+    for ((value, &label), &close) in out_data.iter_mut().zip(label_data).zip(near_data) {
+        let label = label as usize;
+        if label > 0 && !(touching[label] && (close > 0 || !escapes[label])) {
             *value = 255;
         }
     }
@@ -2250,6 +2359,83 @@ mod tests {
         ];
         let kept: Vec<f64> = absorb_fragments(blobs).iter().map(|b| b.center.x).collect();
         assert_eq!(kept, vec![100.0, 200.0, 118.0]);
+    }
+
+    #[test]
+    fn absorb_fragments_keeps_birds_next_to_a_clump() {
+        // A clump of about 20 merged birds in a dense flock, and single birds around it. Two of
+        // them are as close to the clump as a wing tip would be.
+        let mut blobs = vec![boxed(100.0, 400.0, (88, 88, 25, 25))];
+        for x in [120.0, 124.0, 130.0, 140.0, 150.0, 75.0] {
+            blobs.push(boxed(x, 20.0, (x as i32 - 2, 98, 4, 5)));
+        }
+        assert_eq!(absorb_fragments(blobs).len(), 7);
+    }
+
+    fn filled(rows: i32, cols: i32, rects: &[(i32, i32, i32, i32)]) -> core::Mat {
+        let mut mask =
+            core::Mat::new_rows_cols_with_default(rows, cols, core::CV_8U, core::Scalar::all(0.0))
+                .unwrap();
+        for &(x, y, width, height) in rects {
+            imgproc::rectangle(
+                &mut mask,
+                core::Rect::new(x, y, width, height),
+                core::Scalar::all(255.0),
+                -1,
+                imgproc::LINE_8,
+                0,
+            )
+            .unwrap();
+        }
+        mask
+    }
+
+    fn pixels(mask: &core::Mat, rect: (i32, i32, i32, i32)) -> i32 {
+        let roi = core::Mat::roi(mask, core::Rect::new(rect.0, rect.1, rect.2, rect.3)).unwrap();
+        core::count_non_zero(&roi).unwrap()
+    }
+
+    #[test]
+    fn drop_touching_keeps_what_reaches_far_into_the_sky() {
+        let ground = filled(100, 100, &[(0, 90, 100, 10)]);
+        let reach = Reach {
+            near: grow(&ground, 15).unwrap(),
+            far: grow(&ground, 40).unwrap(),
+        };
+        let candidates = filled(
+            100,
+            100,
+            &[
+                (20, 10, 4, 85), // a dense flock merged into one candidate, down to the ground
+                (60, 70, 4, 25), // a bush
+                (80, 20, 4, 4),  // a bird
+            ],
+        );
+        let kept = drop_touching(&candidates, &ground, &reach).unwrap();
+        assert_eq!(pixels(&kept, (20, 10, 4, 65)), 4 * 65);
+        assert_eq!(pixels(&kept, (20, 75, 4, 25)), 0);
+        assert_eq!(pixels(&kept, (60, 70, 4, 25)), 0);
+        assert_eq!(pixels(&kept, (80, 20, 4, 4)), 16);
+    }
+
+    #[test]
+    fn rough_island_near_the_edge_stays_sky() {
+        // A dense flock low over smooth water looks rough, like the landscape, and lies close to
+        // the bottom edge, but no land is near it.
+        let mut img = sky(200.0);
+        let (left, top, width, height) = (300, HEIGHT - 90, 200, 60);
+        rough_texture(height, width)
+            .copy_to(
+                &mut img
+                    .roi_mut(core::Rect::new(left, top, width, height))
+                    .unwrap(),
+            )
+            .unwrap();
+        let window = scaled_window(31, WIDTH, HEIGHT);
+        let landscape = landscape_mask(&to_gray(&img).unwrap(), window, false).unwrap();
+        if let Some((landscape, _)) = landscape {
+            assert_eq!(pixels(&landscape, (left, top, width, height)), 0);
+        }
     }
 
     #[test]

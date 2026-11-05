@@ -457,6 +457,76 @@ test("absorb fragments merges wing tips", () => {
   assert.deepEqual(kept, [bird, speck, neighbour]);
 });
 
+test("absorb fragments keeps birds next to a clump", () => {
+  // A clump of about 20 merged birds in a dense flock, and single birds around it. Two of them
+  // are as close to the clump as a wing tip would be.
+  const clump = { x: 100, y: 100, area: 400, left: 88, top: 88, width: 25, height: 25 };
+  const birds = [120, 124, 130, 140, 150, 75].map((x) => ({
+    x,
+    y: 100,
+    area: 20,
+    left: x - 2,
+    top: 98,
+    width: 4,
+    height: 5,
+  }));
+  assert.equal(BirdDetector.absorbFragments([clump, ...birds]).length, 7);
+});
+
+function filled(rows, cols, rects) {
+  const mask = cv.Mat.zeros(rows, cols, cv.CV_8U);
+  for (const [x, y, width, height] of rects) {
+    cv.rectangle(mask, new cv.Point(x, y), new cv.Point(x + width - 1, y + height - 1), new cv.Scalar(255), -1, cv.LINE_8, 0);
+  }
+  return mask;
+}
+
+function pixels(mask, [x, y, width, height]) {
+  const roi = mask.roi(new cv.Rect(x, y, width, height));
+  const count = cv.countNonZero(roi);
+  roi.delete();
+  return count;
+}
+
+test("drop touching keeps what reaches far into the sky", () => {
+  const scope = new BirdDetector.Scope();
+  try {
+    const ground = scope.add(filled(100, 100, [[0, 90, 100, 10]]));
+    const reach = { near: detector.grow(ground, 15, scope), far: detector.grow(ground, 40, scope) };
+    const candidates = scope.add(
+      filled(100, 100, [
+        [20, 10, 4, 85], // a dense flock merged into one candidate, down to the ground
+        [60, 70, 4, 25], // a bush
+        [80, 20, 4, 4], // a bird
+      ]),
+    );
+    const kept = detector.dropTouching(candidates, ground, reach, scope);
+    assert.equal(pixels(kept, [20, 10, 4, 65]), 4 * 65);
+    assert.equal(pixels(kept, [20, 75, 4, 25]), 0);
+    assert.equal(pixels(kept, [60, 70, 4, 25]), 0);
+    assert.equal(pixels(kept, [80, 20, 4, 4]), 16);
+  } finally {
+    scope.release();
+  }
+});
+
+test("rough island near the edge stays sky", () => {
+  // A dense flock low over smooth water looks rough, like the landscape, and lies close to the
+  // bottom edge, but no land is near it.
+  const img = sky(200);
+  const [left, top, width, height] = [300, HEIGHT - 90, 200, 60];
+  paste(img, roughTexture(height, width), left, top);
+  const scope = new BirdDetector.Scope();
+  try {
+    const window = BirdDetector.scaledWindow(31, WIDTH, HEIGHT);
+    const landscape = detector.landscapeMask(img, window, false, scope);
+    if (landscape) assert.equal(pixels(landscape.mask, [left, top, width, height]), 0);
+  } finally {
+    scope.release();
+    img.delete();
+  }
+});
+
 test("drop dots keeps birds and flocks of tiny birds", () => {
   const box = (area, width, height) => ({ x: 0, y: 0, area, left: 0, top: 0, width, height });
   const birds = Array.from({ length: 10 }, () => box(250, 30, 12));

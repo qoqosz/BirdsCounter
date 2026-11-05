@@ -36,7 +36,10 @@
   const MAX_WORKING_SIDE = 2048;
   const LANDSCAPE_GAP_RATIO = 0.25;
   const LANDSCAPE_LINK_SENSITIVITY = f(9.0);
+  const LANDSCAPE_REACH_WINDOWS = 8.0;
+  const LANDSCAPE_CUT_WINDOWS = 3.0;
   const FRAGMENT_RATIO = 0.12;
+  const FRAGMENT_MAX_BIRDS = 3.0;
   const DOT_MAX_AREA = 20.0;
   const DOT_MAX_SIDE = 7.0;
   const DOT_MEDIAN_RATIO = 0.5;
@@ -141,20 +144,30 @@
     });
   }
 
-  /** Removes tiny pieces right next to a much larger blob (see absorb_fragments). */
+  /**
+   * Removes tiny pieces right next to a much larger blob of at most FRAGMENT_MAX_BIRDS local
+   * birds (see absorb_fragments).
+   */
   function absorbFragments(blobs) {
     if (blobs.length > SPLIT_MAX_DETECTIONS) return blobs;
-    return blobs.filter(
-      (blob) =>
-        !blobs.some((large) => {
-          if (blob.area >= FRAGMENT_RATIO * large.area) return false;
-          const right = large.left + large.width;
-          const bottom = large.top + large.height;
-          const dx = Math.max(large.left - blob.x, blob.x - right, 0);
-          const dy = Math.max(large.top - blob.y, blob.y - bottom, 0);
-          return Math.hypot(dx, dy) <= blobRadius(large);
-        }),
-    );
+    const near = (blob, large) => {
+      if (blob.area >= FRAGMENT_RATIO * large.area) return false;
+      const right = large.left + large.width;
+      const bottom = large.top + large.height;
+      const dx = Math.max(large.left - blob.x, blob.x - right, 0);
+      const dy = Math.max(large.top - blob.y, blob.y - bottom, 0);
+      return Math.hypot(dx, dy) <= blobRadius(large);
+    };
+    // Whether each blob can have wing tips, worked out only for blobs next to a fragment.
+    const single = new Map();
+    const isSingle = (large) => {
+      if (!single.has(large)) {
+        const area = localArea(large, blobs);
+        single.set(large, area === null || large.area <= FRAGMENT_MAX_BIRDS * area);
+      }
+      return single.get(large);
+    };
+    return blobs.filter((blob) => !blobs.some((large) => near(blob, large) && isSingle(large)));
   }
 
   /**
@@ -265,8 +278,12 @@
       }
     }
 
-    /** Removes the connected components of `binary` that overlap `forbidden`. */
-    function dropTouching(binary, forbidden, scope) {
+    /**
+     * Removes from `binary` every component that overlaps `forbidden` and stays within `reach.far`.
+     * Of one that reaches farther, only the pixels within `reach.near` are removed (see
+     * drop_touching in blob_filter.rs).
+     */
+    function dropTouching(binary, forbidden, reach, scope) {
       const local = new Scope();
       try {
         const labels = mat(local);
@@ -274,14 +291,63 @@
         const out = zeros(scope, binary.rows, binary.cols);
         const labelData = labels.data32S;
         const forbiddenData = forbidden.data;
+        const nearData = reach.near.data;
+        const farData = reach.far.data;
         const outData = out.data;
         const touching = new Uint8Array(labelCount);
+        const escapes = new Uint8Array(labelCount);
         for (let i = 0; i < labelData.length; i++) {
           if (forbiddenData[i] > 0) touching[labelData[i]] = 1;
+          if (farData[i] === 0) escapes[labelData[i]] = 1;
         }
         for (let i = 0; i < labelData.length; i++) {
           const label = labelData[i];
-          if (label > 0 && !touching[label]) outData[i] = 255;
+          if (label > 0 && !(touching[label] && (nearData[i] > 0 || !escapes[label]))) {
+            outData[i] = 255;
+          }
+        }
+        return out;
+      } finally {
+        local.release();
+      }
+    }
+
+    /** `mask` grown by `reach` pixels in every direction, with a square (see grow). */
+    function grow(mask, reach, scope) {
+      const local = new Scope();
+      try {
+        const out = mat(scope);
+        cv.dilate(
+          mask,
+          out,
+          kernel(local, cv.MORPH_RECT, 2 * reach + 1),
+          anchor(),
+          1,
+          cv.BORDER_CONSTANT,
+          cv.morphologyDefaultBorderValue(),
+        );
+        return out;
+      } finally {
+        local.release();
+      }
+    }
+
+    /** Mask (255) of the connected components of `binary` that share a pixel with `seeds`. */
+    function componentsTouching(binary, seeds, scope) {
+      const local = new Scope();
+      try {
+        const labels = mat(local);
+        const labelCount = cv.connectedComponents(binary, labels, 8, cv.CV_32S);
+        const out = zeros(scope, binary.rows, binary.cols);
+        const labelData = labels.data32S;
+        const seedData = seeds.data;
+        const outData = out.data;
+        const selected = new Uint8Array(labelCount);
+        for (let i = 0; i < labelData.length; i++) {
+          if (seedData[i] > 0 && labelData[i] > 0) selected[labelData[i]] = 1;
+        }
+        for (let i = 0; i < labelData.length; i++) {
+          if (selected[labelData[i]]) outData[i] = 255;
         }
         return out;
       } finally {
@@ -302,12 +368,12 @@
     }
 
     /**
-     * Landscape components touching the sky mask are dropped whole, the painted mask only
-     * cuts detections.
+     * Components touching the landscape are dropped near it (see Masks::apply), the painted
+     * mask only cuts detections.
      */
     function applyMasks(binary, masks, scope) {
       let out = binary;
-      if (masks.landscape) out = dropTouching(out, masks.landscape, scope);
+      if (masks.landscape) out = dropTouching(out, masks.landscape, masks.reach, scope);
       if (masks.exclusion) out = applyExclusionMask(out, masks.exclusion, scope);
       return out;
     }
@@ -355,21 +421,11 @@
     }
 
     /** Removes what `links` connects to the landscape across small gaps (see drop_linked). */
-    function dropLinked(binary, links, landscape, window, scope) {
+    function dropLinked(binary, links, landscape, reach, window, scope) {
       const local = new Scope();
       try {
-        const gap = Math.round(window * LANDSCAPE_GAP_RATIO);
-        const grown = mat(local);
-        cv.dilate(
-          links,
-          grown,
-          kernel(local, cv.MORPH_RECT, 2 * gap + 1),
-          anchor(),
-          1,
-          cv.BORDER_CONSTANT,
-          cv.morphologyDefaultBorderValue(),
-        );
-        const free = dropTouching(grown, landscape, local);
+        const grown = grow(links, Math.round(window * LANDSCAPE_GAP_RATIO), local);
+        const free = dropTouching(grown, landscape, reach, local);
         const out = mat(scope);
         cv.bitwise_and(binary, free, out);
         return out;
@@ -542,7 +598,8 @@
 
         const topSmooth = skyCandidates(smooth, closed, brightBirds, local);
         // Landscape: the rest of the image connected to its edges, together with rough
-        // islands near it. Islands farther away are dense flocks or sharp cloud edges.
+        // islands near it. Islands farther away are dense flocks or sharp cloud edges, also
+        // near the edge of the photo.
         const notSky = invert(topSmooth, local);
         const reach = 2 * SKY_REACH + 1;
         const grown = mat(local);
@@ -555,13 +612,14 @@
           cv.BORDER_CONSTANT,
           borderValue,
         );
-        const landscapeZone = componentsWhere(
-          grown,
+        const edgeLand = componentsWhere(
+          notSky,
           8,
           (left, top, width, height) =>
             left === 0 || top === 0 || left + width >= cols || top + height >= rows,
           local,
         );
+        const landscapeZone = componentsTouching(grown, edgeLand, local);
         const landscape = mat(local);
         cv.bitwise_and(notSky, landscapeZone, landscape);
 
@@ -569,12 +627,18 @@
         const total = cols * rows;
         if (total - landscapePixels < SKY_MIN_FRACTION * total) return null;
         const filled = fillBelowLand(landscape, local);
+        const windows = (count) => Math.round((window * count) / scale);
+        const near = grow(filled, windows(LANDSCAPE_CUT_WINDOWS), local);
+        const far = grow(filled, windows(LANDSCAPE_REACH_WINDOWS), local);
 
-        const upscaled = mat(local);
-        cv.resize(filled, upscaled, new cv.Size(gray.cols, gray.rows), 0, 0, cv.INTER_LINEAR);
-        const full = mat(scope);
-        cv.threshold(upscaled, full, 127, 255, cv.THRESH_BINARY);
-        return full;
+        const upscale = (small) => {
+          const upscaled = mat(local);
+          cv.resize(small, upscaled, new cv.Size(gray.cols, gray.rows), 0, 0, cv.INTER_LINEAR);
+          const full = mat(scope);
+          cv.threshold(upscaled, full, 127, 255, cv.THRESH_BINARY);
+          return full;
+        };
+        return { mask: upscale(filled), reach: { near: upscale(near), far: upscale(far) } };
       } finally {
         local.release();
       }
@@ -705,7 +769,9 @@
         }
         s.free(texture);
         candidates = applyMasks(candidates, masks, s);
-        if (masks.landscape) candidates = dropLinked(candidates, links, masks.landscape, window, s);
+        if (masks.landscape) {
+          candidates = dropLinked(candidates, links, masks.landscape, masks.reach, window, s);
+        }
 
         const labels = mat(s);
         const stats = mat(s);
@@ -888,7 +954,7 @@
         const wholeRows = scaledSide(full.rows, scale);
         const window = scaledWindow(params.adaptive_block, wholeCols, wholeRows);
         const landscape = params.sky_only ? landscapeMask(gray, window, params.invert, scope) : null;
-        const masks = { exclusion, landscape };
+        const masks = { exclusion, landscape: landscape?.mask, reach: landscape?.reach };
 
         let blobs =
           params.threshold_method.trim().toLowerCase() === "background"
@@ -927,7 +993,8 @@
       }
     }
 
-    return { detect };
+    // The rest is exported for the tests.
+    return { detect, dropTouching, grow, landscapeMask };
   }
 
   return {
@@ -938,5 +1005,6 @@
     absorbFragments,
     dropDots,
     scaledWindow,
+    Scope,
   };
 });

@@ -99,11 +99,15 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 - The local window setting (`adaptive_block`) is for a photo 2000 px on its longer side. `scaled_window` grows it with the
   whole photo, not the crop, so don't scale it again in callers.
 - With `sky_only` (default), `landscape_mask` runs before both methods. Candidate components that touch
-  non-sky areas are dropped whole by `drop_touching`, while the user's painted mask only cuts them. Its
+  non-sky areas are dropped whole by `drop_touching`, while the user's painted mask only cuts them. A component
+  reaching more than `LANDSCAPE_REACH_WINDOWS` from the landscape is a dense flock merged into one, and only loses its
+  pixels near it (the `Reach` zones, grown on the mask's downscaled copy for speed). Rough islands count as landscape
+  only near land that reaches the image edge, not near the edge alone. Its
   thresholds are the `SKY_*` constants, in units of a downscaled copy where the local window is 5 px.
   `fill_below_land` marks everything under the ground too (water), and `drop_linked` also drops candidates linked to
   the landscape across small gaps (leaves and twigs, which the mask's closing erases).
-- Post-processing is shared by all methods. `absorb_fragments` drops wing tips next to a larger blob, `drop_dots`
+- Post-processing is shared by all methods. `absorb_fragments` drops wing tips next to a larger blob of at most
+  `FRAGMENT_MAX_BIRDS` local birds (not a clump of a dense flock), `drop_dots`
   drops tiny compact dots (mostly insects) when a photo also has larger birds, `drop_clutter` removes oversized and
   edge-touching blobs, and
   `split_merged` counts merged birds as `round(area / flock median)`. `docs/processing.md` has the details, and its
