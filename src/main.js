@@ -84,6 +84,11 @@ let viewerCanvas;
 let viewerMarksBtn;
 let viewerCloseBtn;
 let viewerShareBtn;
+let viewerSettingsBtn;
+let viewerSettings;
+let viewerCount;
+let settingsGroup;
+let advancedSettings;
 let maskBrushCursor;
 let historySection;
 let historyList;
@@ -158,6 +163,11 @@ let viewerView = null;
 let viewerPointers = new Map();
 let viewerGesture = null;
 let viewerTap = null;
+// Detection settings over the viewer: whether the user wants them (kept between openings),
+// the part of the screen they cover, and the Advanced section's state in the editor.
+let viewerSettingsWanted = false;
+let viewerInset = { right: 0, bottom: 0 };
+let advancedWasOpen = false;
 let viewerLastTap = null;
 let viewerFrame = 0;
 let lastTapTime = 0;
@@ -535,6 +545,7 @@ function updateCount(value) {
   countValue.textContent = String(value);
   if (countSuffix) countSuffix.textContent = birdsSuffix(value);
   if (countBelow) countBelow.textContent = `${value} ${birdsSuffix(value)}`;
+  if (viewerCount) viewerCount.textContent = `${value} ${birdsSuffix(value)}`;
 }
 
 function stopCountingAnimation() {
@@ -557,6 +568,7 @@ function startCountingAnimation() {
   const render = () => {
     countValue.textContent = `${t("counting_in_progress")}${".".repeat(countingDotCount)}`;
     if (countBelow) countBelow.textContent = countValue.textContent;
+    if (viewerCount) viewerCount.textContent = countValue.textContent;
     countingDotCount = (countingDotCount % 3) + 1;
   };
 
@@ -842,6 +854,7 @@ function openViewer() {
   viewerTap = null;
   viewerLastTap = null;
   viewerView = null;
+  showViewerSettings(viewerSettingsWanted);
   layoutViewer();
   viewerCloseBtn?.focus({ preventScroll: true });
 }
@@ -849,6 +862,7 @@ function openViewer() {
 function closeViewer() {
   if (!isViewerOpen) return;
   isViewerOpen = false;
+  showViewerSettings(false);
   photoViewer.hidden = true;
   document.body.classList.remove("viewer-open");
   viewerPointers.clear();
@@ -860,6 +874,47 @@ function closeViewer() {
   viewerCanvas.height = 0;
 }
 
+// ===== Detection settings in the viewer =====
+// The settings group itself moves into the viewer's panel while it is open, so the controls,
+// their handlers and their values stay the same, with Advanced unfolded.
+
+function setViewerSettingsOpen(open) {
+  viewerSettingsWanted = open;
+  showViewerSettings(open && isViewerOpen);
+}
+
+function showViewerSettings(show) {
+  if (!viewerSettings || !settingsGroup || !settingsPanel) return;
+  if (show === !viewerSettings.hidden) return;
+  if (show) {
+    advancedWasOpen = advancedSettings?.open ?? false;
+    if (advancedSettings) advancedSettings.open = true;
+    viewerSettings.append(settingsGroup);
+  } else {
+    settingsPanel.append(settingsGroup);
+    if (advancedSettings) advancedSettings.open = advancedWasOpen;
+  }
+  viewerSettings.hidden = !show;
+  viewerSettings.scrollTop = 0;
+  if (viewerSettingsBtn) {
+    viewerSettingsBtn.classList.toggle("is-active", show);
+    viewerSettingsBtn.setAttribute("aria-pressed", show ? "true" : "false");
+  }
+  layoutViewer();
+}
+
+// The panel is a sheet along the bottom on tall screens, where the photo fits above it, and a
+// column on the right on wide ones, where the photo stays as it is and shows through it.
+function measureViewerInset() {
+  if (!viewerSettings || viewerSettings.hidden) return { right: 0, bottom: 0 };
+  const screen = viewerCanvas.getBoundingClientRect();
+  const panel = viewerSettings.getBoundingClientRect();
+  if (panel.width >= screen.width * 0.75) {
+    return { right: 0, bottom: Math.max(0, screen.bottom - panel.top) };
+  }
+  return { right: 0, bottom: 0 };
+}
+
 function viewerMaxScale() {
   const dpr = window.devicePixelRatio || 1;
   return Math.max(viewerView.fit, VIEWER_MAX_DEVICE_ZOOM / dpr);
@@ -869,9 +924,10 @@ function viewerMaxScale() {
 function layoutViewer() {
   const view = viewRect();
   if (!isViewerOpen || !view) return;
-  const width = viewerCanvas.clientWidth;
-  const height = viewerCanvas.clientHeight;
-  if (!width || !height) return;
+  viewerInset = measureViewerInset();
+  const width = viewerCanvas.clientWidth - viewerInset.right;
+  const height = viewerCanvas.clientHeight - viewerInset.bottom;
+  if (width <= 0 || height <= 0) return;
   const fit = Math.min(width / view.width, height / view.height);
   if (!viewerView || viewerView.scale <= viewerView.fit) {
     viewerView = { scale: fit, fit, x: 0, y: 0 };
@@ -884,12 +940,13 @@ function layoutViewer() {
 }
 
 // Centres the photo where it is smaller than the screen and keeps it covering the screen
-// where it is larger.
+// where it is larger. The part under the settings panel doesn't count, so the photo fits
+// beside it and can be panned out from under it.
 function clampViewer() {
   const view = viewRect();
   if (!viewerView || !view) return;
-  const width = viewerCanvas.clientWidth;
-  const height = viewerCanvas.clientHeight;
+  const width = viewerCanvas.clientWidth - viewerInset.right;
+  const height = viewerCanvas.clientHeight - viewerInset.bottom;
   const shownWidth = view.width * viewerView.scale;
   const shownHeight = view.height * viewerView.scale;
   viewerView.x =
@@ -1093,10 +1150,14 @@ function onViewerWheel(e) {
 
 function onViewerKeyDown(e) {
   if (!isViewerOpen || !viewerView) return;
-  const cx = viewerCanvas.clientWidth / 2;
-  const cy = viewerCanvas.clientHeight / 2;
+  const cx = (viewerCanvas.clientWidth - viewerInset.right) / 2;
+  const cy = (viewerCanvas.clientHeight - viewerInset.bottom) / 2;
   if (e.key === "Escape") {
-    closeViewer();
+    if (viewerSettings && !viewerSettings.hidden) setViewerSettingsOpen(false);
+    else closeViewer();
+  } else if (e.target instanceof Element && e.target.closest("#viewerSettings")) {
+    // Keys typed into the settings are theirs.
+    return;
   } else if (e.key === "+" || e.key === "=") {
     zoomViewerAt(cx, cy, viewerView.scale * 1.5);
   } else if (e.key === "-") {
@@ -2654,9 +2715,12 @@ async function drawToBlob(image, rect, width, height, type, decorate = null) {
   return blob;
 }
 
-// Android: system back steps out of the viewer/crop/mask, then returns to the start screen.
+// Android: system back closes the viewer's settings, then steps out of the viewer/crop/mask,
+// then returns to the start screen.
 window.onAndroidBack = function () {
-  if (isViewerOpen) {
+  if (isViewerOpen && viewerSettings && !viewerSettings.hidden) {
+    setViewerSettingsOpen(false);
+  } else if (isViewerOpen) {
     closeViewer();
   } else if (isCropping) {
     cancelCrop();
@@ -2784,6 +2848,11 @@ window.addEventListener("DOMContentLoaded", () => {
   viewerMarksBtn = document.querySelector("#viewerMarksBtn");
   viewerCloseBtn = document.querySelector("#viewerCloseBtn");
   viewerShareBtn = document.querySelector("#viewerShareBtn");
+  viewerSettingsBtn = document.querySelector("#viewerSettingsBtn");
+  viewerSettings = document.querySelector("#viewerSettings");
+  viewerCount = document.querySelector("#viewerCount");
+  settingsGroup = document.querySelector("#settingsGroup");
+  advancedSettings = document.querySelector("#advancedSettings");
   maskBrushCursor = document.querySelector("#maskBrushCursor");
   countLabel = document.querySelector("#countLabel");
   countPrefix = document.querySelector("#countLabel [data-i18n='count_prefix']");
@@ -3015,6 +3084,13 @@ window.addEventListener("DOMContentLoaded", () => {
     button?.addEventListener("click", shareCurrentResult);
   }
   viewerCloseBtn?.addEventListener("click", closeViewer);
+  // Fields shown per method change the panel's height, and with it the room for the photo.
+  if (viewerSettings && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => layoutViewer()).observe(viewerSettings);
+  }
+  viewerSettingsBtn?.addEventListener("click", () =>
+    setViewerSettingsOpen(viewerSettings?.hidden ?? false),
+  );
   if (viewerCanvas) {
     viewerCanvas.addEventListener("pointerdown", onViewerPointerDown);
     viewerCanvas.addEventListener("pointermove", onViewerPointerMove);

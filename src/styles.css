@@ -516,6 +516,97 @@ body.viewer-open {
     gap: 12px;
 }
 
+.overlay-button.is-active,
+.overlay-button.is-active:active {
+    background: #ffffff;
+    color: #000000;
+}
+
+/* The count, top left, opposite the tools */
+.viewer-count {
+    position: absolute;
+    top: calc(12px + var(--safe-top));
+    left: calc(12px + var(--safe-left));
+    max-width: calc(100% - 260px);
+    margin: 0;
+    padding: 0 14px;
+    height: 40px;
+    line-height: 40px;
+    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.55);
+    color: #ffffff;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.viewer-count:empty {
+    display: none;
+}
+
+/* Detection settings over the photo: a half-transparent sheet along the bottom on tall
+   screens, a column on the right on wide ones. Above the sheet the photo fits in the rest of
+   the screen (measureViewerInset); it shows through the column, and the sheet when zoomed in. */
+.viewer-settings {
+    /* Always dark over the photo, whatever the system theme */
+    color-scheme: dark;
+    --text: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.75);
+    --text-tertiary: rgba(255, 255, 255, 0.4);
+    --accent: #64b5ff;
+    --border: rgba(255, 255, 255, 0.35);
+    --separator: rgba(255, 255, 255, 0.14);
+    --surface: transparent;
+    --track: rgba(255, 255, 255, 0.28);
+    --fill: rgba(255, 255, 255, 0.12);
+    --fill-active: rgba(255, 255, 255, 0.2);
+    --switch-on: #30d158;
+    --md-primary: #d0bcff;
+    --md-on-primary: #381e72;
+    --md-secondary-container: rgba(255, 255, 255, 0.3);
+    --md-on-surface: #ffffff;
+    --md-on-surface-variant: rgba(255, 255, 255, 0.75);
+    --md-outline: rgba(255, 255, 255, 0.6);
+    --md-outline-variant: rgba(255, 255, 255, 0.2);
+    --md-surface-container-low: transparent;
+    --md-surface-container-highest: rgba(255, 255, 255, 0.15);
+
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: min(40%, 420px);
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 6px var(--safe-right) calc(8px + var(--safe-bottom)) var(--safe-left);
+    border-radius: 16px 16px 0 0;
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--text);
+    font-size: 14px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.viewer-settings[hidden] {
+    display: none;
+}
+
+@media (min-aspect-ratio: 1/1) {
+    .viewer-settings {
+        left: auto;
+        top: calc(72px + var(--safe-top));
+        right: calc(12px + var(--safe-right));
+        bottom: auto;
+        width: min(360px, 44%);
+        max-height: calc(100% - 84px - var(--safe-top) - var(--safe-bottom));
+        padding: 6px 0;
+        border-radius: 16px;
+    }
+}
+
 /* ===== Result header: the count, and the Result / Original switch ===== */
 .count-label {
     display: flex;
@@ -1901,6 +1992,53 @@ body.is-ios .settings-advanced[open] .expand-icon {
     transform: rotate(0deg);
 }
 
+/* ===== Wide browser windows: the settings beside the photo =====
+ * Desktop browsers only; the apps keep one column. The editor's own items (count, photo, tools)
+ * stay in the first column, the settings and the brush size go to a sticky second one. It keeps
+ * its width while the editor is open, so the photo doesn't jump when Crop or Mask hides the settings.
+ * The left items take the auto rows, and the last row grows when the settings are taller. Unused
+ * rows would still get a row gap, so the items space themselves with a bottom margin instead
+ * (the count below and the hint pull themselves up by it, as they do with the gap). */
+@media (min-width: 1000px) {
+    body.is-web:not(.is-android):not(.is-ios).has-back .container {
+        max-width: 1320px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        grid-template-rows: repeat(6, auto) 1fr;
+        column-gap: 28px;
+        row-gap: 0;
+        align-items: start;
+        padding-bottom: calc(4px + var(--safe-bottom));
+    }
+
+    body.is-web:not(.is-android):not(.is-ios).has-back .container > * {
+        grid-column: 1;
+        min-width: 0;
+        margin-bottom: var(--gap);
+    }
+
+    body.is-web:not(.is-android):not(.is-ios).has-back .image-preview {
+        justify-self: center;
+    }
+
+    /* The whole photo fits in the window, so the settings and the result are seen together */
+    body.is-web:not(.is-android):not(.is-ios).has-back .image-preview img {
+        max-height: calc(100vh - var(--header-height) - var(--safe-top) - 220px);
+    }
+
+    body.is-web:not(.is-android):not(.is-ios).has-back .container > #settingsPanel,
+    body.is-web:not(.is-android):not(.is-ios).has-back .container > #maskBrushControls {
+        grid-column: 2;
+        grid-row: 1 / -1;
+        position: sticky;
+        top: calc(var(--header-height) + var(--safe-top) + 12px);
+        max-height: calc(100vh - var(--header-height) - var(--safe-top) - 24px);
+        margin-bottom: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+}
+
 /* ===== Narrow windows ===== */
 @media (max-width: 600px) {
     body:not(.is-android) .button-container {
@@ -2175,4 +2313,120 @@ body.is-ios .history-title {
 
 body.is-ios .history-days {
     gap: 24px;
+}
+
+/* =====================================================================
+ * Detection settings in the viewer: compact rows (label, slider, value on one line) so the
+ * panel stays small. Last in the file and prefixed with body to win over the platform rules.
+ * ===================================================================== */
+body .viewer-settings .group {
+    background: transparent;
+    border-radius: 0;
+    overflow: visible;
+}
+
+body .viewer-settings .advanced-summary {
+    display: none;
+}
+
+body .viewer-settings .settings-advanced,
+body .viewer-settings .settings-advanced-grid,
+body .viewer-settings .group .settings-field + .settings-field,
+body .viewer-settings .settings-reset {
+    border-top: none;
+    margin-top: 0;
+}
+
+/* Where the panel is wide enough, switches go two to a row (sliders keep a whole row) */
+body .viewer-settings {
+    container-type: inline-size;
+}
+
+@container (min-width: 520px) {
+    body .viewer-settings .settings-advanced-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    body .viewer-settings .settings-advanced-grid > .settings-field:not(.toggle-field) {
+        grid-column: 1 / -1;
+    }
+}
+
+body .viewer-settings .settings-field {
+    grid-template-columns: minmax(84px, 34%) minmax(0, 1fr);
+    gap: 0 10px;
+    min-height: 38px;
+    padding: 0 16px;
+}
+
+/* Sliders get the whole width, under their label */
+body .viewer-settings .settings-field:has(.range-row) {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    padding-top: 6px;
+}
+
+body .viewer-settings .settings-field:has(.range-row) input[type="range"] {
+    height: 28px;
+}
+
+body .viewer-settings .settings-field label,
+body .viewer-settings .toggle-label {
+    font-size: 14px;
+    line-height: 18px;
+    color: var(--text);
+}
+
+body .viewer-settings .toggle-field {
+    padding: 2px 16px;
+}
+
+body .viewer-settings .toggle-label {
+    min-height: 36px;
+}
+
+body .viewer-settings .range-row {
+    gap: 8px;
+}
+
+body .viewer-settings .range-value {
+    min-width: 2.4em;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+body .viewer-settings input[type="range"] {
+    height: 32px;
+}
+
+body .viewer-settings .select-wrap {
+    margin: 2px 0;
+}
+
+body .viewer-settings .settings-select {
+    height: auto;
+    min-height: 32px;
+    font-size: 14px;
+    color: var(--text);
+}
+
+body.is-android .viewer-settings .settings-select {
+    padding: 0 36px 0 12px;
+}
+
+body .viewer-settings .settings-reset {
+    min-height: 36px;
+    padding: 0 16px 4px;
+}
+
+body .viewer-settings .text-button {
+    font-size: 14px;
+    text-shadow: none;
+}
+
+/* Android's switch is 52 px wide; make it a little smaller here */
+body.is-android .viewer-settings .toggle-label input[type="checkbox"] {
+    transform: scale(0.85);
+    transform-origin: right center;
 }

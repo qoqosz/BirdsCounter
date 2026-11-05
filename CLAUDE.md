@@ -132,7 +132,10 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   Mask and Detection (opens the settings, open by default). The header's ⋮ menu has Language and, on iOS and
   Android, Share. The full resolution viewer (`#photoViewer`, opened by
   its button or a double click/tap) draws the visible part of the photo and the rings on one canvas per frame;
-  pinch, drag, ctrl/⌘ + wheel and double tap zoom and pan.
+  pinch, drag, ctrl/⌘ + wheel and double tap zoom and pan. Its settings button (`showViewerSettings`) moves
+  `#settingsGroup` itself into a half-transparent `#viewerSettings` panel (a bottom sheet on tall screens, a right
+  column on wide ones) and back, so the controls stay single; the photo fits above the sheet (`measureViewerInset`) and
+  shows through the column.
 - History: each opened photo gets one entry. `queueHistorySave` updates it after each result, saves are chained
   and keyed by `editSession`, and saves that change nothing are skipped.
 - Any settings change calls `scheduleProcess`, which debounces by 100 ms. Calls arriving while processing is

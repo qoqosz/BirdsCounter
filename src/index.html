@@ -211,7 +211,7 @@
 
         <section id="settingsPanel" class="settings-panel" style="display: none;">
             <h2 class="settings-title" data-i18n="settings_title">Detection settings</h2>
-            <div class="group settings-basic">
+            <div id="settingsGroup" class="group settings-basic">
                 <div class="settings-field">
                     <label for="minRadius" data-i18n="min_radius">Min radius</label>
                     <div class="range-row">
@@ -333,7 +333,21 @@
     <div id="photoViewer" class="photo-viewer" role="dialog" aria-modal="true" aria-label="Full resolution"
         data-i18n-attr="aria-label:viewer_open" hidden>
         <canvas id="viewerCanvas" class="viewer-canvas"></canvas>
+        <!-- The count, so a settings change shows its result here too -->
+        <p id="viewerCount" class="viewer-count" aria-live="polite"></p>
+        <!-- Detection settings over the photo: openSettingsInViewer moves the settings group here
+             while it is open, so the controls and their handlers stay the same -->
+        <section id="viewerSettings" class="viewer-settings" aria-label="Detection settings"
+            data-i18n-attr="aria-label:settings_title" hidden></section>
         <div class="viewer-tools">
+            <button id="viewerSettingsBtn" class="overlay-button viewer-settings-button" type="button"
+                aria-pressed="false" aria-controls="viewerSettings" aria-label="Detection settings"
+                title="Detection settings" data-i18n-attr="aria-label:settings_title, title:settings_title">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+                </svg>
+            </button>
             <button id="viewerMarksBtn" class="overlay-button marks-toggle" type="button" aria-pressed="true"
                 aria-label="Marked birds" title="Marked birds"
                 data-i18n-attr="aria-label:marks_toggle, title:marks_toggle">
