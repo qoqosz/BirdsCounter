@@ -20,7 +20,7 @@ cd src-tauri && cargo run --release --example count -- --out annotated/ photo1.j
 cd src-tauri && cargo clippy && cargo fmt
 ./build_android.sh --target aarch64  # release APK (also: make android); targets aarch64|armv7|x86_64|x86
 ./build_ios.sh --target sim          # iOS (sim | x86_64 | device)
-./app_icons.sh                       # copy the icon into the Android/iOS projects (run after `cargo tauri icon`)
+./app_icons.sh                       # finish the Android/iOS icons (run after `cargo tauri icon`)
 ./build_web.sh --serve               # web version into target/web (downloads OpenCV.js), served at localhost:8000
 node --test tests/web/*.test.cjs     # web detector tests (after ./build_web.sh, which fetches OpenCV.js)
 ```

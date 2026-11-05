@@ -6,8 +6,8 @@
 #   whole canvas with the logo, so the bird and the ring get cropped. The foreground gets the logo at 66 dp,
 #   centered on a transparent 108 dp canvas.
 # - Desktop icons: `cargo tauri icon` always writes them, but nothing uses them, so they are deleted.
-# - iOS: the Xcode asset catalog is not updated by `cargo tauri icon` (it kept Tauri's default icon). The icons
-#   from src-tauri/icons/ios are copied in, flattened onto white because iOS shows transparency as black.
+# - iOS: `cargo tauri icon` writes the icons straight into the Xcode asset catalog, but keeps an alpha channel. They
+#   are flattened onto white in place because iOS shows transparency as black.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,8 +36,7 @@ for entry in mdpi:1 hdpi:1.5 xhdpi:2 xxhdpi:3 xxxhdpi:4; do
 done
 
 echo "iOS app icon:"
-for src in "$ICONS"/ios/AppIcon-*.png; do
-    out="$APPICONSET/$(basename "$src")"
-    magick "$src" -background white -alpha remove -alpha off -strip "$out"
+for out in "$APPICONSET"/AppIcon-*.png; do
+    magick "$out" -background white -alpha remove -alpha off -strip "$out"
     echo "  $out"
 done
