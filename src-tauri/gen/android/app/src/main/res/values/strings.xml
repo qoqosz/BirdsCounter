@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">birdscounter</string>
-    <string name="main_activity_title">birdscounter</string>
+    <string name="app_name">BirdsCounter</string>
+    <string name="main_activity_title">BirdsCounter</string>
 </resources>

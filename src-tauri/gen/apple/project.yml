@@ -39,6 +39,7 @@ targets:
     info:
       path: birdscounter_iOS/Info.plist
       properties:
+        CFBundleDisplayName: BirdsCounter
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
         UIRequiredDeviceCapabilities: [arm64, metal]
