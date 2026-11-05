@@ -258,7 +258,7 @@ The app runs only on physical devices, since the OpenCV framework has no arm64 s
 ./app_icons.sh
 ```
 
-It fixes what `cargo tauri icon` leaves out. It pads the Android adaptive icon into the launcher's safe zone, it
+It fixes what `cargo tauri icon` leaves out. It fits the Android adaptive icon to the area launchers show, it
 flattens the iOS icons in the Xcode asset catalog onto white, and it deletes the desktop icons, which nothing uses.
 
 ## Releases
