@@ -522,20 +522,26 @@ body.viewer-open {
     color: #000000;
 }
 
-/* The count, top left, opposite the tools */
+/* The count, in a black bar along the bottom; the photo fits above it (measureViewerInset) */
+.photo-viewer {
+    --viewer-bar: 36px;
+}
+
 .viewer-count {
     position: absolute;
-    top: calc(12px + var(--safe-top));
-    left: calc(12px + var(--safe-left));
-    max-width: calc(100% - 260px);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--viewer-bar) + var(--safe-bottom));
+    box-sizing: border-box;
     margin: 0;
-    padding: 0 14px;
-    height: 40px;
-    line-height: 40px;
-    border-radius: 20px;
-    background: rgba(0, 0, 0, 0.55);
+    padding: 0 calc(12px + var(--safe-right)) var(--safe-bottom) calc(12px + var(--safe-left));
+    background: #000000;
     color: #ffffff;
+    font-size: 15px;
     font-weight: 600;
+    line-height: var(--viewer-bar);
+    text-align: center;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     overflow: hidden;
@@ -543,13 +549,10 @@ body.viewer-open {
     pointer-events: none;
 }
 
-.viewer-count:empty {
-    display: none;
-}
-
 /* Detection settings over the photo: a half-transparent sheet along the bottom on tall
-   screens, a column on the right on wide ones. Above the sheet the photo fits in the rest of
-   the screen (measureViewerInset); it shows through the column, and the sheet when zoomed in. */
+   screens (above the count bar), a column on the right on wide ones. Above the sheet the photo
+   fits in the rest of the screen (measureViewerInset); it shows through the column, and the
+   sheet when zoomed in. */
 .viewer-settings {
     /* Always dark over the photo, whatever the system theme */
     color-scheme: dark;
@@ -577,12 +580,12 @@ body.viewer-open {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: calc(var(--viewer-bar) + var(--safe-bottom));
     max-height: min(40%, 420px);
     box-sizing: border-box;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 6px var(--safe-right) calc(8px + var(--safe-bottom)) var(--safe-left);
+    padding: 6px var(--safe-right) 8px var(--safe-left);
     border-radius: 16px 16px 0 0;
     background: rgba(0, 0, 0, 0.5);
     color: var(--text);
@@ -601,7 +604,7 @@ body.viewer-open {
         right: calc(12px + var(--safe-right));
         bottom: auto;
         width: min(360px, 44%);
-        max-height: calc(100% - 84px - var(--safe-top) - var(--safe-bottom));
+        max-height: calc(100% - 84px - var(--viewer-bar) - var(--safe-top) - var(--safe-bottom));
         padding: 6px 0;
         border-radius: 16px;
     }

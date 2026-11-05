@@ -166,7 +166,7 @@ let viewerTap = null;
 // Detection settings over the viewer: whether the user wants them (kept between openings),
 // the part of the screen they cover, and the Advanced section's state in the editor.
 let viewerSettingsWanted = false;
-let viewerInset = { right: 0, bottom: 0 };
+let viewerInsetBottom = 0;
 let advancedWasOpen = false;
 let viewerLastTap = null;
 let viewerFrame = 0;
@@ -903,16 +903,19 @@ function showViewerSettings(show) {
   layoutViewer();
 }
 
-// The panel is a sheet along the bottom on tall screens, where the photo fits above it, and a
-// column on the right on wide ones, where the photo stays as it is and shows through it.
+// How much of the bottom of the screen the photo leaves free: the count bar, and the settings
+// when they are a sheet along the bottom (tall screens). The column on the right of wide
+// screens doesn't count: the photo shows through it.
 function measureViewerInset() {
-  if (!viewerSettings || viewerSettings.hidden) return { right: 0, bottom: 0 };
   const screen = viewerCanvas.getBoundingClientRect();
-  const panel = viewerSettings.getBoundingClientRect();
-  if (panel.width >= screen.width * 0.75) {
-    return { right: 0, bottom: Math.max(0, screen.bottom - panel.top) };
+  let top = screen.bottom;
+  const bar = viewerCount?.getBoundingClientRect();
+  if (bar && bar.height > 0) top = bar.top;
+  if (viewerSettings && !viewerSettings.hidden) {
+    const panel = viewerSettings.getBoundingClientRect();
+    if (panel.width >= screen.width * 0.75) top = Math.min(top, panel.top);
   }
-  return { right: 0, bottom: 0 };
+  return Math.max(0, screen.bottom - top);
 }
 
 function viewerMaxScale() {
@@ -924,9 +927,9 @@ function viewerMaxScale() {
 function layoutViewer() {
   const view = viewRect();
   if (!isViewerOpen || !view) return;
-  viewerInset = measureViewerInset();
-  const width = viewerCanvas.clientWidth - viewerInset.right;
-  const height = viewerCanvas.clientHeight - viewerInset.bottom;
+  viewerInsetBottom = measureViewerInset();
+  const width = viewerCanvas.clientWidth;
+  const height = viewerCanvas.clientHeight - viewerInsetBottom;
   if (width <= 0 || height <= 0) return;
   const fit = Math.min(width / view.width, height / view.height);
   if (!viewerView || viewerView.scale <= viewerView.fit) {
@@ -940,13 +943,13 @@ function layoutViewer() {
 }
 
 // Centres the photo where it is smaller than the screen and keeps it covering the screen
-// where it is larger. The part under the settings panel doesn't count, so the photo fits
-// beside it and can be panned out from under it.
+// where it is larger. The count bar and the settings sheet don't count, so the photo fits
+// above them and can be panned out from under them.
 function clampViewer() {
   const view = viewRect();
   if (!viewerView || !view) return;
-  const width = viewerCanvas.clientWidth - viewerInset.right;
-  const height = viewerCanvas.clientHeight - viewerInset.bottom;
+  const width = viewerCanvas.clientWidth;
+  const height = viewerCanvas.clientHeight - viewerInsetBottom;
   const shownWidth = view.width * viewerView.scale;
   const shownHeight = view.height * viewerView.scale;
   viewerView.x =
@@ -1150,8 +1153,8 @@ function onViewerWheel(e) {
 
 function onViewerKeyDown(e) {
   if (!isViewerOpen || !viewerView) return;
-  const cx = (viewerCanvas.clientWidth - viewerInset.right) / 2;
-  const cy = (viewerCanvas.clientHeight - viewerInset.bottom) / 2;
+  const cx = viewerCanvas.clientWidth / 2;
+  const cy = (viewerCanvas.clientHeight - viewerInsetBottom) / 2;
   if (e.key === "Escape") {
     if (viewerSettings && !viewerSettings.hidden) setViewerSettingsOpen(false);
     else closeViewer();
