@@ -79,253 +79,265 @@
             <div id="historyList" class="history-days"></div>
         </section>
 
-        <!-- Result header: the count, and a switch between the photo with and without the rings -->
-        <div id="countLabel" class="count-label" style="display: none;">
-            <p class="count-text">
-                <span id="countValue">0</span>
-                <span id="countSuffix" data-i18n="count_suffix">birds</span>
-            </p>
-            <button id="viewRingsBtn" class="icon-button marks-toggle" type="button" aria-pressed="true"
-                aria-label="Show marked birds" title="Show marked birds"
-                data-i18n-attr="aria-label:marks_toggle,title:marks_toggle">
-                <svg class="icon-shown" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path
-                    d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-            </svg>
-            <svg class="icon-hidden" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path
-                    d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
-            </svg>
-            </button>
-        </div>
-
-        <div id="imagePreview" class="image-preview" style="display: none">
-            <img id="previewImg" src="" alt="Preview" data-i18n-attr="alt:preview_alt" />
-            <!-- Rings around the detected birds, drawn by main.js -->
-            <canvas id="birdCanvas" class="bird-overlay" aria-hidden="true"></canvas>
-            <div id="maskOverlay" class="mask-overlay" aria-hidden="true">
-                <canvas id="maskCanvas"></canvas>
-                <div id="maskBrushCursor" class="mask-brush-cursor"></div>
+        <!-- The editor is two groups: the photo with its count, then the tools with their options.
+             They are display: contents in one column; on wide screens the tools become a side
+             panel on the leading side (see "Wide screens" in styles.css). -->
+        <div class="editor-photo">
+            <!-- Result header: the count, and a switch between the photo with and without the rings -->
+            <div id="countLabel" class="count-label" style="display: none;">
+                <p class="count-text">
+                    <span id="countValue">0</span>
+                    <span id="countSuffix" data-i18n="count_suffix">birds</span>
+                </p>
+                <button id="viewRingsBtn" class="icon-button marks-toggle" type="button" aria-pressed="true"
+                    aria-label="Show marked birds" title="Show marked birds"
+                    data-i18n-attr="aria-label:marks_toggle,title:marks_toggle">
+                    <svg class="icon-shown" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+                </svg>
+                <svg class="icon-hidden" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z" />
+                </svg>
+                </button>
             </div>
-            <!-- Crop frame over the whole photo: drag inside to move it, a corner or an edge to
-                 resize it, or outside it to draw a new one -->
-            <div id="cropOverlay" class="crop-overlay" aria-hidden="true">
-                <div id="cropBox" class="crop-box" role="presentation">
-                    <div class="crop-grid"></div>
-                    <div class="crop-handle crop-edge" data-handle="n"></div>
-                    <div class="crop-handle crop-edge" data-handle="e"></div>
-                    <div class="crop-handle crop-edge" data-handle="s"></div>
-                    <div class="crop-handle crop-edge" data-handle="w"></div>
-                    <div class="crop-handle crop-corner" data-handle="nw"></div>
-                    <div class="crop-handle crop-corner" data-handle="ne"></div>
-                    <div class="crop-handle crop-corner" data-handle="se"></div>
-                    <div class="crop-handle crop-corner" data-handle="sw"></div>
+
+            <div class="photo-stage">
+                <div id="imagePreview" class="image-preview" style="display: none">
+                    <img id="previewImg" src="" alt="Preview" data-i18n-attr="alt:preview_alt" />
+                    <!-- Rings around the detected birds, drawn by main.js -->
+                    <canvas id="birdCanvas" class="bird-overlay" aria-hidden="true"></canvas>
+                    <div id="maskOverlay" class="mask-overlay" aria-hidden="true">
+                        <canvas id="maskCanvas"></canvas>
+                        <div id="maskBrushCursor" class="mask-brush-cursor"></div>
+                    </div>
+                    <!-- Crop frame over the whole photo: drag inside to move it, a corner or an edge to
+                         resize it, or outside it to draw a new one -->
+                    <div id="cropOverlay" class="crop-overlay" aria-hidden="true">
+                        <div id="cropBox" class="crop-box" role="presentation">
+                            <div class="crop-grid"></div>
+                            <div class="crop-handle crop-edge" data-handle="n"></div>
+                            <div class="crop-handle crop-edge" data-handle="e"></div>
+                            <div class="crop-handle crop-edge" data-handle="s"></div>
+                            <div class="crop-handle crop-edge" data-handle="w"></div>
+                            <div class="crop-handle crop-corner" data-handle="nw"></div>
+                            <div class="crop-handle crop-corner" data-handle="ne"></div>
+                            <div class="crop-handle crop-corner" data-handle="se"></div>
+                            <div class="crop-handle crop-corner" data-handle="sw"></div>
+                        </div>
+                    </div>
+                    <div class="preview-tools">
+                        <button id="viewerBtn" class="overlay-button zoom-button" type="button" aria-label="Full resolution"
+                            title="Full resolution" data-i18n-attr="aria-label:viewer_open,title:viewer_open">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
-            <div class="preview-tools">
-                <button id="viewerBtn" class="overlay-button zoom-button" type="button" aria-label="Full resolution"
-                    title="Full resolution" data-i18n-attr="aria-label:viewer_open,title:viewer_open">
+
+            <!-- Takes over from the count above once that one scrolls under the header -->
+            <p id="countBelow" class="count-below" style="display: none;" aria-hidden="true"></p>
+        </div>
+
+        <div class="editor-panel">
+            <div id="processActions" class="process-actions" style="display: none;">
+                <button id="cropBtn" class="action-button tool-button crop-button" aria-pressed="false">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path
+                            d="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z" />
+                    </svg>
+                    <span data-i18n="crop">Kadruj</span>
+                </button>
+                <button id="maskBtn" class="action-button tool-button mask-button" aria-pressed="false">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path
+                            d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37-1.34-1.34a.996.996 0 0 0-1.41 0L9 12.25 11.75 15l8.96-8.96a.996.996 0 0 0 0-1.41z" />
+                    </svg>
+                    <span data-i18n="mask">Maskuj</span>
+                </button>
+                <button id="detectBtn" class="action-button tool-button detect-button" aria-pressed="false">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path
+                            d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+                    </svg>
+                    <span data-i18n="detection">Detection</span>
+                </button>
+            </div>
+
+            <p id="cropHint" class="edit-hint" style="display: none;" data-i18n="crop_hint">Drag the corners or
+                edges to crop, or drag inside the frame to move it.</p>
+
+            <!-- Crop and mask end the same way: ✕ on the leading side, ✓ on the trailing side -->
+            <div id="cropActions" class="edit-actions crop-actions" style="display: none;">
+                <button id="cropCancelBtn" class="edit-button cancel-button" type="button" aria-label="Cancel" title="Cancel"
+                    data-i18n-attr="aria-label:cancel,title:cancel">
                     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <path d="M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z" />
+                        <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    </svg>
+                </button>
+                <button id="cropResetBtn" class="text-button reset-button" type="button">
+                    <span data-i18n="crop_reset">Reset</span>
+                </button>
+                <button id="cropDoneBtn" class="edit-button done-button" type="button" aria-label="Done" title="Done"
+                    data-i18n-attr="aria-label:crop_done,title:crop_done">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                     </svg>
                 </button>
             </div>
-        </div>
 
-        <!-- Takes over from the count above once that one scrolls under the header -->
-        <p id="countBelow" class="count-below" style="display: none;" aria-hidden="true"></p>
+            <p id="maskHint" class="edit-hint" style="display: none;" data-i18n="mask_hint">Paint over the parts
+                of the photo that should not be counted.</p>
 
-        <p id="cropHint" class="edit-hint" style="display: none;" data-i18n="crop_hint">Drag the corners or
-            edges to crop, or drag inside the frame to move it.</p>
-
-        <!-- Crop and mask end the same way: ✕ on the leading side, ✓ on the trailing side -->
-        <div id="cropActions" class="edit-actions crop-actions" style="display: none;">
-            <button id="cropCancelBtn" class="edit-button cancel-button" type="button" aria-label="Cancel" title="Cancel"
-                data-i18n-attr="aria-label:cancel,title:cancel">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                </svg>
-            </button>
-            <button id="cropResetBtn" class="text-button reset-button" type="button">
-                <span data-i18n="crop_reset">Reset</span>
-            </button>
-            <button id="cropDoneBtn" class="edit-button done-button" type="button" aria-label="Done" title="Done"
-                data-i18n-attr="aria-label:crop_done,title:crop_done">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                </svg>
-            </button>
-        </div>
-
-        <div id="processActions" class="process-actions" style="display: none;">
-            <button id="cropBtn" class="action-button tool-button crop-button" aria-pressed="false">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path
-                        d="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z" />
-                </svg>
-                <span data-i18n="crop">Kadruj</span>
-            </button>
-            <button id="maskBtn" class="action-button tool-button mask-button" aria-pressed="false">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path
-                        d="M7 14c-1.66 0-3 1.34-3 3 0 1.31-1.16 2-2 2 .92 1.22 2.49 2 4 2 2.21 0 4-1.79 4-4 0-1.66-1.34-3-3-3zm13.71-9.37-1.34-1.34a.996.996 0 0 0-1.41 0L9 12.25 11.75 15l8.96-8.96a.996.996 0 0 0 0-1.41z" />
-                </svg>
-                <span data-i18n="mask">Maskuj</span>
-            </button>
-            <button id="detectBtn" class="action-button tool-button detect-button" aria-pressed="false">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path
-                        d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
-                </svg>
-                <span data-i18n="detection">Detection</span>
-            </button>
-        </div>
-
-        <div id="maskBrushControls" class="mask-brush-controls group" style="display: none;">
-            <div class="settings-field">
-                <label for="maskBrushSize" data-i18n="mask_brush_size">Rozmiar pędzla</label>
-                <div class="range-row">
-                    <input type="range" id="maskBrushSize" min="6" max="120" step="1" value="24" />
-                    <span id="maskBrushSizeValue" class="range-value">24</span>
+            <div id="maskBrushControls" class="mask-brush-controls group" style="display: none;">
+                <div class="settings-field">
+                    <label for="maskBrushSize" data-i18n="mask_brush_size">Rozmiar pędzla</label>
+                    <div class="range-row">
+                        <input type="range" id="maskBrushSize" min="6" max="120" step="1" value="24" />
+                        <span id="maskBrushSizeValue" class="range-value">24</span>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div id="maskActions" class="edit-actions mask-actions" style="display: none;">
-            <button id="maskCancelBtn" class="edit-button cancel-button" type="button" aria-label="Cancel" title="Cancel"
-                data-i18n-attr="aria-label:cancel,title:cancel">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                </svg>
-            </button>
-            <button id="maskClearBtn" class="text-button reset-button" type="button">
-                <span data-i18n="mask_clear">Clear</span>
-            </button>
-            <button id="maskDoneBtn" class="edit-button done-button" type="button" aria-label="Done" title="Done"
-                data-i18n-attr="aria-label:crop_done,title:crop_done">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                </svg>
-            </button>
-        </div>
-
-        <section id="settingsPanel" class="settings-panel" style="display: none;">
-            <h2 class="settings-title" data-i18n="settings_title">Detection settings</h2>
-            <div id="settingsGroup" class="group settings-basic">
-                <div class="settings-field">
-                    <label for="minRadius" data-i18n="min_radius">Min radius</label>
-                    <div class="range-row">
-                        <input autocomplete="off" type="range" id="minRadius" min="0.5" max="30" step="0.5" value="1" />
-                        <span id="minRadiusValue" class="range-value">1.0</span>
-                    </div>
-                </div>
-                <div class="settings-field">
-                    <label for="maxRadius" data-i18n="max_radius">Max radius</label>
-                    <div class="range-row">
-                        <input autocomplete="off" type="range" id="maxRadius" min="1" max="100" step="0.5" value="20" />
-                        <span id="maxRadiusValue" class="range-value">20.0</span>
-                    </div>
-                </div>
-                <details id="advancedSettings" class="settings-advanced">
-                    <summary class="advanced-summary">
-                        <span data-i18n="advanced_settings">Advanced</span>
-                        <svg class="expand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                            <path d="M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z" />
-                        </svg>
-                    </summary>
-                    <div class="settings-advanced-grid">
-                        <div class="settings-field">
-                            <label for="thresholdMethod" data-i18n="threshold_method">Threshold</label>
-                            <div class="select-wrap">
-                                <select autocomplete="off" id="thresholdMethod" class="settings-select">
-                                    <option value="background" data-i18n="threshold_background" selected>Sky
-                                        background</option>
-                                    <option value="adaptive" data-i18n="threshold_adaptive">Adaptive</option>
-                                    <option value="otsu" data-i18n="threshold_otsu">Otsu</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="settings-field">
-                            <label for="blur" data-i18n="blur">Blur (odd)</label>
-                            <div class="range-row">
-                                <input autocomplete="off" type="range" id="blur" min="1" max="15" step="2" value="3" />
-                                <span id="blurValue" class="range-value">3</span>
-                            </div>
-                        </div>
-                        <div class="settings-field" data-methods="background adaptive">
-                            <label for="adaptiveBlock" data-i18n="adaptive_block">Local window</label>
-                            <div class="range-row">
-                                <input autocomplete="off" type="range" id="adaptiveBlock" min="3" max="61" step="2" value="31" />
-                                <span id="adaptiveBlockValue" class="range-value">31</span>
-                            </div>
-                        </div>
-                        <div class="settings-field" data-methods="adaptive">
-                            <label for="adaptiveC" data-i18n="adaptive_c">Adaptive C</label>
-                            <div class="range-row">
-                                <input autocomplete="off" type="range" id="adaptiveC" min="-10" max="10" step="0.5" value="4" />
-                                <span id="adaptiveCValue" class="range-value">4.0</span>
-                            </div>
-                        </div>
-                        <div class="settings-field" data-methods="background">
-                            <label for="sensitivity" data-i18n="sensitivity">Threshold (× sky texture)</label>
-                            <div class="range-row">
-                                <input autocomplete="off" type="range" id="sensitivity" min="2" max="15" step="0.5" value="9" />
-                                <span id="sensitivityValue" class="range-value">9.0</span>
-                            </div>
-                        </div>
-                        <div class="settings-field" data-methods="adaptive otsu">
-                            <label for="morphKernel" data-i18n="morph_kernel">Morph kernel</label>
-                            <div class="range-row">
-                                <input autocomplete="off" type="range" id="morphKernel" min="1" max="11" step="2" value="3" />
-                                <span id="morphKernelValue" class="range-value">3</span>
-                            </div>
-                        </div>
-                        <div class="settings-field" data-methods="adaptive otsu">
-                            <label for="morphOpenIter" data-i18n="morph_open_iter">Morph open</label>
-                            <div class="range-row">
-                                <input autocomplete="off" type="range" id="morphOpenIter" min="0" max="5" step="1" value="1" />
-                                <span id="morphOpenIterValue" class="range-value">1</span>
-                            </div>
-                        </div>
-                        <div class="settings-field" data-methods="adaptive otsu">
-                            <label for="morphCloseIter" data-i18n="morph_close_iter">Morph close</label>
-                            <div class="range-row">
-                                <input autocomplete="off" type="range" id="morphCloseIter" min="0" max="5" step="1" value="1" />
-                                <span id="morphCloseIterValue" class="range-value">1</span>
-                            </div>
-                        </div>
-                        <div class="settings-field toggle-field">
-                            <label class="toggle-label" for="skyOnly">
-                                <span data-i18n="sky_only">Only sky</span>
-                                <input autocomplete="off" type="checkbox" id="skyOnly" switch checked />
-                            </label>
-                        </div>
-                        <div class="settings-field toggle-field">
-                            <label class="toggle-label" for="splitClusters">
-                                <span data-i18n="split_clusters">Split merged birds</span>
-                                <input autocomplete="off" type="checkbox" id="splitClusters" switch checked />
-                            </label>
-                        </div>
-                        <div class="settings-field toggle-field" data-methods="adaptive otsu">
-                            <label class="toggle-label" for="autoInvert">
-                                <span data-i18n="auto_invert">Auto invert</span>
-                                <input autocomplete="off" type="checkbox" id="autoInvert" switch checked />
-                            </label>
-                        </div>
-                        <div class="settings-field toggle-field">
-                            <label class="toggle-label" for="invert">
-                                <span data-i18n="invert">Invert</span>
-                                <input autocomplete="off" type="checkbox" id="invert" switch />
-                            </label>
-                        </div>
-                    </div>
-                    <div class="settings-reset">
-                        <button id="settingsResetBtn" class="text-button" type="button"
-                            data-i18n="settings_reset">Restore defaults</button>
-                    </div>
-                </details>
+            <div id="maskActions" class="edit-actions mask-actions" style="display: none;">
+                <button id="maskCancelBtn" class="edit-button cancel-button" type="button" aria-label="Cancel" title="Cancel"
+                    data-i18n-attr="aria-label:cancel,title:cancel">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    </svg>
+                </button>
+                <button id="maskClearBtn" class="text-button reset-button" type="button">
+                    <span data-i18n="mask_clear">Clear</span>
+                </button>
+                <button id="maskDoneBtn" class="edit-button done-button" type="button" aria-label="Done" title="Done"
+                    data-i18n-attr="aria-label:crop_done,title:crop_done">
+                    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                    </svg>
+                </button>
             </div>
-        </section>
+
+            <section id="settingsPanel" class="settings-panel" style="display: none;">
+                <h2 class="settings-title" data-i18n="settings_title">Detection settings</h2>
+                <div id="settingsGroup" class="group settings-basic">
+                    <div class="settings-field">
+                        <label for="minRadius" data-i18n="min_radius">Min radius</label>
+                        <div class="range-row">
+                            <input autocomplete="off" type="range" id="minRadius" min="0.5" max="30" step="0.5" value="1" />
+                            <span id="minRadiusValue" class="range-value">1.0</span>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="maxRadius" data-i18n="max_radius">Max radius</label>
+                        <div class="range-row">
+                            <input autocomplete="off" type="range" id="maxRadius" min="1" max="100" step="0.5" value="20" />
+                            <span id="maxRadiusValue" class="range-value">20.0</span>
+                        </div>
+                    </div>
+                    <details id="advancedSettings" class="settings-advanced">
+                        <summary class="advanced-summary">
+                            <span data-i18n="advanced_settings">Advanced</span>
+                            <svg class="expand-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M16.59 8.59 12 13.17 7.41 8.59 6 10l6 6 6-6z" />
+                            </svg>
+                        </summary>
+                        <div class="settings-advanced-grid">
+                            <div class="settings-field">
+                                <label for="thresholdMethod" data-i18n="threshold_method">Threshold</label>
+                                <div class="select-wrap">
+                                    <select autocomplete="off" id="thresholdMethod" class="settings-select">
+                                        <option value="background" data-i18n="threshold_background" selected>Sky
+                                            background</option>
+                                        <option value="adaptive" data-i18n="threshold_adaptive">Adaptive</option>
+                                        <option value="otsu" data-i18n="threshold_otsu">Otsu</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="settings-field">
+                                <label for="blur" data-i18n="blur">Blur (odd)</label>
+                                <div class="range-row">
+                                    <input autocomplete="off" type="range" id="blur" min="1" max="15" step="2" value="3" />
+                                    <span id="blurValue" class="range-value">3</span>
+                                </div>
+                            </div>
+                            <div class="settings-field" data-methods="background adaptive">
+                                <label for="adaptiveBlock" data-i18n="adaptive_block">Local window</label>
+                                <div class="range-row">
+                                    <input autocomplete="off" type="range" id="adaptiveBlock" min="3" max="61" step="2" value="31" />
+                                    <span id="adaptiveBlockValue" class="range-value">31</span>
+                                </div>
+                            </div>
+                            <div class="settings-field" data-methods="adaptive">
+                                <label for="adaptiveC" data-i18n="adaptive_c">Adaptive C</label>
+                                <div class="range-row">
+                                    <input autocomplete="off" type="range" id="adaptiveC" min="-10" max="10" step="0.5" value="4" />
+                                    <span id="adaptiveCValue" class="range-value">4.0</span>
+                                </div>
+                            </div>
+                            <div class="settings-field" data-methods="background">
+                                <label for="sensitivity" data-i18n="sensitivity">Threshold (× sky texture)</label>
+                                <div class="range-row">
+                                    <input autocomplete="off" type="range" id="sensitivity" min="2" max="15" step="0.5" value="9" />
+                                    <span id="sensitivityValue" class="range-value">9.0</span>
+                                </div>
+                            </div>
+                            <div class="settings-field" data-methods="adaptive otsu">
+                                <label for="morphKernel" data-i18n="morph_kernel">Morph kernel</label>
+                                <div class="range-row">
+                                    <input autocomplete="off" type="range" id="morphKernel" min="1" max="11" step="2" value="3" />
+                                    <span id="morphKernelValue" class="range-value">3</span>
+                                </div>
+                            </div>
+                            <div class="settings-field" data-methods="adaptive otsu">
+                                <label for="morphOpenIter" data-i18n="morph_open_iter">Morph open</label>
+                                <div class="range-row">
+                                    <input autocomplete="off" type="range" id="morphOpenIter" min="0" max="5" step="1" value="1" />
+                                    <span id="morphOpenIterValue" class="range-value">1</span>
+                                </div>
+                            </div>
+                            <div class="settings-field" data-methods="adaptive otsu">
+                                <label for="morphCloseIter" data-i18n="morph_close_iter">Morph close</label>
+                                <div class="range-row">
+                                    <input autocomplete="off" type="range" id="morphCloseIter" min="0" max="5" step="1" value="1" />
+                                    <span id="morphCloseIterValue" class="range-value">1</span>
+                                </div>
+                            </div>
+                            <div class="settings-field toggle-field">
+                                <label class="toggle-label" for="skyOnly">
+                                    <span data-i18n="sky_only">Only sky</span>
+                                    <input autocomplete="off" type="checkbox" id="skyOnly" switch checked />
+                                </label>
+                            </div>
+                            <div class="settings-field toggle-field">
+                                <label class="toggle-label" for="splitClusters">
+                                    <span data-i18n="split_clusters">Split merged birds</span>
+                                    <input autocomplete="off" type="checkbox" id="splitClusters" switch checked />
+                                </label>
+                            </div>
+                            <div class="settings-field toggle-field" data-methods="adaptive otsu">
+                                <label class="toggle-label" for="autoInvert">
+                                    <span data-i18n="auto_invert">Auto invert</span>
+                                    <input autocomplete="off" type="checkbox" id="autoInvert" switch checked />
+                                </label>
+                            </div>
+                            <div class="settings-field toggle-field">
+                                <label class="toggle-label" for="invert">
+                                    <span data-i18n="invert">Invert</span>
+                                    <input autocomplete="off" type="checkbox" id="invert" switch />
+                                </label>
+                            </div>
+                        </div>
+                        <div class="settings-reset">
+                            <button id="settingsResetBtn" class="text-button" type="button"
+                                data-i18n="settings_reset">Restore defaults</button>
+                        </div>
+                    </details>
+                </div>
+            </section>
+        </div>
 
     </main>
 
@@ -338,7 +350,15 @@
         <!-- Detection settings over the photo: openSettingsInViewer moves the settings group here
              while it is open, so the controls and their handlers stay the same -->
         <section id="viewerSettings" class="viewer-settings" aria-label="Detection settings"
-            data-i18n-attr="aria-label:settings_title" hidden></section>
+            data-i18n-attr="aria-label:settings_title" hidden>
+            <!-- Drag to move the panel anywhere over the photo; double click or tap puts it back -->
+            <div id="viewerSettingsHandle" class="viewer-settings-handle" title="Drag to move"
+                data-i18n-attr="title:viewer_settings_move" aria-hidden="true"></div>
+            <!-- The settings group goes here, and scrolls under the handle -->
+            <div id="viewerSettingsBody" class="viewer-settings-body"></div>
+        </section>
+        <!-- Where the moved panel may go: the screen within the safe areas, above the count bar -->
+        <div id="viewerSettingsArea" class="viewer-settings-area" aria-hidden="true"></div>
         <div class="viewer-tools">
             <button id="viewerSettingsBtn" class="overlay-button viewer-settings-button" type="button"
                 aria-pressed="false" aria-controls="viewerSettings" aria-label="Detection settings"

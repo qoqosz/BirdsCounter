@@ -129,12 +129,19 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   eye button above the photo hides them (`showRings`, kept in `localStorage`). While scrolling, the header's edge
   shrinks the count above the photo, and once it is gone `#countBelow` shows it as plain text under the photo
   (`updateCountPosition`, `body.is-count-below`). Under the photo are Crop,
-  Mask and Detection (opens the settings, open by default). The header's ⋮ menu has Language and, on iOS and
+  Mask and Detection (opens the settings, open by default), then the active tool's options: its hint, controls
+  and ✕/✓. The markup has two groups, `.editor-photo` and `.editor-panel`, which are `display: contents` in one
+  column. On wide screens (900 px and up, and phones in landscape, on every platform) they become a grid: the count
+  and the panel on the leading side, the panel scrolling on its own with ✕/✓ pinned to its bottom, and the photo
+  fitting the rest of the screen (`.photo-stage`, a size container). Short landscape screens also get compact
+  bars, count and tiles, and a two-column start screen. The header's ⋮ menu has Language and, on iOS and
   Android, Share. The full resolution viewer (`#photoViewer`, opened by
   its button or a double click/tap) draws the visible part of the photo and the rings on one canvas per frame;
   pinch, drag, ctrl/⌘ + wheel and double tap zoom and pan. Its settings button (`showViewerSettings`) moves
   `#settingsGroup` itself into a half-transparent `#viewerSettings` panel (a bottom sheet on tall screens, a right
-  column on wide ones) and back, so the controls stay single. A black bar along the bottom (`#viewerCount`) shows the
+  column on wide ones) and back, so the controls stay single. Its grabber (`#viewerSettingsHandle`) drags it
+  anywhere within `#viewerSettingsArea`, as a floating card that takes no room from the photo; the place is kept as
+  fractions of the free room (`viewerSettingsPos`, in `localStorage`), and a double click or tap docks it again. A black bar along the bottom (`#viewerCount`) shows the
   count; the photo fits above it and the sheet (`measureViewerInset`) and shows through the column.
 - History: each opened photo gets one entry. `queueHistorySave` updates it after each result, saves are chained
   and keyed by `editSession`, and saves that change nothing are skipped.

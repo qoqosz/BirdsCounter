@@ -61,6 +61,7 @@ let cropResetBtn;
 let cropCancelBtn;
 let cropDoneBtn;
 let cropHint;
+let maskHint;
 let settingsPanel;
 let cropOverlay;
 let cropBox;
@@ -86,6 +87,9 @@ let viewerCloseBtn;
 let viewerShareBtn;
 let viewerSettingsBtn;
 let viewerSettings;
+let viewerSettingsHandle;
+let viewerSettingsBody;
+let viewerSettingsArea;
 let viewerCount;
 let settingsGroup;
 let advancedSettings;
@@ -167,6 +171,11 @@ let viewerTap = null;
 // the part of the screen they cover, and the Advanced section's state in the editor.
 let viewerSettingsWanted = false;
 let viewerInsetBottom = 0;
+// Where the user moved the panel, as fractions of the room it can move in (so it stays in
+// place across rotations and window sizes); null while it sits in its usual place.
+let viewerSettingsPos = loadViewerSettingsPos();
+let viewerSettingsDrag = null;
+let viewerSettingsLastTap = 0;
 let advancedWasOpen = false;
 let viewerLastTap = null;
 let viewerFrame = 0;
@@ -702,6 +711,7 @@ function updateEditingState() {
   updateSettingsVisibility();
   if (cropActions) cropActions.style.display = isCropping ? "flex" : "none";
   if (cropHint) cropHint.style.display = isCropping ? "block" : "none";
+  if (maskHint) maskHint.style.display = isMasking ? "block" : "none";
   // Rings belong to the counted crop, not to the whole photo shown while cropping.
   renderRings();
 }
@@ -884,18 +894,18 @@ function setViewerSettingsOpen(open) {
 }
 
 function showViewerSettings(show) {
-  if (!viewerSettings || !settingsGroup || !settingsPanel) return;
+  if (!viewerSettings || !viewerSettingsBody || !settingsGroup || !settingsPanel) return;
   if (show === !viewerSettings.hidden) return;
   if (show) {
     advancedWasOpen = advancedSettings?.open ?? false;
     if (advancedSettings) advancedSettings.open = true;
-    viewerSettings.append(settingsGroup);
+    viewerSettingsBody.append(settingsGroup);
   } else {
     settingsPanel.append(settingsGroup);
     if (advancedSettings) advancedSettings.open = advancedWasOpen;
   }
   viewerSettings.hidden = !show;
-  viewerSettings.scrollTop = 0;
+  viewerSettingsBody.scrollTop = 0;
   if (viewerSettingsBtn) {
     viewerSettingsBtn.classList.toggle("is-active", show);
     viewerSettingsBtn.setAttribute("aria-pressed", show ? "true" : "false");
@@ -911,11 +921,135 @@ function measureViewerInset() {
   let top = screen.bottom;
   const bar = viewerCount?.getBoundingClientRect();
   if (bar && bar.height > 0) top = bar.top;
-  if (viewerSettings && !viewerSettings.hidden) {
+  if (viewerSettings && !viewerSettings.hidden && !viewerSettingsPos) {
     const panel = viewerSettings.getBoundingClientRect();
     if (panel.width >= screen.width * 0.75) top = Math.min(top, panel.top);
   }
   return Math.max(0, screen.bottom - top);
+}
+
+// ===== Moving the settings panel in the viewer =====
+// Dragged by its handle, the panel floats where it is let go, also across openings; a double
+// click or tap on the handle puts it back in its usual place.
+
+function loadViewerSettingsPos() {
+  try {
+    const pos = JSON.parse(localStorage.getItem("viewerSettingsPos"));
+    if (pos && Number.isFinite(pos.fx) && Number.isFinite(pos.fy)) return pos;
+  } catch (e) {
+    // Not moved yet
+  }
+  return null;
+}
+
+function saveViewerSettingsPos() {
+  try {
+    if (viewerSettingsPos) localStorage.setItem("viewerSettingsPos", JSON.stringify(viewerSettingsPos));
+    else localStorage.removeItem("viewerSettingsPos");
+  } catch (e) {
+    console.warn("Failed to persist the settings panel position:", e);
+  }
+}
+
+// Puts the floating panel at its fractions of the room left around it.
+function placeViewerSettings() {
+  if (!viewerSettings) return;
+  const floating = !!viewerSettingsPos;
+  viewerSettings.classList.toggle("is-floating", floating);
+  if (!floating) {
+    viewerSettings.style.left = "";
+    viewerSettings.style.top = "";
+    return;
+  }
+  if (viewerSettings.hidden || !viewerSettingsArea) return;
+  const area = viewerSettingsArea.getBoundingClientRect();
+  const screen = photoViewer.getBoundingClientRect();
+  const panel = viewerSettings.getBoundingClientRect();
+  const left = area.left + clamp(viewerSettingsPos.fx, 0, 1) * Math.max(0, area.width - panel.width);
+  const top = area.top + clamp(viewerSettingsPos.fy, 0, 1) * Math.max(0, area.height - panel.height);
+  viewerSettings.style.left = `${Math.round(left - screen.left)}px`;
+  viewerSettings.style.top = `${Math.round(top - screen.top)}px`;
+}
+
+function onViewerSettingsHandleDown(e) {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  if (viewerSettingsDrag) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const before = viewerSettings.getBoundingClientRect();
+  const wasFloating = !!viewerSettingsPos;
+  if (!wasFloating) {
+    // Leaves its usual place where it is now, so it doesn't jump under the finger
+    viewerSettingsPos = { fx: 0, fy: 0 };
+    viewerSettings.classList.add("is-floating");
+  }
+  const panel = viewerSettings.getBoundingClientRect();
+  // The sheet narrows to a card when it leaves the bottom: keep the grabbed point on it.
+  const grabX = clamp(e.clientX - before.left, 0, panel.width);
+  viewerSettingsDrag = {
+    pointerId: e.pointerId,
+    dx: wasFloating ? grabX : Math.min(grabX, panel.width / 2),
+    dy: e.clientY - before.top,
+    moved: false,
+  };
+  if (!wasFloating) moveViewerSettingsTo(e.clientX - viewerSettingsDrag.dx, before.top);
+  viewerSettingsHandle.setPointerCapture?.(e.pointerId);
+  viewerSettingsHandle.classList.add("is-dragging");
+}
+
+function moveViewerSettingsTo(left, top) {
+  const area = viewerSettingsArea.getBoundingClientRect();
+  const panel = viewerSettings.getBoundingClientRect();
+  const roomX = area.width - panel.width;
+  const roomY = area.height - panel.height;
+  viewerSettingsPos = {
+    fx: roomX > 0 ? clamp((left - area.left) / roomX, 0, 1) : 0,
+    fy: roomY > 0 ? clamp((top - area.top) / roomY, 0, 1) : 0,
+  };
+  placeViewerSettings();
+}
+
+function onViewerSettingsHandleMove(e) {
+  const drag = viewerSettingsDrag;
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  e.preventDefault();
+  drag.moved = true;
+  moveViewerSettingsTo(e.clientX - drag.dx, e.clientY - drag.dy);
+}
+
+function onViewerSettingsHandleUp(e) {
+  const drag = viewerSettingsDrag;
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  viewerSettingsDrag = null;
+  viewerSettingsHandle.classList.remove("is-dragging");
+  // Taps don't always make a dblclick in WebKit: two quick taps on the handle put it back too.
+  if (!drag.moved && e.pointerType !== "mouse") {
+    const now = performance.now();
+    if (now - viewerSettingsLastTap < 350) {
+      viewerSettingsLastTap = 0;
+      dockViewerSettings();
+      return;
+    }
+    viewerSettingsLastTap = now;
+  }
+  saveViewerSettingsPos();
+  // The photo may use the room the sheet left at the bottom.
+  layoutViewer();
+}
+
+function dockViewerSettings() {
+  viewerSettingsPos = null;
+  saveViewerSettingsPos();
+  layoutViewer();
+}
+
+function setupViewerSettingsDrag() {
+  if (!viewerSettingsHandle || !viewerSettingsArea || !viewerSettings) return;
+  viewerSettingsHandle.addEventListener("pointerdown", onViewerSettingsHandleDown);
+  viewerSettingsHandle.addEventListener("pointermove", onViewerSettingsHandleMove);
+  viewerSettingsHandle.addEventListener("pointerup", onViewerSettingsHandleUp);
+  viewerSettingsHandle.addEventListener("pointercancel", onViewerSettingsHandleUp);
+  viewerSettingsHandle.addEventListener("dblclick", dockViewerSettings);
 }
 
 function viewerMaxScale() {
@@ -927,6 +1061,7 @@ function viewerMaxScale() {
 function layoutViewer() {
   const view = viewRect();
   if (!isViewerOpen || !view) return;
+  placeViewerSettings();
   viewerInsetBottom = measureViewerInset();
   const width = viewerCanvas.clientWidth;
   const height = viewerCanvas.clientHeight - viewerInsetBottom;
@@ -2853,6 +2988,9 @@ window.addEventListener("DOMContentLoaded", () => {
   viewerShareBtn = document.querySelector("#viewerShareBtn");
   viewerSettingsBtn = document.querySelector("#viewerSettingsBtn");
   viewerSettings = document.querySelector("#viewerSettings");
+  viewerSettingsHandle = document.querySelector("#viewerSettingsHandle");
+  viewerSettingsBody = document.querySelector("#viewerSettingsBody");
+  viewerSettingsArea = document.querySelector("#viewerSettingsArea");
   viewerCount = document.querySelector("#viewerCount");
   settingsGroup = document.querySelector("#settingsGroup");
   advancedSettings = document.querySelector("#advancedSettings");
@@ -2868,6 +3006,7 @@ window.addEventListener("DOMContentLoaded", () => {
   cropCancelBtn = document.querySelector("#cropCancelBtn");
   cropDoneBtn = document.querySelector("#cropDoneBtn");
   cropHint = document.querySelector("#cropHint");
+  maskHint = document.querySelector("#maskHint");
   settingsPanel = document.querySelector("#settingsPanel");
   cropBtn = document.querySelector("#cropBtn");
   maskBtn = document.querySelector("#maskBtn");
@@ -3091,6 +3230,7 @@ window.addEventListener("DOMContentLoaded", () => {
   if (viewerSettings && typeof ResizeObserver === "function") {
     new ResizeObserver(() => layoutViewer()).observe(viewerSettings);
   }
+  setupViewerSettingsDrag();
   viewerSettingsBtn?.addEventListener("click", () =>
     setViewerSettingsOpen(viewerSettings?.hidden ?? false),
   );
@@ -3147,12 +3287,22 @@ window.addEventListener("DOMContentLoaded", () => {
 
   window.addEventListener("pointermove", onMaskPointerMove);
   window.addEventListener("pointerup", onMaskPointerUp);
-  window.addEventListener("resize", () => {
+  const fitOverlays = () => {
     renderMaskPreview();
     renderRings();
-    layoutViewer();
     if (isCropping) updateCropUI();
+  };
+  window.addEventListener("resize", () => {
+    fitOverlays();
+    layoutViewer();
   });
+  // The photo also changes size without a window resize, e.g. when the crop mat appears in
+  // the side panel layout, where the photo fits the screen.
+  if (previewImg && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      if (isPreviewVisible) fitOverlays();
+    }).observe(previewImg);
+  }
 
   // Back button click handler
   if (backBtn) {
@@ -3212,7 +3362,8 @@ window.addEventListener("DOMContentLoaded", () => {
   // quick action and the result came back before this page loaded.
   window.onNativeImageReady = takeAndroidResult;
   takeAndroidResult();
-  if (isIOS) {
+  // Quick actions and shared photos come from the iOS app; Safari has neither.
+  if (isIOS && !isWeb) {
     setupIOS();
   }
 });
