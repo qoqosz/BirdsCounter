@@ -36,3 +36,6 @@ src-tauri/gen/android/*.keystore
 # Build outputs (release APKs are attached to GitHub releases, not committed)
 *.apk
 *.aab
+
+# private data
+images/birds/ptaki*
