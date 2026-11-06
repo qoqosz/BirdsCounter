@@ -100,8 +100,8 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   whole photo, not the crop, so don't scale it again in callers.
 - With `sky_only` (default), `landscape_mask` runs before both methods. Candidate components that touch
   non-sky areas are dropped whole by `drop_touching`, while the user's painted mask only cuts them. A component
-  reaching more than `LANDSCAPE_REACH_WINDOWS` from the landscape is a dense flock merged into one, and only loses its
-  pixels near it (the `Reach` zones, grown on the mask's downscaled copy for speed). Rough islands count as landscape
+  reaching more than `LANDSCAPE_REACH_WINDOWS` from the landscape (`LANDSCAPE_LINK_REACH_WINDOWS` for one linked to it
+  by `drop_linked`) is a dense flock merged into one, and only loses its pixels near it (the `Reach` zones, grown on the mask's downscaled copy for speed). Rough islands count as landscape
   only near land that reaches the image edge, not near the edge alone. Its
   thresholds are the `SKY_*` constants, in units of a downscaled copy where the local window is 5 px.
   `fill_below_land` marks everything under the ground too (water), and `drop_linked` also drops candidates linked to

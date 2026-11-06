@@ -302,6 +302,30 @@ test("drops twigs linked to a bush", () => {
   img.delete();
 });
 
+/**
+ * Birds merged into one column from the ground at `horizon` up to `height`, then after a small
+ * gap more of them up to 150: the lower part stays within 8 local windows of the ground, and its
+ * links to the upper part reach farther.
+ */
+function drawColumn(img, horizon, height) {
+  for (let y = horizon - 2; y > horizon - 150; y -= 4) {
+    const up = horizon - y;
+    if (up > height && up < height + 6) continue;
+    drawBird(img, 700 + (y % 2), y, 90);
+  }
+}
+
+test("keeps a flock rising from the ground beyond a tree top", () => {
+  const img = sky(200);
+  const expected = drawFlock(img, 3, 90);
+  const horizon = 400;
+  paste(img, roughTexture(HEIGHT - horizon, WIDTH), 0, horizon);
+  // 80 pixels is about 6 local windows: more than a tree top sticking out of the mask.
+  drawColumn(img, horizon, 80);
+  assert.equal(count(img), expected + 2);
+  img.delete();
+});
+
 test("ignores water below the land", () => {
   const img = sky(200);
   const expected = drawFlock(img, 3, 90);
@@ -502,7 +526,8 @@ test("drop touching keeps what reaches far into the sky", () => {
   const scope = new BirdDetector.Scope();
   try {
     const ground = scope.add(filled(100, 100, [[0, 90, 100, 10]]));
-    const reach = { near: detector.grow(ground, 15, scope), far: detector.grow(ground, 40, scope) };
+    const near = detector.grow(ground, 15, scope);
+    const far = detector.grow(ground, 40, scope);
     const candidates = scope.add(
       filled(100, 100, [
         [20, 10, 4, 85], // a dense flock merged into one candidate, down to the ground
@@ -510,7 +535,7 @@ test("drop touching keeps what reaches far into the sky", () => {
         [80, 20, 4, 4], // a bird
       ]),
     );
-    const kept = detector.dropTouching(candidates, ground, reach, scope);
+    const kept = detector.dropTouching(candidates, ground, near, far, scope);
     assert.equal(pixels(kept, [20, 10, 4, 65]), 4 * 65);
     assert.equal(pixels(kept, [20, 75, 4, 25]), 0);
     assert.equal(pixels(kept, [60, 70, 4, 25]), 0);

@@ -70,9 +70,12 @@ const LANDSCAPE_GAP_RATIO: f64 = 0.25;
 /// The links to the landscape use this sensitivity, not the slider's: at a low setting, cloud
 /// texture would connect the whole sky to the ground.
 const LANDSCAPE_LINK_SENSITIVITY: f32 = 9.0;
-/// A candidate touching the landscape, or linked to it, is dropped whole when it lies within this
-/// many local windows of it, like a tree top or a bush.
-const LANDSCAPE_REACH_WINDOWS: f64 = 8.0;
+/// A candidate touching the landscape is dropped whole when it lies within this many local windows
+/// of it, like a tree top. The mask already covers the tree, so what sticks out of it is short.
+const LANDSCAPE_REACH_WINDOWS: f64 = 4.0;
+/// A candidate linked to the landscape is dropped whole when it lies within this many local
+/// windows of it. The mask erases a bush's twigs, so the bush itself reaches this far.
+const LANDSCAPE_LINK_REACH_WINDOWS: f64 = 8.0;
 /// A candidate reaching farther is a dense flock merged into one candidate, and it loses only its
 /// pixels within this many local windows of the landscape.
 const LANDSCAPE_CUT_WINDOWS: f64 = 1.0;
@@ -255,13 +258,15 @@ struct Reach {
     near: core::Mat,
     /// Within `LANDSCAPE_REACH_WINDOWS` of it.
     far: core::Mat,
+    /// Within `LANDSCAPE_LINK_REACH_WINDOWS` of it.
+    linked: core::Mat,
 }
 
 impl Masks<'_> {
     fn apply(&self, binary: core::Mat) -> Result<core::Mat, String> {
         let mut out = binary;
         if let (Some(landscape), Some(reach)) = (self.landscape, self.reach) {
-            out = drop_touching(&out, landscape, reach)?;
+            out = drop_touching(&out, landscape, &reach.near, &reach.far)?;
         }
         if let Some(exclusion) = self.exclusion {
             out = apply_exclusion_mask(&out, exclusion)?;
@@ -932,6 +937,7 @@ fn landscape_mask(
     let windows = |count: f64| (window as f64 * count / scale).round() as i32;
     let near = grow(&landscape, windows(LANDSCAPE_CUT_WINDOWS))?;
     let far = grow(&landscape, windows(LANDSCAPE_REACH_WINDOWS))?;
+    let linked = grow(&landscape, windows(LANDSCAPE_LINK_REACH_WINDOWS))?;
 
     let full_size = gray.size().map_err(|e| format!("Size error: {}", e))?;
     let upscale = |mask: &core::Mat| -> Result<core::Mat, String> {
@@ -955,6 +961,7 @@ fn landscape_mask(
         Reach {
             near: upscale(&near)?,
             far: upscale(&far)?,
+            linked: upscale(&linked)?,
         },
     )))
 }
@@ -1001,7 +1008,7 @@ fn drop_linked(
     window: i32,
 ) -> Result<core::Mat, String> {
     let grown = grow(links, (window as f64 * LANDSCAPE_GAP_RATIO).round() as i32)?;
-    let free = drop_touching(&grown, landscape, reach)?;
+    let free = drop_touching(&grown, landscape, &reach.near, &reach.linked)?;
     let mut out = core::Mat::default();
     core::bitwise_and(binary, &free, &mut out, &core::no_array())
         .map_err(|e| format!("Mask combine error: {}", e))?;
@@ -1593,12 +1600,13 @@ fn decode_mask(mask_bytes: &[u8], width: i32, height: i32) -> Result<core::Mat, 
 }
 
 /// Removes the connected components of `binary` that overlap `forbidden`.
-/// Removes from `binary` every component that touches `forbidden` and stays within `reach.far`.
-/// Of one that reaches farther, only the pixels within `reach.near` are removed.
+/// Removes from `binary` every component that touches `forbidden` and stays within `far`. Of one
+/// that reaches farther, only the pixels within `near` are removed.
 fn drop_touching(
     binary: &core::Mat,
     forbidden: &core::Mat,
-    reach: &Reach,
+    near: &core::Mat,
+    far: &core::Mat,
 ) -> Result<core::Mat, String> {
     let mut labels = core::Mat::default();
     let label_count = imgproc::connected_components(binary, &mut labels, 8, core::CV_32S)
@@ -1609,8 +1617,7 @@ fn drop_touching(
     let forbidden_data = forbidden
         .data_bytes()
         .map_err(|e| format!("Mask access error: {}", e))?;
-    let far_data = reach
-        .far
+    let far_data = far
         .data_bytes()
         .map_err(|e| format!("Mask access error: {}", e))?;
     let mut touching = vec![false; label_count];
@@ -1633,8 +1640,7 @@ fn drop_touching(
     let out_data = out
         .data_bytes_mut()
         .map_err(|e| format!("Mask access error: {}", e))?;
-    let near_data = reach
-        .near
+    let near_data = near
         .data_bytes()
         .map_err(|e| format!("Mask access error: {}", e))?;
     for ((value, &label), &close) in out_data.iter_mut().zip(label_data).zip(near_data) {
@@ -2101,6 +2107,40 @@ mod tests {
         assert_eq!(count(encode(&img), BlobParams::default(), None), expected);
     }
 
+    /// Birds merged into one column from the ground at `horizon` up to `height`, then after a
+    /// small gap more of them up to 150: the lower part stays within 8 local windows of the
+    /// ground, and its links to the upper part reach farther.
+    fn draw_column(img: &mut core::Mat, horizon: i32, height: i32) {
+        let mut y = horizon - 2;
+        while y > horizon - 150 {
+            let up = horizon - y;
+            if !(up > height && up < height + 6) {
+                draw_bird(img, 700.0 + (y % 2) as f64, y as f64, 90.0);
+            }
+            y -= 4;
+        }
+    }
+
+    #[test]
+    fn keeps_a_flock_rising_from_the_ground_beyond_a_tree_top() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 3, 90.0, &[]);
+        let horizon = 400;
+        rough_texture(HEIGHT - horizon, WIDTH)
+            .copy_to(
+                &mut img
+                    .roi_mut(core::Rect::new(0, horizon, WIDTH, HEIGHT - horizon))
+                    .unwrap(),
+            )
+            .unwrap();
+        // 80 pixels is about 6 local windows: more than a tree top sticking out of the mask.
+        draw_column(&mut img, horizon, 80);
+        assert_eq!(
+            count(encode(&img), BlobParams::default(), None),
+            expected + 2
+        );
+    }
+
     #[test]
     fn ignores_water_below_the_land() {
         let mut img = sky(200.0);
@@ -2456,10 +2496,8 @@ mod tests {
     #[test]
     fn drop_touching_keeps_what_reaches_far_into_the_sky() {
         let ground = filled(100, 100, &[(0, 90, 100, 10)]);
-        let reach = Reach {
-            near: grow(&ground, 15).unwrap(),
-            far: grow(&ground, 40).unwrap(),
-        };
+        let near = grow(&ground, 15).unwrap();
+        let far = grow(&ground, 40).unwrap();
         let candidates = filled(
             100,
             100,
@@ -2469,7 +2507,7 @@ mod tests {
                 (80, 20, 4, 4),  // a bird
             ],
         );
-        let kept = drop_touching(&candidates, &ground, &reach).unwrap();
+        let kept = drop_touching(&candidates, &ground, &near, &far).unwrap();
         assert_eq!(pixels(&kept, (20, 10, 4, 65)), 4 * 65);
         assert_eq!(pixels(&kept, (20, 75, 4, 25)), 0);
         assert_eq!(pixels(&kept, (60, 70, 4, 25)), 0);

@@ -39,7 +39,8 @@
   const MAX_WORKING_SIDE = 2048;
   const LANDSCAPE_GAP_RATIO = 0.25;
   const LANDSCAPE_LINK_SENSITIVITY = f(9.0);
-  const LANDSCAPE_REACH_WINDOWS = 8.0;
+  const LANDSCAPE_REACH_WINDOWS = 4.0;
+  const LANDSCAPE_LINK_REACH_WINDOWS = 8.0;
   const LANDSCAPE_CUT_WINDOWS = 1.0;
   const FRAGMENT_RATIO = 0.12;
   const FRAGMENT_MAX_BIRDS = 3.0;
@@ -319,11 +320,11 @@
     }
 
     /**
-     * Removes from `binary` every component that overlaps `forbidden` and stays within `reach.far`.
-     * Of one that reaches farther, only the pixels within `reach.near` are removed (see
-     * drop_touching in blob_filter.rs).
+     * Removes from `binary` every component that overlaps `forbidden` and stays within `far`. Of
+     * one that reaches farther, only the pixels within `near` are removed (see drop_touching in
+     * blob_filter.rs).
      */
-    function dropTouching(binary, forbidden, reach, scope) {
+    function dropTouching(binary, forbidden, near, far, scope) {
       const local = new Scope();
       try {
         const labels = mat(local);
@@ -331,8 +332,8 @@
         const out = zeros(scope, binary.rows, binary.cols);
         const labelData = labels.data32S;
         const forbiddenData = forbidden.data;
-        const nearData = reach.near.data;
-        const farData = reach.far.data;
+        const nearData = near.data;
+        const farData = far.data;
         const outData = out.data;
         const touching = new Uint8Array(labelCount);
         const escapes = new Uint8Array(labelCount);
@@ -413,7 +414,7 @@
      */
     function applyMasks(binary, masks, scope) {
       let out = binary;
-      if (masks.landscape) out = dropTouching(out, masks.landscape, masks.reach, scope);
+      if (masks.landscape) out = dropTouching(out, masks.landscape, masks.reach.near, masks.reach.far, scope);
       if (masks.exclusion) out = applyExclusionMask(out, masks.exclusion, scope);
       return out;
     }
@@ -465,7 +466,7 @@
       const local = new Scope();
       try {
         const grown = grow(links, Math.round(window * LANDSCAPE_GAP_RATIO), local);
-        const free = dropTouching(grown, landscape, reach, local);
+        const free = dropTouching(grown, landscape, reach.near, reach.linked, local);
         const out = mat(scope);
         cv.bitwise_and(binary, free, out);
         return out;
@@ -670,6 +671,7 @@
         const windows = (count) => Math.round((window * count) / scale);
         const near = grow(filled, windows(LANDSCAPE_CUT_WINDOWS), local);
         const far = grow(filled, windows(LANDSCAPE_REACH_WINDOWS), local);
+        const linked = grow(filled, windows(LANDSCAPE_LINK_REACH_WINDOWS), local);
 
         const upscale = (small) => {
           const upscaled = mat(local);
@@ -678,7 +680,10 @@
           cv.threshold(upscaled, full, 127, 255, cv.THRESH_BINARY);
           return full;
         };
-        return { mask: upscale(filled), reach: { near: upscale(near), far: upscale(far) } };
+        return {
+          mask: upscale(filled),
+          reach: { near: upscale(near), far: upscale(far), linked: upscale(linked) },
+        };
       } finally {
         local.release();
       }
