@@ -39,3 +39,6 @@ src-tauri/gen/android/*.keystore
 
 # private data
 images/birds/ptaki*
+
+# Detector benchmarks across versions (local only)
+benchmarks/
