@@ -137,9 +137,13 @@
   const openedPhotos = new Map();
   let nextOpenedPhoto = 1;
 
+  // The photo last opened or read, most likely the one in the editor.
+  let currentPhoto = null;
+
   function keepPhoto({ bytes, name, mime }) {
     const id = `${Date.now().toString(16)}-${nextOpenedPhoto++}`;
     openedPhotos.set(id, { bytes: asBytes(bytes), name, mime });
+    currentPhoto = id;
     return `${WEB_SOURCE}${id}`;
   }
 
@@ -150,6 +154,7 @@
   async function readImage({ source }) {
     const key = photoKey(source);
     if (!key) throw "photo-missing";
+    currentPhoto = key;
     const opened = openedPhotos.get(key);
     if (opened) return opened.bytes;
     const stored = await getValue("photos", key);
@@ -181,10 +186,33 @@
     return entries;
   }
 
-  async function historySave({ entry, thumb, mask, updateMask }) {
+  function isQuotaError(e) {
+    return e?.name === "QuotaExceededError";
+  }
+
+  // Photos that did not fit in the storage: later saves of their entries skip the photo, so
+  // each one doesn't fail again.
+  const unstoredPhotos = new Set();
+
+  /** Saves the entry and its thumbnail; when the storage is full, without the photo. */
+  async function historySave(args) {
+    const key = photoKey(args.entry.source);
+    const withPhoto = Boolean(key) && !unstoredPhotos.has(key);
+    try {
+      return await saveEntry(args, withPhoto);
+    } catch (e) {
+      if (!withPhoto || !isQuotaError(e)) throw e;
+    }
+    // The entry is worth more than the photo. Opening it later reports the photo missing.
+    console.warn("Storage is full, saving the history entry without its photo");
+    unstoredPhotos.add(key);
+    return saveEntry(args, false);
+  }
+
+  async function saveEntry({ entry, thumb, mask, updateMask }, withPhoto) {
     const now = Date.now();
     const key = photoKey(entry.source);
-    const opened = key ? openedPhotos.get(key) : null;
+    const opened = withPhoto && key ? openedPhotos.get(key) : null;
     let persisted = false;
     const saved = await transaction(["entries", "thumbs", "masks", "photos"], "readwrite", async (stores) => {
       let stored = entry.id ? await done(stores.entries.get(entry.id)) : null;
@@ -241,7 +269,13 @@
         stores.thumbs.delete(entry.id);
         stores.masks.delete(entry.id);
         const key = photoKey(entry.source);
-        if (key && !kept.has(key)) stores.photos.delete(key);
+        if (!key || kept.has(key)) continue;
+        // The editor may still show it and save it again as a new entry: keep its bytes.
+        if (key === currentPhoto && !openedPhotos.has(key)) {
+          const stored = await done(stores.photos.get(key));
+          if (stored) openedPhotos.set(key, stored);
+        }
+        stores.photos.delete(key);
       }
     });
   }
