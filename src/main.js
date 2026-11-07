@@ -156,9 +156,12 @@ let settingsResetBtn;
 let defaultParams = null;
 // The photo the detector holds (see countBirds): its bytes and id.
 let loadedPhoto = null;
-let isProcessing = false;
-let pendingProcess = false;
-let processTimer = null;
+// Debounces and coalesces counting (see logic.js).
+const processScheduler = BirdsLogic.createProcessScheduler({
+  process: () => processImage(),
+  canRun: () => isPreviewVisible,
+  canSchedule: () => isPreviewVisible && !!sourceBytes,
+});
 let showRings = true;
 let settingsOpen = false;
 let isViewerOpen = false;
@@ -195,11 +198,10 @@ let countingDotCount = 1;
 // History entry id of each editing session once saved, what was saved last (to skip
 // saves that change nothing), and the last result to save.
 let historyIds = new Map();
-let historySavedKeys = new Map();
 let lastResult = null;
 let maskChangedSinceSave = false;
 let historySaveTimer = null;
-let historySaveChain = Promise.resolve();
+const historyQueue = BirdsLogic.createHistorySaveQueue();
 let historyEntries = [];
 let historyThumbUrls = new Map();
 
@@ -399,7 +401,7 @@ async function openImage(bytes, mime, info, entry = null, maskBytes = null) {
   };
   if (entry) {
     historyIds.set(editSession, entry.id);
-    historySavedKeys.set(editSession, historyKey(entry));
+    historyQueue.markSaved(editSession, historyKey(entry));
   }
   lastResult = null;
   maskChangedSinceSave = false;
@@ -447,11 +449,7 @@ function resetApp() {
   flushHistorySave().then(refreshHistory);
   editSession++;
   isPreviewVisible = false;
-  if (processTimer) {
-    clearTimeout(processTimer);
-    processTimer = null;
-  }
-  pendingProcess = false;
+  processScheduler.cancel();
   imagePreview.style.display = "none";
   closeViewer();
   if (countLabel) countLabel.style.display = "none";
@@ -534,18 +532,7 @@ async function showWorkingPreview() {
 }
 
 function birdsSuffix(value) {
-  if (currentLang === "pl") {
-    const n = Math.abs(Math.trunc(value));
-    const mod10 = n % 10;
-    const mod100 = n % 100;
-    if (n === 1) return t("count_suffix_one");
-    if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
-      return t("count_suffix_few");
-    }
-    return t("count_suffix_many");
-  }
-  if (Number(value) === 1) return t("count_suffix_one");
-  return t("count_suffix");
+  return BirdsLogic.birdsSuffix(value, currentLang, t);
 }
 
 function updateCount(value) {
@@ -2383,30 +2370,7 @@ function resetSettings() {
 }
 
 function scheduleProcess() {
-  if (!isPreviewVisible || !sourceBytes) return;
-  if (processTimer) clearTimeout(processTimer);
-  processTimer = setTimeout(() => {
-    processTimer = null;
-    runProcess();
-  }, 100);
-}
-
-async function runProcess() {
-  if (!isPreviewVisible) return;
-  if (isProcessing) {
-    pendingProcess = true;
-    return;
-  }
-  isProcessing = true;
-  try {
-    await processImage();
-  } finally {
-    isProcessing = false;
-    if (pendingProcess) {
-      pendingProcess = false;
-      runProcess();
-    }
-  }
+  processScheduler.schedule();
 }
 
 // Counts the birds in `bytes`. The detector keeps the last photo decoded (load_photo), so
@@ -2485,7 +2449,7 @@ function flushHistorySave() {
     lastResult = { ...lastResult, params: readParamsFromUI() };
     queueHistorySave();
   }
-  return historySaveChain;
+  return historyQueue.flush();
 }
 
 // Independent of key order: params come back from Rust sorted by name.
@@ -2506,20 +2470,14 @@ function queueHistorySave() {
   const info = { ...sourceInfo };
   const updateMask = maskChangedSinceSave;
   if (!result || !image) return;
-  const key = historyKey(result);
-  if (!updateMask && historySavedKeys.get(session) === key) return;
-  historySavedKeys.set(session, key);
-  maskChangedSinceSave = false;
-  const maskPromise = updateMask ? buildMaskPayload() : Promise.resolve(null);
-  // A failed save must not count as done, so the next one retries.
-  const undoSaved = () => {
-    if (historySavedKeys.get(session) === key) historySavedKeys.delete(session);
-    if (updateMask) maskChangedSinceSave = true;
-  };
-  historySaveChain = historySaveChain
-    .then(async () => {
+  let maskPromise = Promise.resolve(null);
+  const queued = historyQueue.enqueue({
+    session,
+    key: historyKey(result),
+    force: updateMask,
+    task: async () => {
       const [thumb, mask] = await Promise.all([makeThumbnail(image, result), maskPromise]);
-      if (!thumb) return undoSaved();
+      if (!thumb) return false;
       const entry = {
         id: historyIds.get(session) ?? null,
         source: info.source,
@@ -2536,11 +2494,16 @@ function queueHistorySave() {
           : framedBody({ entry, thumbLength: thumb.length, updateMask }, thumb, mask),
       );
       historyIds.set(session, saved.id);
-    })
-    .catch((e) => {
-      undoSaved();
-      console.error("Failed to save history:", e);
-    });
+    },
+    // A failed save must not count as done, so the next one retries.
+    onUndo: () => {
+      if (updateMask) maskChangedSinceSave = true;
+    },
+    onError: (e) => console.error("Failed to save history:", e),
+  });
+  if (!queued) return;
+  maskChangedSinceSave = false;
+  if (updateMask) maskPromise = buildMaskPayload();
 }
 
 // The counted part of the photo with its rings.

@@ -150,6 +150,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   and keyed by `editSession`, and saves that change nothing are skipped.
 - Any settings change calls `scheduleProcess`, which debounces by 100 ms. Calls arriving while processing is
   running are coalesced.
+- `src/logic.js` (loaded before `main.js`, global `BirdsLogic`, also `require`d by `tests/web/logic.test.cjs`, which
+  needs no OpenCV.js) holds the pure logic of `birdsSuffix`, the `scheduleProcess` scheduler and the `queueHistorySave`
+  chain, with timers and saving passed in. Keep them free of DOM and globals.
 - `main.js` detects the platform from the user agent and sets `body.is-android` or `body.is-ios`. `styles.css` has
   shared layout and components driven by tokens, plus two overrides:
   - `body.is-android` follows Material 3: `--md-*` color tokens, plus a ripple effect, slider and switch built in CSS.
