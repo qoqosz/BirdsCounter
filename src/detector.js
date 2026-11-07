@@ -2,6 +2,7 @@
 // Constants, steps and their order follow the Rust code, so keep the two in sync. Images
 // are 8-bit gray `cv.Mat`s; per-pixel steps work on the Mats' data views, which a later
 // allocation can detach (the wasm heap grows), so views are taken right before each loop.
+// `Mat.clone()` copies only the handle in OpenCV.js 5: `mat_clone()` copies the pixels.
 //
 // Loaded by detector-worker.js (importScripts) and by the Node tests (require).
 (function (root, factory) {
@@ -296,7 +297,7 @@
       if (!rect || (rect.width >= src.cols && rect.height >= src.rows)) return src;
       const roi = src.roi(new cv.Rect(rect.x, rect.y, rect.width, rect.height));
       try {
-        return scope.add(roi.clone());
+        return scope.add(roi.mat_clone());
       } finally {
         roi.delete();
       }
@@ -445,7 +446,7 @@
           (left, top, width, height) => top > 0 && 2 * (top + height) >= rows,
           local,
         );
-        const out = scope.add(landscape.clone());
+        const out = scope.add(landscape.mat_clone());
         const cols = landscape.cols;
         const groundData = ground.data;
         const outData = out.data;
