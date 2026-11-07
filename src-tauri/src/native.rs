@@ -76,7 +76,12 @@ mod ios {
         let Some(kind) = (unsafe { string(kind) }) else {
             return;
         };
-        *QUICK_ACTION.lock().unwrap() = Some(kind);
+        // A poisoned lock must not panic across the FFI boundary.
+        let Ok(mut action) = QUICK_ACTION.lock() else {
+            return;
+        };
+        *action = Some(kind);
+        drop(action);
         // The frontend takes the action with `take_quick_action`, also when it loads after
         // a cold start and missed this event.
         if let Some(app) = APP.get() {
@@ -106,16 +111,18 @@ mod ios {
         // Request 0 is a photo shared from another app (see BCHandleSharedURL).
         if request == 0 {
             if let (Ok(Some(image)), Some(app)) = (result, APP.get()) {
-                *SHARED.lock().unwrap() = Some(image);
-                let _ = app.emit("shared-photo", ());
+                if let Ok(mut shared) = SHARED.lock() {
+                    *shared = Some(image);
+                    drop(shared);
+                    let _ = app.emit("shared-photo", ());
+                }
             }
             return;
         }
         let sender = REQUESTS
             .lock()
-            .unwrap()
-            .as_mut()
-            .and_then(|requests| requests.remove(&request));
+            .ok()
+            .and_then(|mut requests| requests.as_mut()?.remove(&request));
         if let Some(sender) = sender {
             let _ = sender.try_send(result);
         }
