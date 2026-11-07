@@ -120,7 +120,7 @@ impl History {
             Err(e) => {
                 // Keep the unreadable file instead of overwriting it with the next save.
                 eprintln!("Unreadable history ({e}), moving it aside");
-                let _ = std::fs::rename(&path, path.with_extension("json.bak"));
+                let _ = std::fs::rename(&path, backup_path(&path));
                 Vec::new()
             }
         }
@@ -150,6 +150,23 @@ impl History {
             let _ = std::fs::remove_file(path);
         }
     }
+}
+
+/// A name for the unreadable `history.json` that no earlier backup uses:
+/// `history.json.bak`, then `.bak-1`, `.bak-2`...
+fn backup_path(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("history.json");
+    let first = path.with_file_name(format!("{name}.bak"));
+    if !first.exists() {
+        return first;
+    }
+    (1..)
+        .map(|n| path.with_file_name(format!("{name}.bak-{n}")))
+        .find(|p| !p.exists())
+        .expect("unbounded range")
 }
 
 fn now_ms() -> u64 {
@@ -371,6 +388,23 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn corrupt_index_backups_never_overwrite() {
+        let dir = std::env::temp_dir().join(format!("bc_history_bak_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let history = History::new(dir.clone());
+        for round in 0..3 {
+            std::fs::write(history.index_path(), format!("corrupt {round}")).unwrap();
+            assert!(history.load().is_empty());
+        }
+        let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+        assert_eq!(read("history.json.bak"), "corrupt 0");
+        assert_eq!(read("history.json.bak-1"), "corrupt 1");
+        assert_eq!(read("history.json.bak-2"), "corrupt 2");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn save_body(meta: &str, files: &[u8]) -> Vec<u8> {
         let mut body = (meta.len() as u32).to_le_bytes().to_vec();
