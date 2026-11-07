@@ -664,6 +664,21 @@ body.viewer-open {
     }
 }
 
+/* Android and iOS: pulled up by its grabber, the bottom sheet grows to just under the viewer's
+   buttons (the tall detent of onViewerSheetUp); the column of wide screens keeps its height */
+@media not all and (min-aspect-ratio: 1/1) {
+    .viewer-settings.is-expanded {
+        max-height: calc(100% - 72px - var(--safe-top) - var(--viewer-bar) - var(--safe-bottom));
+    }
+}
+
+/* A taller grabber is easier to catch with a finger */
+body.is-android .viewer-settings-handle,
+body.is-ios .viewer-settings-handle {
+    height: 28px;
+    cursor: default;
+}
+
 /* Moved by its handle: a card where it was let go (left and top set by placeViewerSettings),
    floating over the photo, which keeps the whole screen */
 body .viewer-settings.is-floating {

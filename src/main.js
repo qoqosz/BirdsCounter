@@ -890,6 +890,17 @@ function closeViewer() {
 
 function setViewerSettingsOpen(open) {
   viewerSettingsWanted = open;
+  if (usesViewerSheet() && isViewerOpen && viewerSettings) {
+    if (open && viewerSettings.hidden) {
+      showViewerSettings(true);
+      slideViewerSheetIn();
+      return;
+    }
+    if (!open && !viewerSettings.hidden) {
+      slideViewerSheetOut();
+      return;
+    }
+  }
   showViewerSettings(open && isViewerOpen);
 }
 
@@ -903,6 +914,9 @@ function showViewerSettings(show) {
   } else {
     settingsPanel.append(settingsGroup);
     if (advancedSettings) advancedSettings.open = advancedWasOpen;
+    // Stops a drag or a slide, and opens at its usual height next time
+    cancelViewerSheetMotion();
+    viewerSettings.classList.remove("is-expanded");
   }
   viewerSettings.hidden = !show;
   viewerSettingsBody.scrollTop = 0;
@@ -921,9 +935,16 @@ function measureViewerInset() {
   let top = screen.bottom;
   const bar = viewerCount?.getBoundingClientRect();
   if (bar && bar.height > 0) top = bar.top;
-  if (viewerSettings && !viewerSettings.hidden && !viewerSettingsPos) {
+  if (viewerSettings && !viewerSettings.hidden && !floatingViewerSettingsPos()) {
     const panel = viewerSettings.getBoundingClientRect();
-    if (panel.width >= screen.width * 0.75) top = Math.min(top, panel.top);
+    if (panel.width >= screen.width * 0.75) {
+      // The expanded sheet covers the photo without refitting it: the photo keeps the room
+      // the sheet leaves at its usual height
+      const height = viewerSettings.classList.contains("is-expanded")
+        ? Math.min(panel.height, viewerSheetUsualMax())
+        : panel.height;
+      top = Math.min(top, panel.bottom - height);
+    }
   }
   return Math.max(0, screen.bottom - top);
 }
@@ -954,7 +975,7 @@ function saveViewerSettingsPos() {
 // Puts the floating panel at its fractions of the room left around it.
 function placeViewerSettings() {
   if (!viewerSettings) return;
-  const floating = !!viewerSettingsPos;
+  const floating = !!floatingViewerSettingsPos();
   viewerSettings.classList.toggle("is-floating", floating);
   if (!floating) {
     viewerSettings.style.left = "";
@@ -973,6 +994,10 @@ function placeViewerSettings() {
 
 function onViewerSettingsHandleDown(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
+  if (usesViewerSheet()) {
+    onViewerSheetDown(e);
+    return;
+  }
   if (viewerSettingsDrag) return;
   e.preventDefault();
   e.stopPropagation();
@@ -1010,6 +1035,10 @@ function moveViewerSettingsTo(left, top) {
 }
 
 function onViewerSettingsHandleMove(e) {
+  if (viewerSheetDrag) {
+    onViewerSheetMove(e);
+    return;
+  }
   const drag = viewerSettingsDrag;
   if (!drag || e.pointerId !== drag.pointerId) return;
   e.preventDefault();
@@ -1018,6 +1047,10 @@ function onViewerSettingsHandleMove(e) {
 }
 
 function onViewerSettingsHandleUp(e) {
+  if (viewerSheetDrag) {
+    onViewerSheetUp(e);
+    return;
+  }
   const drag = viewerSettingsDrag;
   if (!drag || e.pointerId !== drag.pointerId) return;
   viewerSettingsDrag = null;
@@ -1038,6 +1071,7 @@ function onViewerSettingsHandleUp(e) {
 }
 
 function dockViewerSettings() {
+  if (usesViewerSheet()) return;
   viewerSettingsPos = null;
   saveViewerSettingsPos();
   layoutViewer();
@@ -1050,6 +1084,250 @@ function setupViewerSettingsDrag() {
   viewerSettingsHandle.addEventListener("pointerup", onViewerSettingsHandleUp);
   viewerSettingsHandle.addEventListener("pointercancel", onViewerSettingsHandleUp);
   viewerSettingsHandle.addEventListener("dblclick", dockViewerSettings);
+}
+
+// ===== The settings sheet on Android and iOS =====
+// There the panel stays a native-style sheet instead of a floating card: its grabber drags it
+// up and down only. Pulled up, the bottom sheet grows to a tall detent (is-expanded); pulled down
+// it shrinks back, then slides off the screen, and let go far enough down or with a flick it
+// closes. A tap on the grabber switches between the two heights. The column of wide screens
+// only slides down to close. The photo is refitted once the sheet settles, not on every frame.
+const SHEET_CLOSE_FRACTION = 0.3;
+const SHEET_FLICK_SPEED = 0.5; // px per ms
+const SHEET_ANIMATION_MS = 260;
+const SHEET_EASING = "cubic-bezier(0.2, 0.9, 0.3, 1)";
+let viewerSheetDrag = null;
+// The running slide or snap: { timer, done }
+let viewerSheetMotion = null;
+
+function usesViewerSheet() {
+  return isAndroid || isIOS;
+}
+
+// Where the floating card was left (desktop browsers only)
+function floatingViewerSettingsPos() {
+  return usesViewerSheet() ? null : viewerSettingsPos;
+}
+
+// The bottom sheet along the bottom of tall screens, not the column of wide ones
+function isViewerBottomSheet() {
+  return !window.matchMedia("(min-aspect-ratio: 1/1)").matches;
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// The usual sheet's max-height in styles.css: min(40%, 420px) of the viewer
+function viewerSheetUsualMax() {
+  const viewerHeight = photoViewer?.clientHeight ?? 0;
+  return Math.min(viewerHeight * 0.4, 420);
+}
+
+// The heights the bottom sheet rests at: its usual one, and the expanded one under the viewer's
+// buttons. Both are no taller than its content.
+function viewerSheetDetents(rect) {
+  const handle = viewerSettingsHandle?.offsetHeight ?? 0;
+  const padding = parseFloat(getComputedStyle(viewerSettings).paddingBottom) || 0;
+  const content = handle + (viewerSettingsBody?.scrollHeight ?? 0) + padding;
+  const screen = photoViewer.getBoundingClientRect();
+  // The area's top is 12 px under the safe area; the buttons take 60 px more
+  const area = viewerSettingsArea?.getBoundingClientRect();
+  const topLimit = (area ? area.top : screen.top + 12) + 60;
+  const usual = Math.min(content, viewerSheetUsualMax());
+  const expanded = Math.max(usual, Math.min(content, rect.bottom - topLimit));
+  return { usual, expanded };
+}
+
+// Past the end of the travel the sheet follows the finger less and less
+function rubberBand(distance) {
+  return distance <= 0 ? 0 : Math.sqrt(distance) * 4;
+}
+
+function setViewerSheetStyle(height, offset, animate) {
+  const duration = animate && !prefersReducedMotion() ? SHEET_ANIMATION_MS : 0;
+  viewerSettings.style.transition = duration
+    ? `transform ${duration}ms ${SHEET_EASING}, height ${duration}ms ${SHEET_EASING}`
+    : "none";
+  if (height != null) {
+    viewerSettings.style.maxHeight = "none";
+    viewerSettings.style.height = `${Math.round(height)}px`;
+  }
+  viewerSettings.style.transform = offset ? `translateY(${Math.round(offset)}px)` : "";
+  return duration;
+}
+
+function clearViewerSheetStyle() {
+  viewerSettings.style.transition = "";
+  viewerSettings.style.maxHeight = "";
+  viewerSettings.style.height = "";
+  viewerSettings.style.transform = "";
+}
+
+// Runs `done` once the slide ends (at once without animation), and makes it the running motion
+function runViewerSheetMotion(duration, done) {
+  endViewerSheetMotion();
+  const motion = { done, timer: 0 };
+  viewerSheetMotion = motion;
+  const finish = () => {
+    if (viewerSheetMotion !== motion) return;
+    viewerSheetMotion = null;
+    done();
+  };
+  if (duration) motion.timer = setTimeout(finish, duration + 40);
+  else finish();
+}
+
+// Ends a running motion where it was going, before another one starts
+function endViewerSheetMotion() {
+  const motion = viewerSheetMotion;
+  if (!motion) return;
+  clearTimeout(motion.timer);
+  viewerSheetMotion = null;
+  motion.done();
+}
+
+// Drops a drag or a motion without finishing it, when the sheet is hidden anyway
+function cancelViewerSheetMotion() {
+  if (viewerSheetMotion) clearTimeout(viewerSheetMotion.timer);
+  viewerSheetMotion = null;
+  if (viewerSheetDrag) {
+    viewerSettingsHandle?.classList.remove("is-dragging");
+    viewerSheetDrag = null;
+  }
+  if (viewerSettings) clearViewerSheetStyle();
+}
+
+function viewerSheetOffscreen(rect) {
+  const screen = photoViewer.getBoundingClientRect();
+  return Math.max(rect.height, screen.bottom - rect.top) + 8;
+}
+
+function slideViewerSheetIn() {
+  if (prefersReducedMotion() || !viewerSettings) return;
+  const rect = viewerSettings.getBoundingClientRect();
+  setViewerSheetStyle(null, viewerSheetOffscreen(rect), false);
+  // Starts from below the screen
+  void viewerSettings.offsetHeight;
+  const duration = setViewerSheetStyle(null, 0, true);
+  runViewerSheetMotion(duration, clearViewerSheetStyle);
+}
+
+function slideViewerSheetOut(fromOffset = 0) {
+  if (!viewerSettings) return;
+  const rect = viewerSettings.getBoundingClientRect();
+  const duration = setViewerSheetStyle(null, viewerSheetOffscreen(rect) + fromOffset, true);
+  runViewerSheetMotion(duration, () => {
+    clearViewerSheetStyle();
+    showViewerSettings(false);
+  });
+}
+
+function onViewerSheetDown(e) {
+  if (viewerSheetDrag) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // Catches a sliding sheet where it is now
+  const rect = viewerSettings.getBoundingClientRect();
+  const offset = viewerSettings.style.transform
+    ? rect.top - (viewerSettings.offsetTop + photoViewer.getBoundingClientRect().top)
+    : 0;
+  if (viewerSheetMotion) {
+    clearTimeout(viewerSheetMotion.timer);
+    viewerSheetMotion = null;
+  }
+  // Grabbed while it slides away: it stays
+  viewerSettingsWanted = true;
+  const bottomSheet = isViewerBottomSheet();
+  const detents = bottomSheet ? viewerSheetDetents(rect) : { usual: rect.height, expanded: rect.height };
+  viewerSheetDrag = {
+    pointerId: e.pointerId,
+    startY: e.clientY,
+    bottomSheet,
+    detents,
+    // The sheet's height plus how far up it is pulled: less than its height when slid down
+    startReach: rect.height - Math.max(0, offset),
+    height: rect.height,
+    offset: Math.max(0, offset),
+    moved: false,
+    samples: [{ y: e.clientY, t: e.timeStamp }],
+  };
+  setViewerSheetStyle(bottomSheet ? rect.height : null, viewerSheetDrag.offset, false);
+  viewerSettingsHandle.setPointerCapture?.(e.pointerId);
+  viewerSettingsHandle.classList.add("is-dragging");
+}
+
+function onViewerSheetMove(e) {
+  const drag = viewerSheetDrag;
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  e.preventDefault();
+  const dy = e.clientY - drag.startY;
+  if (Math.abs(dy) > 4) drag.moved = true;
+  drag.samples.push({ y: e.clientY, t: e.timeStamp });
+  if (drag.samples.length > 6) drag.samples.shift();
+
+  const reach = drag.startReach - dy;
+  const { usual, expanded } = drag.detents;
+  if (drag.bottomSheet && reach >= usual) {
+    drag.height = reach > expanded ? expanded + rubberBand(reach - expanded) : reach;
+    drag.offset = 0;
+  } else {
+    const height = drag.bottomSheet ? usual : drag.height;
+    drag.height = height;
+    drag.offset = reach > height ? -rubberBand(reach - height) : height - reach;
+  }
+  setViewerSheetStyle(drag.bottomSheet ? drag.height : null, drag.offset, false);
+}
+
+// The finger's speed over the last few moves, downwards positive
+function viewerSheetSpeed(samples) {
+  const last = samples[samples.length - 1];
+  const first = samples.find((s) => last.t - s.t <= 100) ?? last;
+  const dt = last.t - first.t;
+  return dt > 0 ? (last.y - first.y) / dt : 0;
+}
+
+function onViewerSheetUp(e) {
+  const drag = viewerSheetDrag;
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  viewerSheetDrag = null;
+  viewerSettingsHandle.classList.remove("is-dragging");
+  const { usual, expanded } = drag.detents;
+  const canExpand = drag.bottomSheet && expanded > usual + 8;
+  const wasExpanded = viewerSettings.classList.contains("is-expanded");
+  const speed = e.type === "pointercancel" ? 0 : viewerSheetSpeed(drag.samples);
+
+  if (!drag.moved && e.type !== "pointercancel") {
+    // A tap switches between the two heights
+    if (canExpand) settleViewerSheet(drag, !wasExpanded);
+    else settleViewerSheet(drag, wasExpanded);
+    return;
+  }
+  const height = drag.bottomSheet ? usual : drag.height;
+  if (drag.offset > 0 && (drag.offset > height * SHEET_CLOSE_FRACTION || speed > SHEET_FLICK_SPEED)) {
+    viewerSettingsWanted = false;
+    slideViewerSheetOut();
+    return;
+  }
+  let expand = false;
+  if (canExpand && drag.offset <= 0) {
+    if (speed < -SHEET_FLICK_SPEED) expand = true;
+    else if (speed > SHEET_FLICK_SPEED) expand = false;
+    else expand = drag.height > (usual + expanded) / 2;
+  }
+  settleViewerSheet(drag, expand);
+}
+
+// Slides the sheet to one of its heights, then leaves it to the stylesheet
+function settleViewerSheet(drag, expand) {
+  const { usual, expanded } = drag.detents;
+  const height = drag.bottomSheet ? (expand ? expanded : usual) : null;
+  const duration = setViewerSheetStyle(height, 0, true);
+  runViewerSheetMotion(duration, () => {
+    viewerSettings.classList.toggle("is-expanded", expand);
+    clearViewerSheetStyle();
+    layoutViewer();
+  });
 }
 
 function viewerMaxScale() {
@@ -3356,7 +3634,10 @@ window.addEventListener("DOMContentLoaded", () => {
   viewerCloseBtn?.addEventListener("click", closeViewer);
   // Fields shown per method change the panel's height, and with it the room for the photo.
   if (viewerSettings && typeof ResizeObserver === "function") {
-    new ResizeObserver(() => layoutViewer()).observe(viewerSettings);
+    // A dragged or sliding sheet refits the photo once it settles
+    new ResizeObserver(() => {
+      if (!viewerSheetDrag && !viewerSheetMotion) layoutViewer();
+    }).observe(viewerSettings);
   }
   setupViewerSettingsDrag();
   viewerSettingsBtn?.addEventListener("click", () =>

@@ -142,7 +142,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   `#settingsGroup` itself into a half-transparent `#viewerSettings` panel (a bottom sheet on tall screens, a right
   column on wide ones) and back, so the controls stay single. Its grabber (`#viewerSettingsHandle`) drags it
   anywhere within `#viewerSettingsArea`, as a floating card that takes no room from the photo; the place is kept as
-  fractions of the free room (`viewerSettingsPos`, in `localStorage`), and a double click or tap docks it again. A black bar along the bottom (`#viewerCount`) shows the
+  fractions of the free room (`viewerSettingsPos`, in `localStorage`), and a double click or tap docks it again. On
+  Android and iOS (`usesViewerSheet`) it stays a native-style sheet instead: the grabber drags it up to a tall detent
+  (`is-expanded`) and down off the screen to close it (`onViewerSheetUp`), a tap switches heights, and it slides in. A black bar along the bottom (`#viewerCount`) shows the
   count; the photo fits above it and the sheet (`measureViewerInset`) and shows through the column.
 - History: each opened photo gets one entry. `queueHistorySave` updates it after each result, saves are chained
   and keyed by `editSession`, and saves that change nothing are skipped.
