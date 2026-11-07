@@ -131,9 +131,10 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   (`updateCountPosition`, `body.is-count-below`). Under the photo are Crop,
   Mask and Detection (opens the settings, open by default), then the active tool's options: its hint, controls
   and ✕/✓. The markup has two groups, `.editor-photo` and `.editor-panel`, which are `display: contents` in one
-  column. On wide screens (900 px and up, and phones in landscape, on every platform) they become a grid: the count
-  and the panel on the leading side, the panel scrolling on its own with ✕/✓ pinned to its bottom, and the photo
-  fitting the rest of the screen (`.photo-stage`, a size container). Short landscape screens also get compact
+  column. On wide screens (900 px and up, and phones in landscape, on every platform) they become a grid: the photo
+  first, then the count and the panel on the trailing side, the panel scrolling on its own with ✕/✓ right after the
+  tool's options. The photo fits the room the panel leaves (`.container` is the size container) and the two are
+  centered together. Short landscape screens also get compact
   bars, count and tiles, and a two-column start screen. The header's ⋮ menu has Language and, on iOS and
   Android, Share. The full resolution viewer (`#photoViewer`, opened by
   its button or a double click/tap) draws the visible part of the photo and the rings on one canvas per frame;

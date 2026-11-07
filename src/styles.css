@@ -2062,11 +2062,12 @@ body.is-ios .settings-advanced[open] .expand-icon {
 }
 
 /* ===== Wide screens: the tools in a side panel beside the photo =====
- * Wide windows, tablets and phones in landscape, on every platform. The count heads the panel
- * on the leading side, with the tools and the active tool's options under it; the panel
- * scrolls on its own while the photo fills the rest of the screen. In one column the groups
- * (.editor-photo, .photo-stage, .editor-panel) are display: contents, so the items keep the
- * container's gap. */
+ * Wide windows, tablets and phones in landscape, on every platform. The photo comes first and
+ * the panel sits on its trailing side, headed by the count, with the tools and the active tool's
+ * options under it; the panel scrolls on its own. The photo takes the room the panel leaves and
+ * the two are centered together, so a narrow (portrait) photo stays next to the panel. In one
+ * column the groups (.editor-photo, .photo-stage, .editor-panel) are display: contents, so the
+ * items keep the container's gap. */
 .editor-photo,
 .photo-stage,
 .editor-panel {
@@ -2078,14 +2079,19 @@ body.is-ios .settings-advanced[open] .expand-icon {
         min-height: 100dvh;
     }
 
+    /* The container is the size container the photo fits into (its cq units are its content box) */
     body.has-back .container {
-        max-width: 1440px;
+        --panel-width: clamp(272px, 30vw, 360px);
+        --panel-gap: clamp(16px, 2vw, 24px);
+        max-width: 1600px;
         height: calc(100dvh - var(--header-height) - var(--safe-top));
         min-height: 0;
+        container-type: size;
         display: grid;
-        grid-template-columns: clamp(272px, 30vw, 360px) minmax(0, 1fr);
+        grid-template-columns: minmax(0, auto) var(--panel-width);
         grid-template-rows: auto minmax(0, 1fr);
-        column-gap: clamp(16px, 2.5vw, 32px);
+        justify-content: center;
+        column-gap: var(--panel-gap);
         row-gap: 12px;
         padding-bottom: calc(16px + var(--safe-bottom));
     }
@@ -2093,7 +2099,7 @@ body.is-ios .settings-advanced[open] .expand-icon {
     /* The count and the panel reserve the same scrollbar gutter (none with overlay scrollbars),
        so they line up and the tools don't narrow when the panel starts to scroll */
     body.has-back #countLabel {
-        grid-column: 1;
+        grid-column: 2;
         grid-row: 1;
         overflow: hidden;
         scrollbar-gutter: stable;
@@ -2101,7 +2107,7 @@ body.is-ios .settings-advanced[open] .expand-icon {
     }
 
     body.has-back .photo-stage {
-        grid-column: 2;
+        grid-column: 1;
         grid-row: 1 / -1;
         display: flex;
         /* The photo's top edge lines up with the top of the panel's column */
@@ -2109,7 +2115,6 @@ body.is-ios .settings-advanced[open] .expand-icon {
         justify-content: center;
         min-width: 0;
         min-height: 0;
-        container-type: size;
     }
 
     body.has-back .image-preview {
@@ -2118,13 +2123,13 @@ body.is-ios .settings-advanced[open] .expand-icon {
     }
 
     body.has-back .image-preview img {
-        max-width: 100cqw;
+        max-width: calc(100cqw - var(--panel-width) - var(--panel-gap));
         max-height: 100cqh;
     }
 
     /* The crop mat's padding comes out of the room for the photo */
     body.has-back.is-cropping .image-preview img {
-        max-width: calc(100cqw - 32px);
+        max-width: calc(100cqw - var(--panel-width) - var(--panel-gap) - 32px);
         max-height: calc(100cqh - 32px);
     }
 
@@ -2134,7 +2139,7 @@ body.is-ios .settings-advanced[open] .expand-icon {
     }
 
     body.has-back .editor-panel {
-        grid-column: 1;
+        grid-column: 2;
         grid-row: 2;
         display: flex;
         flex-direction: column;
@@ -2150,14 +2155,12 @@ body.is-ios .settings-advanced[open] .expand-icon {
         flex: none;
     }
 
-    /* ✕ and ✓ sit at the bottom of the panel, level with the photo's bottom edge, and stay
-       in reach when the panel scrolls */
+    /* ✕ and ✓ follow the tool's options, and stay in reach when the panel scrolls */
     body.has-back .editor-panel > .edit-actions {
         position: sticky;
         bottom: 0;
         z-index: 1;
-        margin-top: auto;
-        padding-top: 8px;
+        padding-top: 4px;
         background-color: var(--bg);
     }
 
