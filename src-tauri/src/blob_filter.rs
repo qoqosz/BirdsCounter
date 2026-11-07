@@ -1980,6 +1980,142 @@ mod tests {
         assert_eq!(birds, 15);
     }
 
+    fn top_mask_png(width: i32, height: i32) -> Vec<u8> {
+        let mut mask = core::Mat::new_rows_cols_with_default(
+            height,
+            width,
+            core::CV_8UC1,
+            core::Scalar::all(0.0),
+        )
+        .unwrap();
+        // The top 240/500 of the photo, whatever the mask's resolution.
+        imgproc::rectangle(
+            &mut mask,
+            core::Rect::new(0, 0, width, height * 240 / HEIGHT),
+            core::Scalar::all(255.0),
+            -1,
+            imgproc::LINE_8,
+            0,
+        )
+        .unwrap();
+        let mut png = core::Vector::new();
+        imgcodecs::imencode(".png", &mask, &mut png, &core::Vector::new()).unwrap();
+        png.to_vec()
+    }
+
+    /// A mask painted at another resolution than the photo is scaled to it.
+    #[test]
+    fn scales_a_mask_of_another_size() {
+        let mut img = sky(200.0);
+        draw_flock(&mut img, 8, 90.0, &[]);
+        let image = encode(&img);
+        for (width, height) in [(WIDTH / 4, HEIGHT / 4), (WIDTH * 2, HEIGHT * 2)] {
+            let mask = top_mask_png(width, height);
+            assert_eq!(count(image.clone(), BlobParams::default(), Some(mask)), 30);
+        }
+    }
+
+    /// Settings far outside the sliders' ranges must neither panic nor find birds that
+    /// are not there.
+    #[test]
+    fn extreme_sensitivity_and_blur_do_not_panic() {
+        let mut img = sky(200.0);
+        let expected = draw_flock(&mut img, 8, 90.0, &[]);
+        let image = encode(&img);
+        for method in ["background", "adaptive", "otsu"] {
+            for (sensitivity, blur) in [
+                (-5.0, 3),
+                (0.0, 0),
+                (0.0, -4),
+                (1.0e6, 3),
+                (9.0, 1),
+                (9.0, 2),
+                (9.0, 101),
+            ] {
+                let params = BlobParams {
+                    threshold_method: method.to_string(),
+                    sensitivity,
+                    blur,
+                    ..BlobParams::default()
+                };
+                let found = count(image.clone(), params, None);
+                if sensitivity > 1.0e5 && method == "background" {
+                    // Nothing is contrasty enough (only this method uses the sensitivity).
+                    assert_eq!(found, 0, "{method}, sensitivity {sensitivity}");
+                }
+                assert!(found < 10 * expected, "{method}: {found} birds");
+            }
+        }
+        // Negative sensitivity is clamped to zero, so it counts like zero.
+        let with = |sensitivity| BlobParams {
+            sensitivity,
+            ..BlobParams::default()
+        };
+        assert_eq!(
+            count(image.clone(), with(-5.0), None),
+            count(image.clone(), with(0.0), None)
+        );
+    }
+
+    /// Crops at the edge, tiny, partly or wholly outside the photo are clamped; a crop
+    /// with nothing left is an error.
+    #[test]
+    fn crop_extremes_are_clamped() {
+        let mut img = sky(200.0);
+        draw_flock(&mut img, 8, 90.0, &[]);
+        let gray = decode_gray(&encode(&img)).unwrap();
+        let filter = BlobFilter::new(BlobParams::default());
+        let crop = |x, y, width, height| Crop {
+            x,
+            y,
+            width,
+            height,
+        };
+        let detect = |c| filter.detect(&gray, None, Some(c));
+        let total = |found: &[Bird]| found.iter().map(|bird| bird.count).sum::<u32>();
+
+        // Larger than the photo, or hanging over its left/top edge: the whole photo.
+        assert_eq!(total(&detect(crop(-50, -50, 5000, 5000)).unwrap()), 80);
+        assert_eq!(
+            total(&detect(crop(-1000, 0, i32::MAX, HEIGHT)).unwrap()),
+            80
+        );
+        // Hanging over the right edge: only the part that is inside (columns 5..=9).
+        let right = detect(crop(290, 0, 5000, HEIGHT)).unwrap();
+        assert_eq!(total(&right), 40);
+        assert!(
+            right
+                .iter()
+                .all(|bird| bird.x >= 290.0 && bird.x < WIDTH as f64)
+        );
+        // At the very bottom-right corner, with no bird: nothing, and no panic.
+        assert!(
+            detect(crop(WIDTH - 10, HEIGHT - 10, 10, 10))
+                .unwrap()
+                .is_empty()
+        );
+        // A crop around one bird (at 40, 40) still finds it, in whole-photo coordinates.
+        let tiny = detect(crop(20, 20, 40, 40)).unwrap();
+        assert_eq!(total(&tiny), 1);
+        assert!((tiny[0].x - 40.0).abs() < 3.0 && (tiny[0].y - 40.0).abs() < 3.0);
+        // One pixel wide or high: no panic.
+        assert!(detect(crop(0, 0, 1, 1)).is_ok());
+        assert!(detect(crop(100, 0, 1, HEIGHT)).is_ok());
+
+        // Nothing left: outside the photo, or zero or negative size.
+        for empty in [
+            crop(WIDTH, 0, 100, 100),
+            crop(0, HEIGHT + 5, 100, 100),
+            crop(-200, 0, 100, 100),
+            crop(10, 10, 0, 50),
+            crop(10, 10, 50, 0),
+            crop(10, 10, -50, 50),
+            crop(i32::MAX, i32::MAX, i32::MAX, i32::MAX),
+        ] {
+            assert!(detect(empty).is_err(), "{empty:?}");
+        }
+    }
+
     /// Fills the image below `horizon` with grass-like texture and grows a tree with
     /// ragged edges from the right border into the sky.
     fn draw_landscape(img: &mut core::Mat, horizon: i32) {

@@ -193,6 +193,84 @@ test("counts birds in crop", () => {
   mask.delete();
 });
 
+/** Mask excluding the top 240/500 of a photo, painted at `width` x `height`. */
+function topMaskAt(width, height) {
+  const mask = cv.Mat.zeros(height, width, cv.CV_8U);
+  cv.rectangle(mask, new cv.Point(0, 0), new cv.Point(width - 1, Math.floor((height * 240) / HEIGHT) - 1), new cv.Scalar(255), -1, cv.LINE_8, 0);
+  return mask;
+}
+
+test("scales a mask of another size", () => {
+  const img = sky(200);
+  drawFlock(img, 8, 90);
+  for (const [width, height] of [
+    [WIDTH / 4, HEIGHT / 4],
+    [WIDTH * 2, HEIGHT * 2],
+  ]) {
+    const mask = topMaskAt(width, height);
+    assert.equal(count(img, {}, mask), 30);
+    mask.delete();
+  }
+  img.delete();
+});
+
+test("extreme sensitivity and blur do not throw", () => {
+  const img = sky(200);
+  const expected = drawFlock(img, 8, 90);
+  for (const threshold_method of ["background", "adaptive", "otsu"]) {
+    for (const [sensitivity, blur] of [
+      [-5, 3],
+      [0, 0],
+      [0, -4],
+      [1e6, 3],
+      [9, 1],
+      [9, 2],
+      [9, 101],
+    ]) {
+      const found = count(img, { threshold_method, sensitivity, blur });
+      // Only the background method uses the sensitivity.
+      if (sensitivity > 1e5 && threshold_method === "background") assert.equal(found, 0, `sensitivity ${sensitivity}`);
+      assert.ok(found < 10 * expected, `${threshold_method}: ${found} birds`);
+    }
+  }
+  // Negative sensitivity is clamped to zero, so it counts like zero.
+  assert.equal(count(img, { sensitivity: -5 }), count(img, { sensitivity: 0 }));
+  img.delete();
+});
+
+test("crop extremes are clamped", () => {
+  const img = sky(200);
+  drawFlock(img, 8, 90);
+  const run = (x, y, width, height) => detect(img, {}, null, { x, y, width, height });
+  // Larger than the photo, or hanging over its left/top edge: the whole photo.
+  assert.equal(run(-50, -50, 5000, 5000).count, 80);
+  // Hanging over the right edge: only the part that is inside (columns 5..=9).
+  const right = run(290, 0, 5000, HEIGHT);
+  assert.equal(right.count, 40);
+  assert.ok(right.birds.every((bird) => bird.x >= 290 && bird.x < WIDTH));
+  // At the bottom-right corner, with no bird: nothing.
+  assert.equal(run(WIDTH - 10, HEIGHT - 10, 10, 10).count, 0);
+  // A crop around one bird (at 40, 40) still finds it, in whole-photo coordinates.
+  const tiny = run(20, 20, 40, 40);
+  assert.equal(tiny.count, 1);
+  assert.ok(Math.abs(tiny.birds[0].x - 40) < 3 && Math.abs(tiny.birds[0].y - 40) < 3);
+  // One pixel wide or high: no throw.
+  run(0, 0, 1, 1);
+  run(100, 0, 1, HEIGHT);
+  // Nothing left: outside the photo, or zero or negative size.
+  for (const empty of [
+    [WIDTH, 0, 100, 100],
+    [0, HEIGHT + 5, 100, 100],
+    [-200, 0, 100, 100],
+    [10, 10, 0, 50],
+    [10, 10, 50, 0],
+    [10, 10, -50, 50],
+  ]) {
+    assert.throws(() => run(...empty), /outside the image/, JSON.stringify(empty));
+  }
+  img.delete();
+});
+
 /** Grass-like texture below `horizon` and a tree with ragged edges at the right border. */
 function drawLandscape(img, horizon) {
   cv.setRNGSeed(11);
