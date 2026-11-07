@@ -172,6 +172,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
   order match, and `tests/web/detector.test.cjs` mirrors the Rust tests. `detector-worker.js` runs it in a worker
   and decodes the photo with `createImageBitmap` (gray with OpenCV's fixed-point weights; scaled down over 16.7 MP
   where canvases are limited). The painted mask is read by its alpha.
+  `web.js` ends a worker whose count takes over `PROCESS_TIMEOUT_MS` (the clock starts once OpenCV.js has loaded):
+  it rejects the request with `worker-timeout` (main.js shows `error_process_timeout`), and the next count starts a new
+  worker and sends the photo again.
 - Paths must stay relative (the site lives under `/BirdsCounter/`). OpenCV.js comes from npm
   (`@techstark/opencv-js`, checksum pinned in `build_web.sh`) and is not committed.
 

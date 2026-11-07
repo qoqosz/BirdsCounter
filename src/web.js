@@ -26,10 +26,27 @@
   let nextPhotoId = 1;
   let workerPhotoId = null;
 
+  // The worker counts synchronously and cannot time itself out, so a count that takes
+  // longer than this (not counting the OpenCV.js start) ends the worker.
+  const PROCESS_TIMEOUT_MS = 60_000;
+  let workerReady = null;
+
+  function stopWorker(reason) {
+    worker?.terminate();
+    worker = null;
+    workerReady = null;
+    workerPhotoId = null;
+    const requests = [...pending.values()];
+    pending.clear();
+    for (const request of requests) request.reject(reason);
+  }
+
   function startWorker() {
     if (worker) return worker;
-    worker = new Worker("detector-worker.js");
-    worker.onmessage = (event) => {
+    const target = new Worker("detector-worker.js");
+    worker = target;
+    target.onmessage = (event) => {
+      if (worker !== target) return;
       const { requestId, result, error } = event.data;
       const request = pending.get(requestId);
       if (!request) return;
@@ -37,14 +54,14 @@
       if (error) request.reject(error);
       else request.resolve(result);
     };
-    worker.onerror = (event) => {
+    target.onerror = (event) => {
+      if (worker !== target) return;
       console.error("Detector worker failed:", event.message);
-      for (const request of pending.values()) request.reject(event.message || "worker-failed");
-      pending.clear();
-      worker = null;
-      workerPhotoId = null;
+      stopWorker(event.message || "worker-failed");
     };
-    return worker;
+    workerReady = askWorker({ type: "init" });
+    workerReady.catch((e) => console.error("Failed to load the detector:", e));
+    return target;
   }
 
   function askWorker(message, transfer = []) {
@@ -54,6 +71,25 @@
       pending.set(requestId, { resolve, reject });
       target.postMessage({ ...message, requestId }, transfer);
     });
+  }
+
+  /** A count; its clock starts once the worker has loaded OpenCV.js. */
+  async function askWorkerToCount(message) {
+    startWorker();
+    const target = worker;
+    await workerReady?.catch(() => {});
+    if (worker !== target) throw "worker-failed";
+    // Stopping the worker rejects the pending request with "worker-timeout".
+    const timer = setTimeout(() => {
+      if (worker !== target) return;
+      console.error("Detector worker timed out");
+      stopWorker("worker-timeout");
+    }, PROCESS_TIMEOUT_MS);
+    try {
+      return await askWorker(message);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function asBytes(value) {
@@ -73,7 +109,7 @@
       message.bytes = loadedPhoto.bytes;
     }
     try {
-      const result = await askWorker(message);
+      const result = await askWorkerToCount(message);
       workerPhotoId = photoId;
       return result;
     } catch (e) {
@@ -280,5 +316,5 @@
   };
 
   // OpenCV.js is large: start loading it while the start screen shows.
-  askWorker({ type: "init" }).catch((e) => console.error("Failed to load the detector:", e));
+  startWorker();
 })();

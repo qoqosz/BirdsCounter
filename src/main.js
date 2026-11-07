@@ -2458,7 +2458,7 @@ async function processImage() {
     if (session !== editSession) return;
     updateCount(fallbackCount);
     console.error("Image processing failed:", e);
-    alert(t("alert_process_fail", { error: e }));
+    alert(String(e) === "worker-timeout" ? t("error_process_timeout") : t("alert_process_fail", { error: e }));
   }
 }
 
