@@ -74,6 +74,7 @@
   "error_camera_denied": "Zezwól aplikacji Licznik Ptaków na dostęp do aparatu w Ustawieniach.",
   "error_photos_denied": "Zezwól na dostęp do zdjęć w Ustawieniach, aby otwierać zdjęcia z historii.",
   "error_photo_unreadable": "Nie udało się odczytać zdjęcia.",
+  "error_photo_too_large": "Zdjęcie jest zbyt duże, aby policzyć ptaki (ponad 250 megapikseli).",
   "setting_info": "O tym ustawieniu",
   "tip_min_radius": "Najmniejsza plamka liczona jako ptak (jej promień w pikselach). Zwiększ, aby pomijać drobinki, owady i szum.",
   "tip_max_radius": "Największa plamka, która jest liczona. Zmniejsz, aby pomijać duże ciemne kształty, które nie są ptakami.",

@@ -2458,7 +2458,7 @@ async function processImage() {
     if (session !== editSession) return;
     updateCount(fallbackCount);
     console.error("Image processing failed:", e);
-    alert(t("alert_process_fail", { error: e }));
+    alert(String(e) === "photo-too-large" ? t("error_photo_too_large") : t("alert_process_fail", { error: e }));
   }
 }
 
