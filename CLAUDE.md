@@ -86,7 +86,7 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
     `.pbxproj`) by name at runtime. `native::install` must run between `build()` and `run()` in `lib.rs`, so it
     can hook Tao's `AppDelegate`/`TaoSceneDelegate` before a quick action launches the app. On other platforms
     the commands report that they are unsupported.
-- Sharing (iOS and Android only): `shareCurrentResult` (header ⋮ menu and viewer button) and `shareHistoryEntry` (history
+- Sharing (the iOS and Android apps only, not the web page on a phone): `shareCurrentResult` (header ⋮ menu and viewer button) and `shareHistoryEntry` (history
   rows, which count again with the entry's settings) compose a JPEG with `composeShareImage` (photo, rings if shown,
   black bar with the count). iOS: `native_share_image` writes it to the temp dir and `+[BCNativeBridge shareFile:]`
   opens `UIActivityViewController`. Android: `window.Android.shareImage(base64, name)` uses the FileProvider cache path.
