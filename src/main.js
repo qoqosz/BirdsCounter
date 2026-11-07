@@ -3776,6 +3776,10 @@ window.addEventListener("DOMContentLoaded", () => {
   initSettingTips();
   setLanguage(initialLang);
   refreshHistory();
+  // web.js probes IndexedDB once; tell the user once if the history can't be kept
+  window.__BIRDS_WEB_HISTORY__?.then((available) => {
+    if (!available) tellUser(t("history_unavailable_web"));
+  });
 
   // Photos that arrive from the camera or the library, also when the app was started by a
   // quick action and the result came back before this page loaded.

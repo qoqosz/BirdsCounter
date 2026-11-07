@@ -166,7 +166,9 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
 
 - `index.html` loads `web.js` before `main.js`. Without `window.__TAURI__` it installs a stand-in with `core.invoke`
   and sets `window.__BIRDS_WEB__` (`isWeb` in `main.js`). It handles `load_photo` and `process_image`, the `history_*` commands and
-  `read_image` (IndexedDB, with a copy of each photo under a `web:` source) and `web_keep_photo`. `main.js` passes
+  `read_image` (IndexedDB, with a copy of each photo under a `web:` source) and `web_keep_photo`. It opens IndexedDB
+  once at startup (`window.__BIRDS_WEB_HISTORY__`, a promise of true/false); when that fails, `main.js` tells the user
+  once, `history_list` returns an empty list and the other `history_*` commands fail at once. `main.js` passes
   arguments as they are there, with bytes as `Uint8Array`. Desktop browsers get the default look, with no camera button and with drag and drop.
 - `src/detector.js` ports `blob_filter.rs` to OpenCV.js 5.0. **Keep the two in sync**: constants, steps and their
   order match, and `tests/web/detector.test.cjs` mirrors the Rust tests. `detector-worker.js` runs it in a worker

@@ -303,13 +303,27 @@
     take_quick_action: () => null,
   };
 
+  // Opening the database once tells at startup whether the browser lets the page keep a history.
+  const historyAvailable = openDb().then(
+    () => true,
+    (e) => {
+      console.warn("IndexedDB is unavailable, the history will not be kept:", e);
+      return false;
+    },
+  );
+
   async function invoke(command, args = {}) {
     const handler = commands[command];
     if (!handler) throw `Not available on the web: ${command}`;
+    if (command.startsWith("history_") && !(await historyAvailable)) {
+      if (command === "history_list") return [];
+      throw "History is not available";
+    }
     return handler(args);
   }
 
   window.__BIRDS_WEB__ = true;
+  window.__BIRDS_WEB_HISTORY__ = historyAvailable;
   window.__TAURI__ = {
     core: { invoke },
     dialog: {

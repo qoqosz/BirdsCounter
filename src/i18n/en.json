@@ -67,6 +67,7 @@
   "history_delete_owned_confirm": "Delete this entry and the photo taken in the app?",
   "history_missing": "The original photo is no longer available. Remove it from the history?",
   "history_unlinked": "Result only",
+  "history_unavailable_web": "This browser doesn't allow saving the history, so photos you count here won't be kept.",
   "history_unlinked_detail": "This photo was opened without a lasting location, so only its result was kept.",
   "error_camera_unavailable": "The camera is not available on this device.",
   "error_camera_denied": "Allow camera access for Birds Counter in Settings.",
