@@ -1,8 +1,10 @@
 //! Counting history: one entry per photo with its count, settings, crop and mask.
 //!
 //! Entries link to the photo instead of copying it. Each `source` is one of:
-//! - `file:<absolute path>`: a file on disk (Android camera photos)
-//! - `appdoc:<relative path>`: a file in the app's Documents folder (iOS camera photos)
+//! - `file:<absolute path>`: a file on disk (Android camera photos);
+//!   relative paths are refused
+//! - `appdoc:<relative path>`: an existing file in the app's Documents folder (iOS camera photos);
+//!   it must stay inside that folder once `..` and symlinks are resolved
 //! - `content://…`: an Android document the app holds a persistable permission for
 //! - `photos:<local identifier>`: an asset in the iOS photo library
 //!
@@ -179,6 +181,10 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
 /// in a `Pictures` folder. Anything else is refused, so the command can't read arbitrary files.
 fn checked_photo_path(path: &Path, source: &str) -> Result<PathBuf, String> {
     let invalid = || format!("Invalid source: {source}");
+    // A relative path would be resolved against the process's current directory.
+    if !path.is_absolute() {
+        return Err(invalid());
+    }
     // Resolve `..` and symlinks before checking where the file really is.
     let path = path.canonicalize().map_err(|_| invalid())?;
     let owned = path
@@ -196,6 +202,27 @@ fn checked_photo_path(path: &Path, source: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// `appdoc:` sources are relative to the Documents folder (its absolute path changes between
+/// installs on iOS). The result must still be inside it once `..` and symlinks are resolved,
+/// so a photo that is missing is refused too.
+fn checked_appdoc_path(documents: &Path, relative: &str, source: &str) -> Result<PathBuf, String> {
+    let invalid = || format!("Invalid source: {source}");
+    let relative = Path::new(relative);
+    if relative.is_absolute() {
+        return Err(invalid());
+    }
+    let documents = documents.canonicalize().map_err(|_| invalid())?;
+    let path = documents
+        .join(relative)
+        .canonicalize()
+        .map_err(|_| invalid())?;
+    if path.starts_with(&documents) {
+        Ok(path)
+    } else {
+        Err(invalid())
+    }
+}
+
 /// Resolves a `file:` or `appdoc:` source to a path on disk.
 pub fn source_path(app: &AppHandle, source: &str) -> Result<PathBuf, String> {
     if let Some(path) = source
@@ -205,16 +232,8 @@ pub fn source_path(app: &AppHandle, source: &str) -> Result<PathBuf, String> {
         return checked_photo_path(Path::new(path), source);
     }
     if let Some(relative) = source.strip_prefix("appdoc:") {
-        let relative = Path::new(relative);
-        if relative.is_absolute()
-            || relative
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
-            return Err(format!("Invalid source: {source}"));
-        }
         let documents = app.path().document_dir().map_err(|e| e.to_string())?;
-        return Ok(documents.join(relative));
+        return checked_appdoc_path(&documents, relative, source);
     }
     Err(format!("Not a file source: {source}"))
 }
@@ -368,6 +387,22 @@ mod tests {
         assert!(checked_photo_path(&other, "file").is_err());
         assert!(checked_photo_path(&dir.join("../Pictures/other.jpg"), "file").is_err());
         assert!(checked_photo_path(Path::new("/etc/passwd"), "file").is_err());
+        assert!(checked_photo_path(Path::new("Pictures/BirdsCounter_1.jpg"), "file").is_err());
+    }
+
+    #[test]
+    fn appdoc_sources_stay_in_the_documents_folder() {
+        let root = std::env::temp_dir().join("bc_appdoc_check");
+        let docs = root.join("Documents");
+        std::fs::create_dir_all(docs.join("Photos")).unwrap();
+        std::fs::write(docs.join("Photos/BirdsCounter_1.jpg"), b"x").unwrap();
+        std::fs::write(root.join("secret.txt"), b"x").unwrap();
+        let check = |rel: &str| checked_appdoc_path(&docs, rel, rel);
+        assert!(check("Photos/BirdsCounter_1.jpg").is_ok());
+        assert!(check("Photos/missing.jpg").is_err());
+        assert!(check("../secret.txt").is_err());
+        assert!(check("Photos/../../secret.txt").is_err());
+        assert!(check("/etc/passwd").is_err());
     }
 
     use super::*;
