@@ -69,6 +69,7 @@
   "history_delete_owned_confirm": "Usunąć ten wpis i zdjęcie zrobione w aplikacji?",
   "history_missing": "Oryginalne zdjęcie nie jest już dostępne. Usunąć je z historii?",
   "history_unlinked": "Tylko wynik",
+  "history_unavailable_web": "Ta przeglądarka nie pozwala zapisywać historii, więc zliczone tu zdjęcia nie zostaną zachowane.",
   "history_unlinked_detail": "To zdjęcie otwarto bez stałej lokalizacji, więc zachowano tylko jego wynik.",
   "error_camera_unavailable": "Aparat nie jest dostępny na tym urządzeniu.",
   "error_camera_denied": "Zezwól aplikacji Licznik Ptaków na dostęp do aparatu w Ustawieniach.",
