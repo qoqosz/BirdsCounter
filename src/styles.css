@@ -1237,6 +1237,83 @@ body.is-cropping .crop-overlay {
     accent-color: var(--accent);
 }
 
+/* ===== Setting tips: an ⓘ after each setting's name, and the tip it shows (initSettingTips) ===== */
+.label-with-tip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+/* A small mark with a bigger target: the negative margins keep the row's height */
+.tip-button {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: -6px -4px -6px 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--text-tertiary);
+    cursor: help;
+    transition: color 0.15s ease;
+}
+
+.tip-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+.tip-button:hover,
+.tip-button[aria-describedby] {
+    color: var(--accent);
+}
+
+.tip-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+/* Inverted colors, as tooltips are on every platform; it never takes the pointer */
+.setting-tip {
+    position: fixed;
+    z-index: 100;
+    left: 0;
+    top: 0;
+    box-sizing: border-box;
+    max-width: min(280px, calc(100vw - 16px));
+    padding: 8px 12px;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--text) 90%, transparent);
+    color: var(--bg);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+}
+
+.setting-tip[hidden] {
+    display: none;
+}
+
+/* Over the photo viewer's dark sheet */
+.setting-tip.is-dark {
+    background-color: rgba(28, 28, 30, 0.96);
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45), inset 0 0 0 0.5px rgba(255, 255, 255, 0.2);
+}
+
+/* Material 3 plain tooltip: inverse surface, small corners */
+body.is-android .setting-tip:not(.is-dark) {
+    border-radius: 4px;
+    background-color: var(--md-on-surface);
+    color: var(--md-surface);
+}
+
 .advanced-summary {
     display: flex;
     align-items: center;

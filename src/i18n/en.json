@@ -71,5 +71,20 @@
   "error_camera_unavailable": "The camera is not available on this device.",
   "error_camera_denied": "Allow camera access for Birds Counter in Settings.",
   "error_photos_denied": "Allow access to your photos in Settings to open photos from the history.",
-  "error_photo_unreadable": "The photo could not be read."
+  "error_photo_unreadable": "The photo could not be read.",
+  "setting_info": "About this setting",
+  "tip_min_radius": "The smallest spot that counts as a bird (its radius in pixels). Raise it to skip specks, insects and noise.",
+  "tip_max_radius": "The largest spot that is counted. Lower it to skip big dark shapes that aren't birds.",
+  "tip_threshold_method": "How birds are told apart from the sky. Sky background compares each pixel with the sky around it and works best; Adaptive and Otsu are simpler methods for a plain, even sky.",
+  "tip_blur": "Smooths the photo a little first, so single noisy pixels don't count. More blur loses faint birds and can join close ones.",
+  "tip_adaptive_block": "The size of the area around each pixel that the sky is measured in. It should be wider than a bird; it grows with the photo.",
+  "tip_adaptive_c": "How much darker than its surroundings a pixel must be to count. Raise it to ignore faint shapes.",
+  "tip_sensitivity": "How much a bird must stand out from the sky's own texture, such as clouds. Lower it to find fainter birds, raise it to avoid false ones.",
+  "tip_morph_kernel": "The size of the shape the opening and closing below work with.",
+  "tip_morph_open_iter": "Removes small specks and thin lines. More passes remove more, and can erase small birds.",
+  "tip_morph_close_iter": "Fills small holes and gaps inside birds. More passes can join close birds into one.",
+  "tip_sky_only": "Counts only in the sky and ignores trees, buildings, land and water.",
+  "tip_split_clusters": "Counts a spot larger than a single bird as several birds, for flocks where birds overlap.",
+  "tip_auto_invert": "Picks on its own whether the dark or the light parts are birds: whichever covers less of the photo.",
+  "tip_invert": "For light birds on a darker background, such as gulls against a dark sky or water."
 }

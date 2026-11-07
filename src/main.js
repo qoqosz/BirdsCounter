@@ -2970,6 +2970,134 @@ function setupContextMenu() {
   });
 }
 
+// ===== Setting tips =====
+// Each detection setting (a .settings-field with data-tip) gets an ⓘ after its name. Hovering
+// the name or the ⓘ shows a short explanation, and so does keyboard focus on the ⓘ; a tap or
+// click pins it until the next tap elsewhere, Esc or a scroll. The tip is one element in <body>,
+// so the scrolling panel and the viewer's sheet don't clip it.
+const TIP_HOVER_DELAY = 350;
+const TIP_MARGIN = 8;
+let settingTip = null;
+let settingTipAnchor = null;
+let settingTipPinned = false;
+let settingTipTimer = 0;
+
+function initSettingTips() {
+  settingTip = document.createElement("div");
+  settingTip.id = "settingTip";
+  settingTip.className = "setting-tip";
+  settingTip.setAttribute("role", "tooltip");
+  settingTip.hidden = true;
+  document.body.appendChild(settingTip);
+
+  document.querySelectorAll(".settings-field[data-tip]").forEach((field) => {
+    const label = field.querySelector("label");
+    const name = label?.querySelector("[data-i18n]");
+    if (!name) return;
+    const wrap = document.createElement("span");
+    wrap.className = "label-with-tip";
+    name.replaceWith(wrap);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tip-button";
+    button.dataset.tip = field.dataset.tip;
+    button.dataset.i18nAttr = "aria-label:setting_info";
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>';
+    wrap.append(name, button);
+
+    // Mouse and pen only: on touch, hover follows taps and would fight the pinning below
+    wrap.addEventListener("pointerenter", (e) => {
+      if (e.pointerType === "touch" || settingTipPinned) return;
+      clearTimeout(settingTipTimer);
+      // Moving from one setting to the next keeps a shown tip without the delay
+      const delay = settingTip.hidden ? TIP_HOVER_DELAY : 0;
+      settingTipTimer = setTimeout(() => showSettingTip(button), delay);
+    });
+    button.addEventListener("pointerenter", (e) => {
+      if (e.pointerType === "touch" || settingTipPinned) return;
+      clearTimeout(settingTipTimer);
+      showSettingTip(button);
+    });
+    wrap.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "touch" || settingTipPinned) return;
+      clearTimeout(settingTipTimer);
+      settingTipTimer = setTimeout(hideSettingTip, 100);
+    });
+    button.addEventListener("focus", () => {
+      if (button.matches(":focus-visible")) showSettingTip(button);
+    });
+    button.addEventListener("blur", () => {
+      if (!settingTipPinned) hideSettingTip();
+    });
+    // A button inside a label doesn't toggle the label's switch, but keep it explicit
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (settingTipPinned && settingTipAnchor === button) {
+        hideSettingTip();
+      } else {
+        showSettingTip(button, true);
+      }
+    });
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (settingTipPinned && !(e.target instanceof Element && e.target.closest(".tip-button"))) {
+      hideSettingTip();
+    }
+  });
+  // Before the viewer's and the editor's own Esc handling
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key === "Escape" && settingTip && !settingTip.hidden) {
+        hideSettingTip();
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    },
+    true
+  );
+  // Scrolling the panel or the page moves the setting away from the tip
+  document.addEventListener("scroll", hideSettingTip, { capture: true, passive: true });
+  window.addEventListener("resize", hideSettingTip);
+}
+
+function showSettingTip(button, pinned = false) {
+  if (!settingTip || !button.isConnected) return;
+  clearTimeout(settingTipTimer);
+  if (settingTipAnchor && settingTipAnchor !== button) {
+    settingTipAnchor.removeAttribute("aria-describedby");
+  }
+  settingTipAnchor = button;
+  settingTipPinned = pinned;
+  settingTip.textContent = t(button.dataset.tip);
+  // Inside the viewer the tip takes the viewer's dark look
+  settingTip.classList.toggle("is-dark", Boolean(button.closest(".viewer-settings")));
+  settingTip.hidden = false;
+  button.setAttribute("aria-describedby", settingTip.id);
+
+  // Above the ⓘ, or under it when there is no room, kept on the screen
+  const anchor = button.getBoundingClientRect();
+  const tip = settingTip.getBoundingClientRect();
+  const maxLeft = window.innerWidth - tip.width - TIP_MARGIN;
+  const left = clamp(anchor.left + anchor.width / 2 - tip.width / 2, TIP_MARGIN, Math.max(TIP_MARGIN, maxLeft));
+  let top = anchor.top - tip.height - 6;
+  if (top < TIP_MARGIN) top = anchor.bottom + 6;
+  settingTip.style.left = `${Math.round(left)}px`;
+  settingTip.style.top = `${Math.round(top)}px`;
+}
+
+function hideSettingTip() {
+  clearTimeout(settingTipTimer);
+  if (!settingTip || settingTip.hidden) return;
+  settingTip.hidden = true;
+  settingTipPinned = false;
+  settingTipAnchor?.removeAttribute("aria-describedby");
+  settingTipAnchor = null;
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   dragDropArea = document.querySelector("#dragDropArea");
   cameraBtn = document.querySelector("#cameraBtn");
@@ -3355,6 +3483,7 @@ window.addEventListener("DOMContentLoaded", () => {
   if (initialLang === DEFAULT_LANG) {
     initialLang = normalizeLang(navigator.language);
   }
+  initSettingTips();
   setLanguage(initialLang);
   refreshHistory();
 

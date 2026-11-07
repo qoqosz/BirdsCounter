@@ -156,6 +156,8 @@ The Rust toolchain is pinned to 1.92.0 in `rust-toolchain.toml`.
     Simulator Safari, which uses the same WebKit as the app's WKWebView.
 - i18n: `src/i18n/{en,pl}.json` with `data-i18n` and `data-i18n-attr` attributes. `data-i18n-web`
   (desktop browsers), `data-i18n-android` and `data-i18n-ios` give per-platform keys. Polish plural forms for the count are handled in `birdsSuffix`.
+  Each detection setting (`.settings-field[data-tip]`) gets an ⓘ with a short `tip_*` text (`initSettingTips`:
+  shown on hover or focus, pinned by a tap, one `#settingTip` in `<body>` so the scrolling panels don't clip it).
   Add new keys to both files.
 
 **Web version**

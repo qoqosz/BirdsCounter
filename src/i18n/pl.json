@@ -73,5 +73,20 @@
   "error_camera_unavailable": "Aparat nie jest dostępny na tym urządzeniu.",
   "error_camera_denied": "Zezwól aplikacji Licznik Ptaków na dostęp do aparatu w Ustawieniach.",
   "error_photos_denied": "Zezwól na dostęp do zdjęć w Ustawieniach, aby otwierać zdjęcia z historii.",
-  "error_photo_unreadable": "Nie udało się odczytać zdjęcia."
+  "error_photo_unreadable": "Nie udało się odczytać zdjęcia.",
+  "setting_info": "O tym ustawieniu",
+  "tip_min_radius": "Najmniejsza plamka liczona jako ptak (jej promień w pikselach). Zwiększ, aby pomijać drobinki, owady i szum.",
+  "tip_max_radius": "Największa plamka, która jest liczona. Zmniejsz, aby pomijać duże ciemne kształty, które nie są ptakami.",
+  "tip_threshold_method": "Jak odróżniać ptaki od nieba. Tło nieba porównuje każdy piksel z niebem wokół niego i działa najlepiej; Adaptacyjny i Otsu to prostsze metody na gładkie, równe niebo.",
+  "tip_blur": "Najpierw lekko wygładza zdjęcie, aby pojedyncze zaszumione piksele się nie liczyły. Mocniejsze rozmycie gubi słabo widoczne ptaki i może łączyć bliskie.",
+  "tip_adaptive_block": "Wielkość obszaru wokół każdego piksela, w którym mierzone jest niebo. Powinien być szerszy niż ptak; rośnie wraz ze zdjęciem.",
+  "tip_adaptive_c": "O ile piksel musi być ciemniejszy od otoczenia, aby się liczył. Zwiększ, aby pomijać słabo widoczne kształty.",
+  "tip_sensitivity": "Jak bardzo ptak musi odróżniać się od faktury nieba, np. chmur. Zmniejsz, aby znaleźć słabiej widoczne ptaki, zwiększ, aby uniknąć fałszywych.",
+  "tip_morph_kernel": "Wielkość kształtu, którego używają poniższe otwarcie i zamknięcie.",
+  "tip_morph_open_iter": "Usuwa drobne plamki i cienkie linie. Więcej przebiegów usuwa więcej i może wymazać małe ptaki.",
+  "tip_morph_close_iter": "Wypełnia małe dziury i przerwy w ptakach. Więcej przebiegów może połączyć bliskie ptaki w jednego.",
+  "tip_sky_only": "Liczy tylko na niebie i pomija drzewa, budynki, ląd i wodę.",
+  "tip_split_clusters": "Liczy plamkę większą niż jeden ptak jako kilka ptaków, dla stad, w których ptaki na siebie zachodzą.",
+  "tip_auto_invert": "Sam wybiera, czy ptakami są ciemne, czy jasne części: te, które zajmują mniej zdjęcia.",
+  "tip_invert": "Dla jasnych ptaków na ciemniejszym tle, np. mew na tle ciemnego nieba lub wody."
 }
