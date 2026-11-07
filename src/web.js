@@ -181,10 +181,33 @@
     return entries;
   }
 
-  async function historySave({ entry, thumb, mask, updateMask }) {
+  function isQuotaError(e) {
+    return e?.name === "QuotaExceededError";
+  }
+
+  // Photos that did not fit in the storage: later saves of their entries skip the photo, so
+  // each one doesn't fail again.
+  const unstoredPhotos = new Set();
+
+  /** Saves the entry and its thumbnail; when the storage is full, without the photo. */
+  async function historySave(args) {
+    const key = photoKey(args.entry.source);
+    const withPhoto = Boolean(key) && !unstoredPhotos.has(key);
+    try {
+      return await saveEntry(args, withPhoto);
+    } catch (e) {
+      if (!withPhoto || !isQuotaError(e)) throw e;
+    }
+    // The entry is worth more than the photo. Opening it later reports the photo missing.
+    console.warn("Storage is full, saving the history entry without its photo");
+    unstoredPhotos.add(key);
+    return saveEntry(args, false);
+  }
+
+  async function saveEntry({ entry, thumb, mask, updateMask }, withPhoto) {
     const now = Date.now();
     const key = photoKey(entry.source);
-    const opened = key ? openedPhotos.get(key) : null;
+    const opened = withPhoto && key ? openedPhotos.get(key) : null;
     return transaction(["entries", "thumbs", "masks", "photos"], "readwrite", async (stores) => {
       let stored = entry.id ? await done(stores.entries.get(entry.id)) : null;
       if (!stored) {
