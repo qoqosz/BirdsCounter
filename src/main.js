@@ -2827,8 +2827,17 @@ async function setHistoryThumb(img, entry) {
   }
   try {
     const bytes = await invoke("history_thumb", { id: entry.id });
+    // Refreshes overlap: look at the cache again, not at what it held before the await.
+    const now = historyThumbUrls.get(entry.id);
+    if (now && now.key === key) {
+      img.src = now.url;
+      return;
+    }
+    // Skip a result for an entry that was deleted or edited meanwhile; its row is gone.
+    const current = historyEntries.find((e) => e.id === entry.id);
+    if (!current || `${current.id}@${current.updated_at}` !== key) return;
     const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
-    if (cached) URL.revokeObjectURL(cached.url);
+    if (now) URL.revokeObjectURL(now.url);
     historyThumbUrls.set(entry.id, { key, url });
     img.src = url;
   } catch (e) {
