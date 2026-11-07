@@ -2919,7 +2919,7 @@ async function clearHistory() {
 // Android only).
 
 function canShare() {
-  return isIOS || isAndroid;
+  return (isIOS || isAndroid) && !isWeb;
 }
 
 function updateShareButtons() {

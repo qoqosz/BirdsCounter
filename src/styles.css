@@ -452,8 +452,8 @@ body.is-masking .preview-tools {
     display: none;
 }
 
-body.is-ios .share-button,
-body.is-android .share-button {
+body.is-ios:not(.is-web) .share-button,
+body.is-android:not(.is-web) .share-button {
     display: inline-flex;
 }
 
