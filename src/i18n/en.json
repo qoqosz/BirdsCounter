@@ -72,6 +72,7 @@
   "error_camera_denied": "Allow camera access for Birds Counter in Settings.",
   "error_photos_denied": "Allow access to your photos in Settings to open photos from the history.",
   "error_photo_unreadable": "The photo could not be read.",
+  "error_photo_too_large": "The photo is too large to count (over 250 megapixels).",
   "setting_info": "About this setting",
   "tip_min_radius": "The smallest spot that counts as a bird (its radius in pixels). Raise it to skip specks, insects and noise.",
   "tip_max_radius": "The largest spot that is counted. Lower it to skip big dark shapes that aren't birds.",

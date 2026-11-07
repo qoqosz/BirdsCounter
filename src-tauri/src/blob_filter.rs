@@ -186,6 +186,21 @@ fn crop_mat(mat: &core::Mat, rect: Option<core::Rect>) -> Result<Option<core::Ma
     }
 }
 
+/// The most pixels a photo may have. The decoded BGR copy takes 3 bytes per pixel and the
+/// grayscale one another, so a larger photo (a stitched panorama) would need over a gigabyte
+/// and get the app killed on a phone. The largest phone sensors (200 MP, 16320x12240) fit.
+const MAX_PHOTO_PIXELS: i64 = 250_000_000;
+
+/// The error `check_photo_size` returns; `main.js` shows a translated message for it.
+pub const PHOTO_TOO_LARGE: &str = "photo-too-large";
+
+fn check_photo_size(width: i32, height: i32) -> Result<(), String> {
+    if i64::from(width) * i64::from(height) > MAX_PHOTO_PIXELS {
+        return Err(PHOTO_TOO_LARGE.to_string());
+    }
+    Ok(())
+}
+
 /// Decodes a photo (EXIF-rotated) as BGR.
 fn decode_color(payload: &[u8]) -> Result<core::Mat, String> {
     let vec = core::Vector::<u8>::from_slice(payload);
@@ -194,6 +209,7 @@ fn decode_color(payload: &[u8]) -> Result<core::Mat, String> {
     if image.empty() {
         return Err("Failed to decode image".to_string());
     }
+    check_photo_size(image.cols(), image.rows())?;
     Ok(image)
 }
 
@@ -1674,6 +1690,17 @@ fn contour_center(contour: &core::Vector<core::Point>) -> Result<Option<core::Po
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn photo_size_is_capped() {
+        assert!(check_photo_size(16320, 12240).is_ok());
+        assert_eq!(
+            check_photo_size(30000, 10000),
+            Err(PHOTO_TOO_LARGE.to_string())
+        );
+        // No overflow in i32.
+        assert!(check_photo_size(i32::MAX, i32::MAX).is_err());
+    }
 
     const WIDTH: i32 = 800;
     const HEIGHT: i32 = 500;
