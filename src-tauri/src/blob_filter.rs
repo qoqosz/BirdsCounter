@@ -621,8 +621,8 @@ impl BlobFilter {
         }
 
         let mut blobs = Vec::new();
-        for label in 1..label_count {
-            if peaks[label] <= 1.0 {
+        for (label, &peak) in peaks.iter().enumerate().skip(1) {
+            if peak <= 1.0 {
                 continue;
             }
             let stat = |field: i32| -> Result<i32, String> {
@@ -1394,7 +1394,7 @@ fn median(values: &mut [f64]) -> f64 {
     }
     values.sort_unstable_by(f64::total_cmp);
     let mid = values.len() / 2;
-    if values.len() % 2 == 0 {
+    if values.len().is_multiple_of(2) {
         (values[mid - 1] + values[mid]) / 2.0
     } else {
         values[mid]
