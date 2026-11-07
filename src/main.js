@@ -2458,7 +2458,12 @@ async function processImage() {
     if (session !== editSession) return;
     updateCount(fallbackCount);
     console.error("Image processing failed:", e);
-    alert(String(e) === "photo-too-large" ? t("error_photo_too_large") : t("alert_process_fail", { error: e }));
+    const messages = {
+      "photo-too-large": "error_photo_too_large",
+      "worker-timeout": "error_process_timeout",
+    };
+    const key = messages[String(e)];
+    alert(key ? t(key) : t("alert_process_fail", { error: e }));
   }
 }
 
