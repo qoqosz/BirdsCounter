@@ -185,7 +185,8 @@
     const now = Date.now();
     const key = photoKey(entry.source);
     const opened = key ? openedPhotos.get(key) : null;
-    return transaction(["entries", "thumbs", "masks", "photos"], "readwrite", async (stores) => {
+    let persisted = false;
+    const saved = await transaction(["entries", "thumbs", "masks", "photos"], "readwrite", async (stores) => {
       let stored = entry.id ? await done(stores.entries.get(entry.id)) : null;
       if (!stored) {
         // Deleted while open in the editor, or new: start a new entry.
@@ -213,9 +214,14 @@
       if (opened && !(await done(stores.photos.getKey(key)))) {
         stores.photos.put({ bytes: opened.bytes, name: opened.name, mime: opened.mime }, key);
       }
+      persisted = Boolean(opened);
       stores.entries.put(stored, stored.id);
       return { ...stored };
     });
+    // The photo is in IndexedDB now (readImage falls back to it), so don't keep its bytes
+    // in memory. If the transaction failed, we never get here and the photo stays.
+    if (persisted) openedPhotos.delete(key);
+    return saved;
   }
 
   /** Deletes entries and the photos only they link to. */
