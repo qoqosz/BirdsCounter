@@ -134,6 +134,56 @@ impl History {
         std::fs::rename(&tmp, self.index_path()).map_err(|e| format!("History write: {e}"))
     }
 
+    /// Writes the thumbnail and the mask of `entries[index]`, then the index. The files are
+    /// named after the entry and overwritten in place, so when a write fails, only the files
+    /// no earlier save of the entry could have written are removed again.
+    fn write_entry(
+        &self,
+        entries: &mut [Entry],
+        index: usize,
+        fresh: bool,
+        thumb: &[u8],
+        update_mask: bool,
+        mask: Option<&[u8]>,
+    ) -> Result<Entry, String> {
+        let id = entries[index].id.clone();
+        let had_mask = entries[index].has_mask;
+        let result = self.write_entry_files(entries, index, thumb, update_mask, mask);
+        if result.is_err() {
+            if fresh {
+                let _ = std::fs::remove_file(self.thumb_path(&id));
+            }
+            if fresh || (update_mask && mask.is_some() && !had_mask) {
+                let _ = std::fs::remove_file(self.mask_path(&id));
+            }
+        }
+        result
+    }
+
+    fn write_entry_files(
+        &self,
+        entries: &mut [Entry],
+        index: usize,
+        thumb: &[u8],
+        update_mask: bool,
+        mask: Option<&[u8]>,
+    ) -> Result<Entry, String> {
+        let stored = &mut entries[index];
+        write_file(&self.thumb_path(&stored.id), thumb)?;
+        if update_mask {
+            match mask {
+                Some(png) => write_file(&self.mask_path(&stored.id), png)?,
+                None => {
+                    let _ = std::fs::remove_file(self.mask_path(&stored.id));
+                }
+            }
+            stored.has_mask = mask.is_some();
+        }
+        let saved = stored.clone();
+        self.store(entries)?;
+        Ok(saved)
+    }
+
     fn remove_files(&self, app: &AppHandle, entry: &Entry) {
         let _ = std::fs::remove_file(self.thumb_path(&entry.id));
         let _ = std::fs::remove_file(self.mask_path(&entry.id));
@@ -260,6 +310,7 @@ pub async fn history_save(
         Some(id) => entries.iter().position(|e| &e.id == id),
         None => None,
     };
+    let existing = index.is_some();
     let index = match index {
         Some(index) => index,
         None => {
@@ -286,6 +337,7 @@ pub async fn history_save(
         }
     };
 
+    let fresh = !existing;
     let stored = &mut entries[index];
     stored.updated_at = now;
     stored.source = entry.source;
@@ -295,20 +347,7 @@ pub async fn history_save(
     stored.params = entry.params;
     stored.crop = entry.crop;
 
-    write_file(&history.thumb_path(&stored.id), thumb)?;
-    if update_mask {
-        match mask {
-            Some(png) => write_file(&history.mask_path(&stored.id), png)?,
-            None => {
-                let _ = std::fs::remove_file(history.mask_path(&stored.id));
-            }
-        }
-        stored.has_mask = mask.is_some();
-    }
-
-    let saved = stored.clone();
-    history.store(&entries)?;
-    Ok(saved)
+    history.write_entry(&mut entries, index, fresh, thumb, update_mask, mask)
 }
 
 #[tauri::command]
@@ -371,6 +410,47 @@ mod tests {
     }
 
     use super::*;
+
+    fn blank_entry(id: &str) -> Entry {
+        Entry {
+            id: id.to_string(),
+            created_at: 0,
+            updated_at: 0,
+            source: None,
+            owned: false,
+            name: None,
+            count: 0,
+            params: serde_json::Value::Null,
+            crop: None,
+            has_mask: false,
+        }
+    }
+
+    #[test]
+    fn failed_save_removes_only_new_files() {
+        let dir = std::env::temp_dir().join("bc_history_fail");
+        let _ = std::fs::remove_dir_all(&dir);
+        let history = History::new(dir.clone());
+        let mut entries = vec![blank_entry("a"), blank_entry("b")];
+        history
+            .write_entry(&mut entries, 0, true, &[1], true, None)
+            .unwrap();
+        // A directory in place of the temporary index file makes the index write fail.
+        std::fs::create_dir_all(history.index_path().with_extension("json.tmp")).unwrap();
+
+        // An older entry keeps its thumbnail, but the new mask is an orphan.
+        let failed = history.write_entry(&mut entries, 0, false, &[2], true, Some(&[3]));
+        assert!(failed.is_err());
+        assert!(history.thumb_path("a").exists());
+        assert!(!history.mask_path("a").exists());
+
+        // A new entry leaves nothing behind.
+        let failed = history.write_entry(&mut entries, 1, true, &[2], true, Some(&[3]));
+        assert!(failed.is_err());
+        assert!(!history.thumb_path("b").exists());
+        assert!(!history.mask_path("b").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn save_body(meta: &str, files: &[u8]) -> Vec<u8> {
         let mut body = (meta.len() as u32).to_le_bytes().to_vec();
