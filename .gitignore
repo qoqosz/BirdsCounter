@@ -1,6 +1,9 @@
 target/*
 src-tauri/target/
 
+# claude
+.claude/
+
 # Logs
 logs
 *.log

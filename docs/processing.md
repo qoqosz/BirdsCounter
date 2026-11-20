@@ -737,6 +737,24 @@ Tried and rejected, because each one fixes one thing and breaks another:
 | Comparing with $m_G$ at the edge too | nothing in the scenes | mask-off count of this photo: 332 → 340 |
 | The 75th percentile of the neighbours in step 17 instead of the median, for near birds next to far ones | storks over a coast: 769 → 646 | sample photo 04: 51 → 44, and this photo: 50 → 46 (measured before the dense flock changes) |
 
+A later round measured where the count goes wrong on 51 larger scenes: real bird shapes pasted on real empty skies,
+31,260 birds, with the exact count known. They are a local benchmark and not in the repository. Nearly every bird is
+found: 28,846 lie in a group that is kept. The error is in step 17. Groups hold about 4,700 birds more than they are
+counted for, and about 3,300 fewer. Single birds in one scene differ in area by 2 to 3 times, so a group's area
+doesn't say how many birds it holds. Added over the scenes, the kept groups are off by 3,249 birds. Even if step 17
+knew which neighbours are single birds and used their mean area, they would still be off by 1,947.
+
+So other ways to find the area of a single bird were tried, and all were rejected. The numbers are that sum of errors
+(now 3,249):
+
+| Change | Better | Worse |
+| --- | --- | --- |
+| The most common area of 12 neighbours (half-sample mode) instead of the median | ducks, 2,500 in a dense scene: 238 too few → 39 too few | all scenes: 4,750, as starlings, 1,800 in a flock, go from 412 to 720 too few |
+| A mixture fitted to the areas of 24 neighbours: single birds, pairs, threes and so on | flocks of 400 to 900 | all scenes: 4,126 |
+| The median of the neighbours no larger than 1.7 medians, repeated until it settles | flock scenes: 2,041 → 1,690 | dense scenes: 733 → 1,512, and large birds among small ones: 344 → 696 |
+| Counting a group as 2 or more only above a limit that grows with the spread of the smaller neighbours | large birds among small ones: 344 → 312 | flock scenes: 2,041 → 2,414 |
+| Counting groups of more than 3 birds again, from the single birds nearest to them | nothing | all scenes: 3,231 → 3,265 at best (measured with the changes of the `sky-detection-r3` branch) |
+
 ### Gap 2: A dense flock partly hides itself
 
 *Not fixed.* A dense flock of thin birds raises its own busyness about three times, from 0.0067 to about 0.019. A scene
@@ -751,6 +769,14 @@ Tried and rejected:
 | The same, without pixels above $q > 0.6$ | dense flock: 373 → 420 of 420 | this photo at $k = 4$: 80 → 104, and the ball of 120 as above |
 | Measuring only pixels darker than the sky | dense flock: 373 → 420 of 420 | this photo: 53 → 62 |
 | A largest busyness of 0.03 instead of 0.05 | dense flock filling a small photo: 1889 → 2911 | starlings low over water: 1279 → 1221, because the flock joins into larger pieces, and sample photo 01: 7 → 11 |
+| The busyness limited to 3.5 times the lower quartile of the same window, which birds don't raise | dense scenes of the benchmark above: 1,892 → 1,673 birds off | flock scenes: 2,462 → 3,796. With a lower pass mark, 1,800 pigeons join into a few groups, and step 16 removes 1,296 of them |
+| The same limit, but only for the strong pixel of step 14, so no group changes its shape | all scenes: 4,795 → 3,954 | the gain is not from the birds it finds. The new small groups make the single bird of step 17 smaller, so their neighbours count for more. Without that effect it is 4,689. In a photo of large pigeons, three wing tips of a white one make two neighbours count as 16 and 17: 173 → 208 |
+| Bringing back the narrow gaps of sky that step 5 erases (a reconstruction: the photo of step 5 grows back into the real one for 8 pixels), before step 6 | dense flock filling a small photo: 1891 → 2332 | starlings low over water: 1764 → 1299, as step 16 removes the joined core. Snow geese: 1626 → 1535, and sample photo 05: 52 → 50 |
+| The same, only where over 20% of the pixels are brighter than the sky of step 7 and over 5% are dark, with groups there never removed by step 16. Measured with the changes of the `sky-detection-r3` branch | dense flock filling a small photo: 1894 → 2348, starlings low over water: 1766 → 2249, knots over a mudflat: 1174 → 1301. No other photo changes, also from $k = 7$ to $k = 11$ | nothing gets worse, but it is not worth its cost. Only these three photos change, and their true counts are not known. The benchmark scenes don't change at all, and no test scene could be made that it acts on. It adds about 200 lines to each detector, 8 fixed values and 8% of the time, and the dark pixels and the step 16 rule are there only to undo its own side effects (grain set it off, and the core of a flock joined) |
+
+The last four rows show one chain. Whatever finds more of a dense flock also joins its birds into larger groups, and
+then steps 16 and 17 lose more than was gained. A change here has to start with how joined birds are counted
+([gap 1](#gap-1-steps-16-and-17-judge-size-too-simply)).
 
 The dense flock photos of [dense flocks](#dense-flocks) show this gap at its worst: in the middle of a flock of knots
 or snow geese, birds cover more than half of the window, and the busyness reaches its largest value of 0.05.

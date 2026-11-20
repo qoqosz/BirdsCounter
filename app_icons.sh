@@ -9,6 +9,8 @@
 # - Desktop icons: `cargo tauri icon` always writes them, but nothing uses them, so they are deleted.
 # - iOS: `cargo tauri icon` writes the icons straight into the Xcode asset catalog, but keeps an alpha channel. They
 #   are flattened onto white in place because iOS shows transparency as black.
+# - Web: the favicon and the home screen icons (manifest.webmanifest) are written into src/ and committed, so
+#   ./build_web.sh and GitHub Pages need no ImageMagick.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,3 +44,16 @@ for out in "$APPICONSET"/AppIcon-*.png; do
     magick "$out" -background white -alpha remove -alpha off -strip "$out"
     echo "  $out"
 done
+
+echo "Web icons:"
+WEB="$SCRIPT_DIR/src"
+LOGO="$ICONS/icon.png"
+magick "$LOGO" -define icon:auto-resize=48,32,16 "$WEB/favicon.ico"
+magick "$LOGO" -resize 180x180 -strip "$WEB/apple-touch-icon.png"
+for size in 192 512; do
+    magick "$LOGO" -resize "${size}x${size}" -strip "$WEB/icon-$size.png"
+done
+# Maskable: launchers crop to a shape, so the logo sits in the safe zone and its edges are extended around it.
+magick "$LOGO" -alpha off -resize 400x400 -virtual-pixel edge -define distort:viewport=512x512-56-56 \
+    -filter point -distort SRT 0 +repage -strip "$WEB/icon-maskable-512.png"
+echo "  $WEB/favicon.ico $WEB/apple-touch-icon.png $WEB/icon-192.png $WEB/icon-512.png $WEB/icon-maskable-512.png"

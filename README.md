@@ -221,28 +221,40 @@ xcrun devicectl device install app --device <device-id> src-tauri/gen/apple/buil
 ### Refreshing the certificate (every 7 days)
 
 A free Apple ID signs the app with a certificate and profile that expire after 7 days. Then the app stops launching
-(*Unable to Verify App* or an instant crash). There is nothing to renew by hand: rebuild and install over the old
-copy, which keeps the app's data and history.
+(*Unable to Verify App* or an instant crash). Rebuild and install over the old copy, which keeps the app's data and
+history.
 
-1. Connect the iPhone, unlock it and check that it is listed as `available (paired)`:
+1. Refresh the profile first. Xcode reuses its cached profile as long as it has not expired, even when it expires the
+   next day, so a rebuild alone can leave you with an app that stops working within hours. Remove the cached
+   BirdsCounter profiles (the app's and the Share extension's), so the build fetches new ones, valid for 7 days:
+
+```bash
+cd ~/Library/Developer/Xcode/UserData/"Provisioning Profiles"
+for f in *.mobileprovision; do
+  security cms -D -i "$f" | grep -q '<string>iOS Team Provisioning Profile: com.birdscounter.app' && rm "$f"
+done
+cd -
+```
+
+2. Connect the iPhone, unlock it and check that it is listed as `available (paired)`:
 
 ```bash
 xcrun devicectl list devices
 ```
 
-2. Rebuild. Xcode signs with a fresh certificate and profile:
+3. Rebuild. Xcode signs with a fresh profile:
 
 ```bash
 env APPLE_DEVELOPMENT_TEAM=<team-id> ./build_ios.sh --target device
 ```
 
-3. Install over the existing app (do not delete it first):
+4. Install over the existing app (do not delete it first):
 
 ```bash
 xcrun devicectl device install app --device <device-id> src-tauri/gen/apple/build/arm64/birdscounter.ipa
 ```
 
-4. If the phone still complains, trust the profile again under **Settings → General → VPN & Device Management**.
+5. If the phone still complains, trust the profile again under **Settings → General → VPN & Device Management**.
    If the phone is not paired after an iOS update, run `xcrun devicectl manage pair --device <device-id>` and tap
    **Trust** on the phone. A new phone must be registered in the team profile first: run `xcodebuild` once with
    `-allowProvisioningUpdates -allowProvisioningDeviceRegistration` or run the app from Xcode once.
